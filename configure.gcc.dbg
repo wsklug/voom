@@ -1,0 +1,1 @@
+./configure CXX=g++ CC=gcc F77=gfortran CXXFLAGS="-g -ggdb" CCFLAGS="-g -ggdb" F77FLAGS="-g -ggdb"

@@ -1,0 +1,222 @@
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                         William S. Klug
+//                University of California Los Angeles
+//                 (C) 2004-2005 All Rights Reserved
+//
+//----------------------------------------------------------------------
+//
+// $Log$
+// Revision 1.2  2005/05/23 17:27:53  klug
+// Added index map; renamed strainEnergy as energy.
+//
+// Revision 1.1  2005/04/11 16:26:59  klug
+// Renamed LinearizedElement.cc to LinearizedElement.icc
+//
+// Revision 1.1  2005/04/11 15:57:21  klug
+// Initial checkin.
+//
+//----------------------------------------------------------------------
+
+#include "LinearizedElement2D.h"
+
+namespace voom {
+
+  template< class Node_t, class Quadrature_t, class Material_t, class Shape_t >
+  void LinearizedElement2D<Node_t, Quadrature_t, Material_t, Shape_t>
+  ::_copyNodalField() {
+    ConstNodeIterator na=_nodes.begin();
+    for( int ai=0; na!=_nodes.end(); na++) {
+      const PositionVector & x = (*na)->point();  
+      for( int i=0; i<2; i++, ai++) _field(ai) = x(i);
+    }
+  }
+  
+  template< class Node_t, class Quadrature_t, class Material_t, class Shape_t >
+  void LinearizedElement2D<Node_t, Quadrature_t, Material_t, Shape_t>
+  ::_initialize(const Quadrature_t & quad,
+		const Material_t & mat,
+		const NodeContainer & nodes) {
+    // Copy container of node pointers.
+//     _nodes.resize(nodes.size());
+//     std::copy(nodes.begin(), nodes.end(), _nodes.begin());
+//     _nodes.assign(nodes.begin(), nodes.end());
+
+//     _nodes.clear();
+//     for(ConstNodeIterator n=nodes.begin(); n!=nodes.end(); n++) {
+//       _nodes.push_back(*n);
+    _nodes = nodes;
+//       std::cout << " node="<<*n<<std::endl;
+//       std::cout << "_node="<<_nodes.back()<<std::endl;
+//       std::cout << "x=" << (*n)->position()<<std::endl;
+//       std::cout << "u=" << (*n)->point()<<std::endl;
+//     }
+//     std::cout << "after copying nodes."<<std::endl;
+//     for(ConstNodeIterator n=nodes.begin(); n!=nodes.end(); n++) {
+//       std::cout << " node="<<*n<<std::endl;
+//       std::cout << "x=" << (*n)->position()<<std::endl;
+//       std::cout << "u=" << (*n)->point()<<std::endl;
+//     }
+    
+    const int nNodes = _nodes.size();
+    const int dim = 2;
+    const int dof = dim*nNodes;
+
+    _index.resize(dof);
+    for(int a=0; a<nNodes; a++)
+      for(int i=0; i<dim; i++)
+	_index[dim*a+i] = _nodes[a]->index()[i];
+
+//     std::cout << "after getting nNodes."<<std::endl;
+//     for(ConstNodeIterator n=nodes.begin(); n!=nodes.end(); n++) {
+//       std::cout << " node="<<*n<<std::endl;
+//       std::cout << "x=" << (*n)->position()<<std::endl;
+//       std::cout << "u=" << (*n)->point()<<std::endl;
+//     }
+    _field.resize(dof);
+//     std::cout << "&_field="<<_field.data() <<std::endl;
+//     std::cout << "BEFORE copying nodal field."<<std::endl;
+//     for(ConstNodeIterator n=nodes.begin(); n!=nodes.end(); n++) {
+//       std::cout << " node="<<*n<<std::endl;
+//       std::cout << "x=" << (*n)->position()<<std::endl;
+//       std::cout << "u=" << (*n)->point()<<std::endl;
+//     }
+    _copyNodalField();
+//     std::cout << "AFTER copying nodal field."<<std::endl;
+//     for(ConstNodeIterator n=nodes.begin(); n!=nodes.end(); n++) {
+//       std::cout << " node="<<*n<<std::endl;
+//       std::cout << "x=" << (*n)->position()<<std::endl;
+//       std::cout << "u=" << (*n)->point()<<std::endl;
+//    }
+    
+    _forces.resize(dof);
+    _stiffness.resize(dof, dof);
+    _forces = 0.0;
+    _stiffness = 0.0;
+
+    // create quadrature point structures 
+    typename Shape_t::PositionContainer x(nNodes);
+    
+//     std::cout <<"Assigning positions for shape creation."<<std::endl;
+    ConstNodeIterator node_a=_nodes.begin();
+    for(int a=0; node_a!=_nodes.end(); node_a++, a++) 
+      x[a] = (*node_a)->position();
+
+    _quadPoints.clear();
+    for(typename Quadrature_t::ConstPointIterator p=quad.begin(); 
+	p!=quad.end(); p++) {
+      Shape_t shp( p->coords, x );
+      
+      _quadPoints.push_back( Base::QuadPointStruct(p->weight, mat, shp) );
+      _quadPoints.back().shape.compute(p->coords); // necessary?
+     }
+    
+    // Compute B-matrix
+    const int nQdPts = _quadPoints.size();
+    const int strainDim = 3;
+    _B.resize(nQdPts);
+    
+    for(int p=0; p<nQdPts; p++) {
+      _B[p].resize(strainDim,nNodes*dim);
+      const typename Shape_t::DerivativeContainer & DN = 
+	_quadPoints[p].shape.derivatives();
+      for(int a=0; a<nNodes; a++) {
+	_B[p](0,2*a+0) = DN[a](0);  	_B[p](0,2*a+1) = 0.0;
+	_B[p](1,2*a+0) = 0.0;  		_B[p](1,2*a+1) = DN[a](1);
+	_B[p](2,2*a+0) = DN[a](1);  	_B[p](2,2*a+1) = DN[a](0);
+      }
+//       std::cout << "_B = "<<_B[p] << std::endl;
+    }    
+    
+  }
+
+  /*!
+    Since this element is used for small strains, this method performs 
+    the following steps:
+    <ol>
+    <li> Loop over quadrature points to compute and set the strain
+    \f[
+    \epsilon_\alpha = B_{\alpha i a} u_{ia},
+    \f]
+    and call <tt>updateState</tt> for the material object at each point. 
+    <li> If <tt>f0==true</tt> compute the strain energy
+    \f[
+    W = \sum_{p=1}^Q w(s^{(p)}) J(s^{(p)}) \hat{w}_p \hat{V}
+    \f] 
+    <li> If <tt>f1==true</tt> compute the element internal forces
+    \f[
+    f_{ia} = \frac{\partial W}{\partial u_{ia}} 
+    = \sum_{p=1}^Q \sigma_{\alpha}(s^{(p)}) B_{\alpha i a}(s^{(p)}) J(s^{(p)}) \hat{w}_p \hat{V}
+    \f]
+    <li> If <tt>f2==true</tt> compute the element stiffness
+    \f[
+    k_{iakb} = \frac{\partial f_{ia}}{\partial u_{kb}} 
+    = \frac{\partial^2 W}{\partial u_{ia}\partial u_{kb}} 
+    = \sum_{p=1}^Q c_{\alpha\beta}(s^{(p)}) B_{\alpha i a}(s^{(p)}) B_{\beta k b}(s^{(p)}) J(s^{(p)}) \hat{w}_p \hat{V}
+    \f]
+    </ol>      
+  */
+  template< class Node_t, class Quadrature_t, class Material_t, class Shape_t >
+  void LinearizedElement2D<Node_t, Quadrature_t, Material_t, Shape_t>
+  ::compute(bool f0, bool f1, bool f2, bool updateDOF) {
+
+    if(updateDOF) _copyNodalField();
+
+    const int nNodes=_nodes.size();
+    const int dim = 2;
+
+    for(int p=0; p<_quadPoints.size(); p++) {
+      typename Material_t::VoigtVector eps(0.0);
+      for(int alpha=0; alpha<eps.size(); alpha++) {
+	ElementVector B = _B[p](alpha,blitz::Range::all());
+	eps(alpha) += blitz::sum(B*_field);
+      }
+      _quadPoints[p].material.setStrain(eps);
+      _quadPoints[p].material.updateState(f0,f1,f2);
+    }    
+    
+    if( f0 ) {
+      _energy = 0.0;
+      for(QuadPointIterator p=_quadPoints.begin(); p!=_quadPoints.end(); p++) 
+	_energy += 
+	  p->material.energyDensity() * p->weight * p->shape.jacobian();
+    } 
+
+
+    if( f1 ) {
+      _forces = 0.0;
+      QuadPointIterator p=_quadPoints.begin();
+      for( int pI=0; p!=_quadPoints.end(); p++, pI++) {
+	const typename Material_t::VoigtVector & sigma = p->material.stress();
+	for(int alpha=0; alpha<sigma.size(); alpha++) {
+	  ElementVector B = _B[pI](alpha,blitz::Range::all());
+	  _forces += sigma(alpha) * B * p->weight * p->shape.jacobian();
+	}
+	
+      }
+    }
+        
+    if(f2) {
+      _stiffness = 0.0;
+      const int strainDim = 3;
+      QuadPointIterator p=_quadPoints.begin();
+      for( int pI=0; p!=_quadPoints.end(); p++, pI++) {
+	const typename Material_t::VoigtMatrix c = p->material.moduli();
+	const double w = p->weight * p->shape.jacobian();
+	for(int alpha=0; alpha<strainDim; alpha++) 
+	  for(int beta=0; beta<strainDim; beta++) 
+	    for(int ai=0; ai<nNodes*dim; ai++)
+	      for(int bk=0; bk<=ai; bk++)
+		_stiffness(ai,bk) += 
+		  _B[pI](alpha,ai) * c(alpha,beta) * _B[pI](beta,bk) * w;
+
+	    for(int ai=0; ai<nNodes*dim; ai++)
+	      for(int bk=0; bk<=ai; bk++)
+		_stiffness(bk,ai) = _stiffness(ai,bk);
+
+      }
+    }
+  }
+
+}; // namespace voom

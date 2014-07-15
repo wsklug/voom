@@ -1,0 +1,460 @@
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                         Melissa M. Gibbons
+//                University of California Los Angeles
+//                   (C) 2006 All Rights Reserved
+//
+//----------------------------------------------------------------------
+
+////////////////////////////////////////////////////////////////////
+// LAPACK subroutine for computing eigenvalues and eigenvectors
+//
+// define prototype of LAPACK functions
+extern "C" void dsyev_(char *jobz, char *uplo, int *n, double *a, int *lda,
+		       double *w, double *work, int *lwork, int *info);
+
+//#define _DEBUG_
+
+namespace voom
+{
+
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  void NonlinearElastic<Quadrature_t, Material_t, Shape_t>::compute(bool f0, bool f1, bool f2)
+  {
+    //
+    // initialize things
+    //
+    
+    if( f0 ) {
+      _energy = 0.0;
+      _strainEnergy = 0.0;
+    }
+
+    if( f1 ) {
+      _internalForce = Vector3D(0.0);
+    }
+	
+    int numQP = 0;
+
+    for(QuadPointIterator p=_quadPoints.begin(); 
+	p!=_quadPoints.end(); p++, numQP++){
+      
+      //
+      // compute deformation gradient
+      //
+      Tensor3D F(0.0);
+      
+      const typename Shape_t::DerivativeContainer &  DN = p->shapeDerivatives;
+      
+      for(int a=0; a<_nodes.size(); a++) {
+	const Vector3D & xa = _nodes[a]->point();
+	for(int i=0; i<3; i++) {
+	  for(int J=0; J<3; J++){
+	    F(i,J) += xa(i)*DN[a](J);
+	  } 
+	}
+      }
+      
+      Material_t& material = p->material;
+      
+      // send updated deformation gradient to material
+      material.setDeformationGradient(F);
+      
+      // compute strain energy and/or 1st PK stress
+      material.updateState(f0, f1, f2); 
+      
+      double weight = p->weight;
+           
+      // compute energy
+      if ( f0 ){
+	
+	// compute strain energy 
+	_strainEnergy += material.energyDensity()*weight;
+	
+      }
+      
+      // compute forces
+      if ( f1 ) {
+
+	const Tensor3D & P = material.piolaStress();
+
+	// compute internal forces
+	// loop for all nodes to compute forces 
+	for (int a=0; a<_nodes.size(); a++) {
+	  for(int i=0; i<3; i++) {
+	    for(int J=0; J<3; J++) {
+	      _internalForce(a)(i) += P(i,J)*DN[a](J)*weight;
+	    }  
+	  }
+	} // end nodes loop
+	
+      } // end force calcs
+      
+	// compute stiffness matrix
+      if( f2 ) {
+	//std::cerr << std::endl << std::endl << "\t"
+	//    << "Aaaarrrrrrggggggh!  No stiffness matrix yet!" 
+	//    << std::endl << std::endl;
+      }
+      
+    } // end quadrature loop
+    
+    
+    if(f0) {
+      _energy = _strainEnergy;
+    }
+    
+    // assemble element forces to nodes
+    if(f1) {
+      
+      int a=0;
+      for(NodeIterator na=_nodes.begin();  na!=_nodes.end(); na++, a++)
+	for(int i=0; i<3; i++) {
+	  double f_ia = _internalForce(a)(i);
+	  (*na)->addForce( i, f_ia );
+	}
+    }
+    
+  }
+
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  double NonlinearElastic<Quadrature_t, Material_t, Shape_t>::CalcMisesStress()
+  {	
+
+    double vMStress = 0.0;
+    int numQP = 0;
+
+    for(QuadPointIterator p=_quadPoints.begin(); 
+	p!=_quadPoints.end(); p++, numQP++){
+      
+      //
+      // compute deformation gradient
+      //
+      Tensor3D F(0.0);
+      
+      const typename Shape_t::DerivativeContainer &  DN = p->shapeDerivatives;
+      
+      for(int a=0; a<_nodes.size(); a++) {
+	const Vector3D & xa = _nodes[a]->point();
+	for(int i=0; i<3; i++) {
+	  for(int J=0; J<3; J++){
+	    F(i,J) += xa(i)*DN[a](J);
+	  } 
+	}
+      }
+      
+      Material_t& material = p->material;
+      
+      // send updated deformation gradient to material
+      material.setDeformationGradient(F);
+      
+      // compute strain energy and/or 1st PK stress
+      material.updateState(true, true, false); 
+      
+      const Tensor3D & P = material.piolaStress();
+
+      double jac = determinant(F);
+
+      Tensor3D transF(0.0);
+      for(int i=0; i<3; i++) {
+	for(int J=0; J<3; J++) {
+	  transF(i,J) = F(J,i);
+	}
+      }
+
+      Tensor3D Cauchy(0.0);
+      // = 1.0/jac*P*transF;
+
+      for(int i=0; i<3; i++) {
+	for(int J=0; J<3; J++) {
+	  Cauchy(i,J) = 1.0/jac*P(i,J)*transF(i,J);
+	}
+      }
+
+      vMStress += 0.7071068*sqrt((Cauchy(0,0)-Cauchy(1,1))*(Cauchy(0,0)-Cauchy(1,1)) + 
+				(Cauchy(1,1)-Cauchy(2,2))*(Cauchy(1,1)-Cauchy(2,2)) + 
+				(Cauchy(2,2)-Cauchy(0,0))*(Cauchy(2,2)-Cauchy(0,0)) + 
+				6.0*(Cauchy(0,1)*Cauchy(0,1)+Cauchy(0,2)*Cauchy(0,2)+Cauchy(1,2)*Cauchy(1,2)));
+      
+    } // end quadrature loop
+    
+    if(numQP==4) {
+      vMStress /= 4.0;
+    } else
+      if(numQP==5) {
+	vMStress /= 5.0;
+      }
+
+    return vMStress;    
+  }
+
+  
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  Tensor3D NonlinearElastic<Quadrature_t, Material_t, Shape_t>::CalcCauchyStress()
+  {	
+    
+    Tensor3D Cauchy(0.0);
+    int numQP = 0;
+    
+    for(QuadPointIterator p=_quadPoints.begin(); 
+	p!=_quadPoints.end(); p++, numQP++){
+      
+      //
+      // compute deformation gradient
+      //
+      Tensor3D F(0.0);
+      
+      const typename Shape_t::DerivativeContainer &  DN = p->shapeDerivatives;
+      
+      for(int a=0; a<_nodes.size(); a++) {
+	const Vector3D & xa = _nodes[a]->point();
+	for(int i=0; i<3; i++) {
+	  for(int J=0; J<3; J++){
+	    F(i,J) += xa(i)*DN[a](J);
+	  } 
+	}
+      }
+      
+      Material_t& material = p->material;
+      
+      // send updated deformation gradient to material
+      material.setDeformationGradient(F);
+      
+      // compute strain energy and/or 1st PK stress
+      material.updateState(true, true, false); 
+      
+      const Tensor3D & P = material.piolaStress();
+
+      double jac = determinant(F);
+
+      Tensor3D transF(0.0);
+      for(int i=0; i<3; i++) {
+	for(int J=0; J<3; J++) {
+	  transF(i,J) = F(J,i);
+	}
+      }
+
+      for(int i=0; i<3; i++) {
+	for(int J=0; J<3; J++) {
+	  Cauchy(i,J) = 1.0/jac*P(i,J)*transF(i,J);
+	}
+      }
+
+    } // end quadrature loop
+    
+    if(numQP==4) {
+      Cauchy /= 4.0;
+    } else
+      if(numQP==5) {
+	Cauchy /= 5.0;
+      }
+
+    return Cauchy;    
+  }
+
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  Vector3D NonlinearElastic<Quadrature_t, Material_t, Shape_t>::CalcPrincipalStrains()
+  {	
+
+    Vector3D prinStrain;
+    int numQP = 0;
+    
+    for(QuadPointIterator p=_quadPoints.begin(); 
+	p!=_quadPoints.end(); p++, numQP++){
+      
+      //
+      // compute deformation gradient
+      //
+      Tensor3D F(0.0);
+      
+      const typename Shape_t::DerivativeContainer &  DN = p->shapeDerivatives;
+      
+      for(int a=0; a<_nodes.size(); a++) {
+	const Vector3D & xa = _nodes[a]->point();
+	for(int i=0; i<3; i++) {
+	  for(int J=0; J<3; J++){
+	    F(i,J) += xa(i)*DN[a](J);
+	  } 
+	}
+      }
+      
+      // C:  right Cauchy-green strain tensor
+      Tensor3D C;
+      C = (tvmet::trans(F))*F;
+
+      // compute Eigenvalues and Eigenvectors by calling LAPACK library
+      char jobz = 'N';
+      char uplo = 'L';
+      int  n    = 3;
+      int  lda  = n;
+      int  lwork = 3*n-1;
+      int  info;
+      double eigenvalues[3];
+      double work[lwork];
+      
+      // calling lapack function here to compute
+      // eigenvalues of C1
+      dsyev_(&jobz, &uplo, &n, C.data(),
+	     &lda, eigenvalues, work, &lwork, &info);
+      for(int i=0; i<3; i++) {
+	prinStrain(i) = eigenvalues[i];
+      }
+
+      if (info != 0) {
+	std::cout << "Something is wrong in DSYEV_" << std::endl;
+	exit(0);
+      }
+      
+    } // end quadrature loop
+    
+    if(numQP==4) {
+      prinStrain /= 4.0;
+    } else
+      if(numQP==5) {
+	prinStrain /= 5.0;
+      }
+
+    return prinStrain;    
+  }
+
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  NonlinearElastic<Quadrature_t, Material_t, Shape_t>::QuadPointStruct::
+  QuadPointStruct(double w,
+		  const Material_t & m,
+		  const Shape_t & s, 
+		  const NonlinearElastic::NodeContainer & nds): weight(w), material(m)
+  {
+    shapeFunctions = s.functions();
+    
+    // Compute spatial derivatives of shape functions from
+    // parametric derivatives by transforming with matrix jacobian
+    // of isoparametric mapping.
+    
+    // parametric derivatives from shape object
+    const typename Shape_t::DerivativeContainer & dnds = s.derivatives();
+    
+    // std::cout << "dnds = ";
+    //    for(int alpha=0; alpha<3; alpha++) {	   
+    //        for(int a=0; a<nds.size(); a++) {
+    // 	 std::cout << dnds[a](alpha) << " ";
+    //        } std::cout << std::endl;
+    //    }
+    
+    // matrix jacobian dxds;
+    tvmet::Matrix<double,3,3> dxds(0.0);
+    for(int i=0; i<3; i++) {
+      for(int alpha=0; alpha<3; alpha++) {	   
+	for(int a=0; a<nds.size(); a++) {
+	  dxds(i,alpha) += dnds[a](i)*( nds[a]->getPosition(alpha) );
+	}
+      }	      
+    }
+    
+    
+    // debuggin
+    //std::cout << "dxds = " << dxds << std::endl;
+    
+    // compute scalar jacobian and scale the quadrature weight with it
+    // by calculating the determinant of dxds
+    double J = dxds(0,0)*dxds(1,1)*dxds(2,2)
+      + dxds(0,1)*dxds(1,2)*dxds(2,0)
+      + dxds(0,2)*dxds(1,0)*dxds(2,1)
+      - dxds(0,0)*dxds(1,2)*dxds(2,1)
+      - dxds(0,1)*dxds(1,0)*dxds(2,2)
+      - dxds(0,2)*dxds(2,0)*dxds(1,1);
+    
+    //std::cout << "J = " << J << std::endl;
+    
+    weight *= J;
+    
+    // invert matrix jacobian
+    tvmet::Matrix<double,3,3> invJac(0.0);
+    invJac(0,0) = dxds(1,1)*dxds(2,2) - dxds(1,2)*dxds(2,1);
+    invJac(0,1) = dxds(0,2)*dxds(2,1) - dxds(0,1)*dxds(2,2);
+    invJac(0,2) = dxds(0,1)*dxds(1,2) - dxds(0,2)*dxds(1,1);
+    invJac(1,0) = dxds(1,2)*dxds(2,0) - dxds(1,0)*dxds(2,2);
+    invJac(1,1) = dxds(0,0)*dxds(2,2) - dxds(0,2)*dxds(2,0);
+    invJac(1,2) = dxds(0,2)*dxds(1,0) - dxds(0,0)*dxds(1,2);
+    invJac(2,0) = dxds(1,0)*dxds(2,1) - dxds(1,1)*dxds(2,0); 
+    invJac(2,1) = dxds(0,1)*dxds(2,0) - dxds(0,0)*dxds(2,1);
+    invJac(2,2) = dxds(0,0)*dxds(1,1) - dxds(0,1)*dxds(1,0);
+    
+    invJac /= J;
+    
+    // debuggin
+    //std::cout << "invJac = " << invJac << std::endl;
+    
+    // spatial derivatives dndx
+    shapeDerivatives.resize(dnds.size());
+    for(int a=0; a<nds.size(); a++) {	  
+      for(int i=0; i<3; i++) {
+	shapeDerivatives[a](i) = 0.0;
+	for(int alpha=0; alpha<3; alpha++) {
+	  // i think this is wrong, should be invJac(i,alpha)??
+	  //shapeDerivatives[a](i) += dnds[a](alpha)*invJac(alpha,i);
+	  shapeDerivatives[a](i) += dnds[a](alpha)*invJac(i,alpha);
+	}
+      }
+    }
+    
+    // std::cout << "initializing element DN = " << std::endl;
+    //    for(int a=0; a<nds.size(); a++) {	  
+    //      for(int i=0; i<3; i++) {
+    //        std::cout << shapeDerivatives[a](i) << " ";
+    //      } std::cout << std::endl;
+    //    }
+    //    std::cout << std::endl;
+    
+    return;
+  }
+  
+  //! Constructor
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  NonlinearElastic<Quadrature_t, Material_t, Shape_t>::
+  NonlinearElastic( const Quadrature_t & quad,
+		    const Material_t & mat,
+		    const NodeContainer & nodes
+		    )
+  {
+    //! initialize NodeContainer
+    unsigned nNodes = nodes.size();
+      
+    _nodes = nodes;
+    
+    for(ConstNodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) 
+      _baseNodes.push_back(*n);
+    
+    //! initialize quad points
+    _quadPoints.clear();
+
+    for(typename Quadrature_t::ConstPointIterator p=quad.begin(); p!=quad.end(); p++) {
+      Shape_t shp( p->coords );
+      _quadPoints.push_back( QuadPointStruct(p->weight, mat, shp, _nodes) ); 
+      if( shp.functions().size() != nNodes ) {
+	std::cout << "Number of nodes: " << nNodes << std::endl
+		  << "Number of functions: " << shp.functions().size()
+		  << std::endl
+		  << "These should be equal." << std::endl;
+	exit(0);
+      }
+    }
+    
+    //! allocate memory for mechanics variables
+    _internalForce.resize( nNodes );
+    
+    //! initialize values = 0 by default
+    compute(true, true, false); 
+
+    _volume = 0.0;
+
+    // compute initial element volume, which is given as sum of J*weight
+    // however, quad point weight was already set as weight*J
+    for(QuadPointIterator p=_quadPoints.begin(); 
+	p!=_quadPoints.end(); p++){
+      _volume += p->weight;
+    }      
+    
+  }
+
+} // namespace voom

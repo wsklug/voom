@@ -1,0 +1,42 @@
+# This is an input file for the SemiflexibleGel shear application.  To run the application, pass the name of this file to shear.
+# Note that all lines beginning with a '#' will be ignored.
+# PLEASE DO NOT MODIFY ANYTHING SAVE FOR LEADING `#`s AND NUMERICAL VALUES.
+
+#Parameter	Description		Value		Units
+
+#First up are system parameters.
+L_fil		Filament length		2.0		microns
+L_p		Persistence length	17.0		microns
+#kC		Bending modulus		?		pN-microns^2
+kT		Temperature		4.1e-3		pN-microns
+visc		Viscosity		0.0		?
+dt		Time step		1.0e-6		seconds	
+kcl		Crosslink spring const.	-1.0		pN/microns
+l_B		Bend/stretch mod. ratio	.012		microns
+L/l_C		Fil./clink length ratio	7.0		no units
+Wx/L		System width, x direct.	8.0		no units
+Wy/L		System width, y direct.	8.0		no units
+#F_max		Max. force on filaments	1.0e2		pN
+#fitOrder	Order of force-ext fit	3		no units
+Prestress	Prestress gel, T/F	0		no units
+NodesPerCL	Nodes in between clinks	3.5		no units
+CutOffEnds	Cut off dang. ends, T/F	0		no units
+Presave min.	Minimize before save	1		no units
+
+#Now come the polydispersity parameters (type is either None, LongShort, or Exponential)
+Polydispersity	Filament length distr.	None		no units
+#Long/short	Ratio of fil. lengths	1.5		no units
+#Long fraction	Fraction of long fils.	.1		no units
+#Min. length	Minimum length of fil.	.2		no units
+
+#Now come parameters having to do with using saved gels.
+Retrieve_Gel	Retrieve gel, T/F	0		no units
+#NOTE THAT SETTING Retrieve_Gel TO 1 MAKES MOST OTHER SETTINGS IRRELEVANT
+GelFileName	Name of gel file	gel-L=2.000000-l_C=0.142857-dL=0.040816-Wx=10.000000-Wy=10.000000-kcl=-1.000000-gelnum=2.gelsave		no units
+GelDirectory	Gel library path	./GelLibrary/		no units
+
+#Now come the shear test flags.
+Shear_test	Whether to do shear	1		no units
+Shear_start	Start value of shear	0.0		no units
+Shear_final	End value of shear	0.1		no units
+Shear_steps	Number of steps to take	10		no units	

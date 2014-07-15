@@ -1,0 +1,177 @@
+// -*- C++ -*-
+
+#include <string>
+#include <fstream>
+#include <blitz/array-impl.h>
+#include <tvmet/Matrix.h>
+
+#if defined(_OPENMP)
+#include <omp.h>
+#endif
+
+#ifdef WITH_MPI
+#include <mpe.h>
+#endif
+
+namespace voom {
+using std::endl;
+using std::cout;
+
+typedef tvmet::Matrix<double, 3, 3> Matrix3D;
+
+template<class DefQuadrature_t, class Material_t, class DefShape_t,
+class VoltQuadrature_t, class EpMaterial_t, class VoltShape_t>
+
+void FiniteContractionBody<DefQuadrature_t, Material_t, DefShape_t,
+VoltQuadrature_t, EpMaterial_t, VoltShape_t>::initializeBody
+(Material_t material, EpMaterial_t epMaterial,
+		ConnectivityContainer & connectivities,
+		const ContractionNodeContainer & nodes,
+		const ContractionVnodeContainer & vNodes,
+		const unsigned int quadOrder)
+{
+
+#ifdef WITH_MPI
+	MPI_Comm_size( MPI_COMM_WORLD, &_nProcessors );
+	MPI_Comm_rank( MPI_COMM_WORLD, &_processorRank );
+#endif
+
+	// initialize _nDOF and find tetrahedral (position) nodes
+
+	//_nodes = vNodes;
+	for(ConstContractionVnodeIterator n=vNodes.begin(); n!=vNodes.end(); n++) {
+
+		ContractionVnode_t * sn = dynamic_cast<ContractionVnode_t*>(*n);
+		if( sn ) _contractionVnodes.push_back(sn);
+	}
+	std::cout << "vnodes size"<<_contractionVnodes.size()<<"";
+	_dof = 0;
+	//_nodes = nodes;
+	for(ConstContractionNodeIterator n=nodes.begin(); n!=nodes.end(); n++) {
+		_dof+=(*n)->dof();
+		ContractionNode_t * sn = dynamic_cast<ContractionNode_t*>(*n);
+		if( sn ) _contractionNodes.push_back(sn);
+	}
+	std::cout << "dnodes size"<<_contractionNodes.size()<<"";
+	std::cout << "ContractionBody::initializeBody(): dof = "<< _dof
+	<< std::endl;
+
+	// create elements
+	std::cout << "begin to create elements..." << std::endl;
+	DefQuadrature_t dQuad(quadOrder);
+	VoltQuadrature_t vQuad(quadOrder);
+	_contractionElements.reserve( connectivities.size() );
+	std::cout << "made space for " << connectivities.size() << " elements."
+	<< std::endl;
+
+	int numEls = 1;
+
+	for(ConstConnectivityIterator c=connectivities.begin();
+			c!=connectivities.end(); c++) {
+
+		//std::cout << "Element #:" << numEls << std::endl;
+		numEls++;
+
+		// build elemental node container
+		typename ContractionElement_t::NodeContainer nds;
+		typename ContractionElement_t::VnodeContainer vNds;
+		int lll=0;
+		for(ElementConnectivity::const_iterator n=c->begin(); n!=c->end();n++) {
+		lll++;
+		if(lll>4){break;}
+			std::cout << "_contractionVNodes[*n]"<<_contractionVnodes[*n]<<std::endl;
+			nds.push_back( _contractionNodes[*n] );
+			vNds.push_back( _contractionVnodes[*n] );
+		}
+		std::cout << "1";
+		// create element
+		_contractionElements.push_back( new FiniteContraction<DefQuadrature_t, Material_t, DefShape_t,
+				VoltQuadrature_t, EpMaterial_t, VoltShape_t>(dQuad, material, nds, vQuad, epMaterial, vNds) );
+	}
+	std::cout << "2";
+	_elements.reserve(_contractionElements.size());
+	for(ConstContractionElementIterator e=_contractionElements.begin();
+			e!=_contractionElements.end(); e++) {
+		_elements.push_back(*e);
+	}
+	std::cout << "finished creating " << _elements.size() << " elements." << std::endl;
+
+	// compute mechanics/geometry - redundant
+	//compute(true, true, false);
+}
+
+//! compute
+template<class DefQuadrature_t, class Material_t, class DefShape_t,
+class VoltQuadrature_t, class EpMaterial_t, class VoltShape_t>
+
+void FiniteContractionBody<DefQuadrature_t, Material_t, DefShape_t,
+VoltQuadrature_t, EpMaterial_t, VoltShape_t>::compute( bool f0, bool f1, bool f2 )
+{
+
+	int eBegin=0, eEnd=_elements.size();
+	int sBegin=0, sEnd=_contractionElements.size();
+
+#ifdef WITH_MPI
+	MPE_Decomp1d( _elements.size(), _nProcessors, _processorRank,
+			&eBegin, &eEnd );
+	eBegin--;
+	MPE_Decomp1d( _contractionElements.size(), _nProcessors, _processorRank,
+			&sBegin, &sEnd );
+	sBegin--;
+#endif
+
+	// Initialize energy and forces
+	if(f0) _energy = 0.0;
+	if(f1) {
+		for(NodeIterator n=_nodes.begin(); n!=_nodes.end(); n++)
+		for(int i=0; i<(*n)->dof(); i++)
+		(*n)->setForce(i,0.0);
+	}
+	// Need to zero out stiffness too!!!!!!!!!!
+
+	// compute energy, forces and stiffness matrix in each element
+	// loop through all elements
+#ifdef _OPENMP	
+#pragma omp parallel for 		\
+  schedule(static) default(shared) 
+#endif	
+	for(int ei=eBegin; ei<eEnd; ei++) {
+		//_capsidElements[ei]->setElementNum( ei );
+		_elements[ei]->compute( f0, f1, f2);
+	}
+
+	if(f0) {
+		// #ifdef _OPENMP	
+		// #pragma omp parallel for
+		// #endif	
+		for(int ei=eBegin; ei<eEnd; ei++) {
+			Element* e=_elements[ei];
+			_energy += e->energy();
+		}
+		// #ifdef WITH_MPI
+		//       double myEnergy=_energy;
+		//       MPI_Allreduce(&myEnergy, &_energy, 1, MPI_DOUBLE, 
+		// 		    MPI_SUM, MPI_COMM_WORLD);
+		// #endif 
+	}
+
+	// #ifdef WITH_MPI
+	//     if(f1) {
+	//       for(NodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) 
+	// 	for(int i=0; i<(*n)->dof(); i++) {
+	// 	  double force = 0.0;
+	// 	  double myForce = (*n)->getForce(i); 
+	// 	  MPI_Allreduce(&myForce, &force, 1, MPI_DOUBLE, 
+	// 			MPI_SUM, MPI_COMM_WORLD);
+	// 	  (*n)->setForce(i,force);
+	// 	}
+	//     }
+	// #endif
+
+	// Predictor/corrector approach for contact
+	
+	return;
+}
+
+
+} // namespace voom

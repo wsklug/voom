@@ -1,0 +1,2 @@
+0.075 -1.0e-3  1.0e+2 1.0e+1 1.0e-3    1.0e5 1.0e-6 500		1.0	1.0
+KC     KG       mu    KS     viscosity k2    tolV   maxIterV	Vfactor	Afactor

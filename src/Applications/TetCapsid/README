@@ -1,0 +1,86 @@
+APPLICATION:  tetCapsid-lbfgsb
+
+USE:  Three-dimensional, linear tetrahedral mesh is read in as input to this 
+program, which imposes a one-dimensional, "indentation"-like deformation.  The 
+material is hyperelastic, using a compressible neo-Hookean formulation.  The 
+solver used for this application is L-BFGS-B. 
+
+CALL: Using executable run file, which is in the application directory, the 
+program is run.  Text of run file must be changed to reflect the user's needs. 
+Example run file:  
+
+ ./tetCapsid_lbfgsb CCMVMesh0227071 -c yes -H 20 -b no
+
+Where CCMVMesh0227071.vtk is the VTK file containing the linear tetrahedral 
+mesh to be read in.  .vtk extension is added during the running of the program,
+so be sure to leave off in run file or command line execution.
+
+There are several flags that determine what the program will do.
+
+1) c:  yes/no.  If yes, the boolean compressFlag is set to be true, meaning 
+indentation will be performed.  If no, compressFlag is set to be false, no 
+deformation will be imposed.
+
+2) H: double value, must be positive.  This value is the FINAL height of the 
+object being indented.
+
+3) b: yes/no.  If yes, the boolean boundaryConditionFlag is set to be true, 
+meaning boundary conditions will be imposed.  Boundary conditions are used to
+contstrain apices of the structure, such that no movement is allowed in the
+x, y, and z directions for those two points.  
+
+4) R: restart file name must be added.  Use this flag if restart is desired.
+Restart file is a .vtk file that has displacement of nodes, and this 
+displacement is used to reset the nodal Point values, where Position contains
+the reference configuration.  ONE IMPORTANT THING TO KNOW IS THAT UPON RUNNING,
+THE NUMBER OF STEPS (DISCUSSED BELOW) SHOULD BE ALTERED TO REFLECT THE NUMBER
+OF STEPS THAT WERE COMPLETED.  Without altering the number of steps, the step
+size will decrease, reflecting that the final height is the same, while the 
+'initial' height is lower due to partial completion.
+
+INPUT FILES:  There are several input files that must exist in the directory
+where the program exists.
+
+1) parameters.inp:  Contains ten pieces of data necessary for the program to
+run.  These variables represnet material and basic program information.
+
+	E (double) - Young's modulus, where units should be consistent with
+		input length/force units.  For instance, if structure has
+		length units of nm, there is a one-to-one conversion between
+		MPa and pN/nm^2, such that a value of E=200 produces force
+		results with units of pN.
+	nu (double) - Poisson's ratio
+	viscosity (double) - A viscous regularizer is automatically added to 
+		the body, and helps to stabilize the structure for the solver.
+		If no viscosity is desired, set viscosity parameter to ZERO.
+		The higher the viscosity parameter, the more 'viscous' and 
+		damping is applied, which can add time to solving.
+	k1 (double) - Penalty coefficient if Augmented Lagrangian Contact is
+		used.
+	afmR (double) - The radius of the indenting AFM tip.  If a flat 
+		indenter is desired, set negative.
+	afmX (double) - X-coordinate where center of AFM tip should be placed 
+		(used in case center of mesh is not at 0.0).
+	afmY (double) - Y-coordinate where center of AFM tip should be placed 
+		(used in case center of mesh is not at 0.0).
+	f.c. (bool) - If 1, frictional contact will be applied between mesh
+		surfaces and AFM/plate surfaces.  Rough friction. 
+	steps (int) - Number of steps to break indentation into.  Step size = 
+		(Hin-Hfinal)/steps.
+	vrtol (double) - Tolerance for viscous regularizer.
+
+2) lbfgsb.inp:  Contains four variables necessary for L-BFGS-B solver.
+Description of these variables can be found in the Lbfgsb.h file in the Solver/
+directory.
+
+	iprint (int)
+	factr (double)
+	pgtol (double)
+	m (int)
+
+OUTPUT:  The result of this program is a series of output .vtk files that
+contain only reference configuration of mesh and displacement vectors.  If more
+information is desired, such as nodal forces, stresses, etc., the postProcess
+executable must be run with the correct .vtk filename substituted.
+
+Comman line example:  ./postProcess disp00.000000.vtk

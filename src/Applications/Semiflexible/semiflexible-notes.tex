@@ -1,0 +1,174 @@
+\documentclass[pre,floatfix,twocolumn]{revtex4}
+\usepackage{bm}
+\usepackage{array}
+\usepackage{color}
+
+%\newcommand{\bdchange}[1]{{#1}}
+%\newcommand{\bdchange}[1]{{ #1}}
+\def\mathR{\mathbb R}
+\def\viz{{\it viz.} }
+\def\eg{{\it e.g.} }
+\newcommand{\nabb}{{\bm{\nabla}}}
+\newcommand{\gtapprox}{{\raise.3ex\hbox{$>$\kern-.75em\lower1ex\hbox{$\sim$}}}}
+\newcommand{\keff}{k_{eff}}
+\newcommand{\lf}{\ell_f}
+\newcommand{\bfx}{{\bf x}}
+\newcommand{\kdist}{P_K}
+\newcommand{\shrmod}{K}
+\newcommand{\strmod}{\bar{K}}
+
+\def\goesto{\rightarrow}
+
+
+\usepackage[dvips]{epsfig}
+
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   Version 1
+%   8/9/2007
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{document}
+\author{M. Bai}
+\author{A.R. Missel}
+\author{A.J. Levine}
+\author{W.S. Klug}
+
+\affiliation{UCLA}
+
+\title{Notes on simulation of semiflexible polymer Brownian dynamics}
+
+
+\date{\today}
+
+\maketitle
+
+\section{Elastic energy and filament discretization}
+
+The elastic energy of each filament is composed of bending and stretching components.  For bending we assume small curvatures such that the bending energy is quadratic (i.e., the bending-moment vs. curvature relation is linear).  For stretching, we have two options: (a) to assume a Hookean (linear) stress strain relation, or (b) to coarse-grain the effects of short-length-scale fluctuations and adopt a nonlinear entropic elasticity model for the stretch energy.
+
+\subsection{Bending}
+
+In the limit of continuum beam theory, the bending energy of an initially straight beam is given as
+
+\[
+F_\text{bend} = \int_\Gamma \frac{\kappa}{2} \Big(\frac{1}{R}\Big)^2 ds
+\]
+where $R$ is the radius of curvature along the filament contour $\Gamma$ parameterized by arclength $s$, and $\kappa$ is the bending modulus given in terms of the persistance length $\xi_p$ as
+\[
+\kappa = \xi_p k_B T .
+\]
+In continuum beam theory, the configuration of the beam at time $t$ would be described by a position map
+\[
+\vec{r}(s,t)
+\]
+such that the tangent to the curve is 
+\[
+\hat{n}(s,t) = \frac{\partial}{\partial s} \vec{r}(s,t) \equiv \vec{r}_{,s}(s,t) 
+\]
+from which the curvature can be computed as 
+\[
+1/R = |\hat{n}_{,s}| = |\vec{r}_{,ss}| .
+\]
+To simulate the dynamics, we discretize the beam into a set of straight rod segments 
+\[
+\Gamma = \bigcup_{n=1}^{N-1} \Gamma_n
+\]
+with each segment linearly interpolating the positon between (i.e., connecting) two adjacent nodes $\vec{x}_n$ and $\vec{x}_{n+1}$, such that the tangent vector for segment $\Gamma_n$ is
+\[
+\hat{n}_n = \frac{\vec{x}_{n+1} - \vec{x}_n}{\ell_n} 
+\]
+where
+\[
+\ell_n = |{\vec{x}_{n+1} - \vec{x}_n}| .
+\]
+A discrete curvature at each node can be defined in the finite difference sense as
+\[
+1/R_n = |\hat{n}_n-\hat{n}_{n-1}|/\ell .
+\]
+(Here we can define $\ell$ as an average of the neighboring segment lengths, or simply as a fixed characteristic segment length.  The latter is advantageous for when we later wish to differentiate the discrete curvature with respect to nodal position.)
+
+A straightforward calculation shows that 
+\[
+(1/R_n)^2 = 2 (1-\hat{n}_{n-1}\cdot\hat{n}_n)/\ell^2
+\]
+from which we can define a discrete nodal bending energy as
+\[
+F_\text{bend}^n = \frac{\kappa}{2} (1/R_n)^2 \ell =  k_\text{bend} (1-\hat{n}_{n-1}\cdot\hat{n}_n)
+\]
+where 
+\[
+k_\text{bend}  = \kappa /\ell
+\]
+is the discrete bending modulus.  Note also that expanding the nodal bending energy in terms of the nodal positions gives
+\[
+F_\text{bend}^n =  k_\text{bend} \Big(1+\frac{\vec{x}_{n-1}-\vec{x}_n}{|\vec{x}_{n-1}-\vec{x}_n|}\cdot\frac{\vec{x}_{n+1}-\vec{x}_n}{|\vec{x}_{n+1}-\vec{x}_n|}\Big)
+\]
+from which the following derivatives can be computed
+\begin{eqnarray*}
+\frac{\partial F_\text{bend}^n }{\partial x_{n-1}} &=& [ \hat{n}_{n} - (\hat{n}_{n}\cdot\hat{n}_{n-1})\hat{n}_{n-1}] /{\ell_{n-1}}\\
+\frac{\partial F_\text{bend}^n }{\partial x_{n+1}} &=& [ (\hat{n}_{n}\cdot\hat{n}_{n-1})\hat{n}_{n}-\hat{n}_{n-1} ] /  {\ell_{n}} \\
+\frac{\partial F_\text{bend}^n }{\partial x_{n}} &=& - \frac{\partial F_\text{bend}^n }{\partial x_{n-1}} - \frac{\partial F_\text{bend}^n }{\partial x_{n+1}} .
+\end{eqnarray*}
+
+\subsection{Stretching}
+\subsubsection{Hookean Elasticity}
+Here we neglect the continuum limit up front and simply treat each rod segment as a linear Hookean spring, giving a total filament stretching energy which is a sum of element energies
+\[
+F_\text{stretch}^e = \frac{k_\text{stretch}}{2} (\ell_e - L_e )^2 , \quad e=1,\dots,N-1
+\]
+where the segment length $\ell_e$ is defined as above, and $L_e$ denotes the reference (unstretched) segment length.  From this definition it is straightforward to derive the internal ``spring'' forces of the two nodes connected to element $e$, having node IDs $e$ and $e+1$
+\[
+\frac{}{}
+\]
+
+\subsubsection{Entropic Elasticity}
+A more thorough treatment of the actin gel's elastic properties involves taking into account the so-called \emph{entropic elasticity} of the filaments/rods; that is, the resistance of the filaments to bending/stretching due to entropy.  As an example of this, consider a filament of arclength $L_{\text{arc}}$.  At finite temperature $T$, it will deform and wiggle due to thermal noise, resulting in a mean end-to-end filament distance of $L_{0}(L_{\text{arc}})$.  If one tries to stretch the filament beyond this length (thus lowering its elastic energy), one will encounter resistance due to entropy.  
+
+MacKintosh \emph{et. al} first discussed this feature of actin filaments [citation needed] and derived a transcendental equation for the end-to-end filament distance $L$ as a function of applied tension $\tau$ (or, as in the present case, the tension in the filament as a function of end-to-end distance).  This relation is given by
+\[
+L_{\text{arc}}-L = \frac{k_{B}T}{2\tau(L)}\left[\sqrt{\frac{\tau(L)}{\kappa}}\,L\,\coth\left(\sqrt{\frac{\tau(L)}{\kappa}}\,L\right)-1\right],
+\]
+where $\kappa$ is the bending modulus of the filament.  It is easier to work in dimensionless units; dividing each side by the persistence length $L_{p} \equiv \kappa/k_{B}T$ leads to the following equation for the dimensionless variable $x \equiv L/L_{p}$:
+\[
+x_{\text{arc}}-x = \frac{1}{2\phi(x)}\left[x\sqrt{\phi(x)}\,\coth\left(x\sqrt{\phi(x)}\right)-1\right],
+\]
+where $\phi(x) \equiv \tau(L_px)\,{L_{p}}^2/\kappa$.  The function $\phi(x)$ has a few important features of note: it diverges like $(x_{\text{arc}}-x)^{-2}$ as $x\to x_{\text{arc}}$; it diverges like $x^{-2}$ as $x\to0$; and it goes as $a(x-x_{0})$ near the equilibrium length $x_{0}$.  Thus, so long as the filaments are subject to small deformations, the Hookean spring approximation of the previous section should be sufficient.  However, since it is precisely the nonlinear behavior of the gel that we are interested in, we need to go beyond this approximation and calculate the tension using the above equation.
+
+Since it is quite computationally inefficient to solve this transcendental equation for each rod at each simulation time step, it is necessary to find a proper fitting function for $\phi(x)$ (and thus for $\tau(L)$).  For a given value of $x_{\text{arc}}$ (and thus $x_{0}$), there exists a Taylor expansion for $\phi(x)$ around $x_{0}$ given by
+\[
+\phi(x) = \sum_{n=1}^{\infty}\frac{c_{n}(x_{0})}{n!}\,(x-x_{0})^n.
+\]
+Due to the singularities in $\phi(x)$, this series converges very slowly; a Pad\'{e} approximant works much better, but must be taken to high order to work for large tension.  We have found two approaches to fit this function: the first is an ad hoc approach inspired by Pad\'{e} which involves using two different fitting functions, one for $x<x_{0}$ and one for $x\ge x_{0}$.  The fit function $\phi_{\text{fit}}$ for $x\ge x_0$ has the form
+\[
+\phi_{\text{fit}}(x) = \frac{1}{(x_{\text{arc}}-x)^2}\,\sum_{n=1}^{N}\frac{a_{n}}{n!}(x-x_{0})^n,
+\]
+where the coefficients $a_n$ are determined by matching the first $N$ derivatives of $\phi_{\text{fit}}(x)$ with the first $N$ derivatives of $\phi(x)$ at $x=x_0$.
+
+For $x<x_0$ the fit function has the form
+\[
+\phi_{\text{fit}}(x) = \frac{\pi^2}{x^2}\left[\frac{P_{m}(x)}{Q_{n}(x)}-1\right],
+\]
+where $P_{m}(x)$ and $Q_{n}(x)$ are polynomials of order $m$ and $n$, respectively.  Both $P_{m}(x)$ and $Q_{n}(x)$ are equal to $1$ at $x=x_0$.  The above equation can be rearranged to give
+\[
+\frac{P_{m}(x)}{Q_{n}(x)} = 1 + \frac{x^2}{\pi^2}\phi_{\text{fit}}(x);
+\]
+if we force the first $N=m+n$ derivatives of $\phi_{\text{fit}}(x)$ to match those of $\phi(x)$, then $P_{m}(x)/Q_{n}(x)$ is simply the Pad\'{e} approximant to the function $1 + x^2\phi(x)/\pi^2$.
+
+In order to determine the coefficients in these functions for a given $m$ and $n$, we used the usual method of determining Pad\'{e} coefficients given a Taylor series.  We found that the $m=3$, $n=4$ Pad\'{e} approximant worked best to fit $\phi(x)$ over the full range of $x$ values \footnote{It should be noted that we only used the first five terms of the Taylor series for $\phi(x)$, rather than the first seven.  The multiplication by $x^2$ allowed for a Pad\'{e} approximant of order $m+n=7$ to be used despite only using the first five terms of the Taylor expansion.}.  For both $x\ge x_0$, the energy of the filament was determined by simply integrating the fit function; for $x<x_0$, the energy of the filament was determined by finding a Pad\'{e} approximant to $1-x\phi_{\text{fit}}(x)/\pi^2$.
+
+The second approach involves using a fit function of the form
+\[
+\phi_{\text{fit}}(x) = \sum_{n=1}^{N}\frac{a_{n}}{n!}(x-x_0)^n + \frac{b(x-x_0)}{(x_{\text{arc}}-x)^2}
+\]
+and matching the first $N$ derivatives of $\phi(x)$ ($b$ is fixed by matching the constant in front of the leading divergence of $\phi(x)$).  This function provides a good fit for positive tension (tensile load), but not for negative tension (compressive load).
+\section{Constants and dimensions}
+\end{document}
+
+
+
+

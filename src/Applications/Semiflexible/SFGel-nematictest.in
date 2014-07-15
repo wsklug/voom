@@ -1,0 +1,69 @@
+# This is an input file for the SemiflexibleGel nematictest application.  To run the application, pass the name of this file to nematictest.
+# Note that all lines beginning with a '#' will be ignored.
+# PLEASE DO NOT MODIFY ANYTHING SAVE FOR LEADING `#`s AND NUMERICAL VALUES.
+
+#Parameter	Description		Value		Units
+
+#First up are system parameters.
+L_p		Persistence length	17.0		microns
+#kC		Bending modulus		?		pN-microns^2
+kT		Temperature		4.1e-3		pN-microns
+visc		Viscosity		0.0		?
+dt		Time step		1.0e-6		seconds	
+kcl		Crosslink spring const.	-1.0		pN/microns
+l_B		Bend/stretch mod. ratio	.012		microns	
+L		Filament length		2.0		microns 
+L/l_C		Fil./clink length ratio	25.0		no units
+FilDens		Density of filaments	9.38893		microns^-2
+Wx/L		System width, x direct.	10.0		no units
+Wy/L		System width, y direct.	10.0		no units
+#F_max		Max. force on filaments	1.0e2		pN
+#fitOrder	Order of force-ext fit	3		no units
+Prestress	Prestress gel, T/F	0		no units
+RelaxPrestress	Relax prestress, T/F	0		no units
+#MaxPrestress	Max. energy/clink in kT	100.0		no units
+NodesPerCL	Nodes in between clinks	3.0		no units
+CutOffEnds	Cut off dang. ends, T/F	0		no units
+Zero_Return	Whether to shake system	0		no units
+NematicOP	Nematic order parameter	0.0		no units
+NemPDF_type	PDF for filament angles	Gaussian	no units
+NemPDF_param	Parameter for PDF	0.0		no units
+
+# The following parameters pertain to adaptive meshing
+AdaptiveMesh	Adaptively mesh, T/F	1		no units
+# Possible values for ShortSegRelief are Delete, Collapse, or Stretch
+ShortSegRelief	Short seg. removal	Delete		no units
+TargetSegLength	Desired node sep.	0.035		microns
+MinSegLength	Smallest node sep.	0.003		microns
+
+#Now come parameters having to do with using saved gels.
+Retrieve_Gel	Retrieve gel, T/F	0		no units
+#NOTE THAT SETTING Retrieve_Gel TO 1 MAKES MOST OTHER SETTINGS IRRELEVANT
+GelFileName	Name of gel file	gel-L=2.000000-l_C=0.080000-dL=-1.000000-Wx=20.000000-Wy=20.000000-kcl=-1.000000-S=0.000000-gelnum=21.gelsave		no units
+GelDirectory	Gel library path	./GelLibrary/		no units
+
+#Now come flags for performing various tests
+#Affine_test	Do affinity test, T/F	0		no units
+#Affine_method	Affine measure to use	Head		no units
+#Affine_shear	Shear for affine test	0.02		no units
+#Affine_space	Space between data pts.	0.06		no units
+#Affine_min	Minimum r/L to measure	0.03		no units
+#Affine_max	Maximum r/L to measure	1.3		no units
+#Affine_tol	Tol. for node pr. dist.	5.0e-4		no units	
+#Affine_gels	Num. of gels to avg.	1		no units
+
+ShearXTest	Whether to shear in X	1		no units
+ShearYTest	Whether to shear in Y	0		no units
+Shear_final	Final value of shear	0.02		no units
+Shear_size	Size of shear steps	0.0025		no units
+
+ExpXYTest	Whether to expand	0		no units
+Expand_final	Final expansion ratio	1.02		no units
+Expand_steps	Number of exp. steps	8		no units
+
+ExpXTest	Whether to stretch in X	0		no units
+ExpYTest	Whether to stretch in Y	0		no units
+Stretch_final	Final stretch ratio	1.02		no units
+Stretch_steps	Number of stretch steps	8		no units
+
+WriteStates	Whether to output vtk	0		no units

@@ -1,0 +1,2 @@
+2.0e2   0.4    0.0      1.0e4    20.0  	0.0	0.0	1   	100	1.0e-6	
+ E      nu    viscosity   k1     afmR  	afmX	afmY	f.c.  	steps  vrtol

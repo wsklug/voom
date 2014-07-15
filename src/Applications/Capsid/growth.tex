@@ -1,0 +1,465 @@
+\documentclass[
+pre,
+%%preprint,
+ twocolumn,
+%% showpacs,
+%% preprintnumbers,
+amsmath,
+amssymb
+]{revtex4}
+%\documentclass[preprint,showpacs,preprintnumbers,amsmath,amssymb]{revtex4}
+
+\usepackage{times}
+\usepackage{graphicx}% Include figure files
+\usepackage{dcolumn}% Align table columns on decimal point
+\usepackage{bm}% bold math
+\usepackage{color}
+\usepackage{subfigure}
+
+%% \graphicspath{{./fig/}}
+
+%\nofiles
+
+\begin{document}
+
+\title{An elastic model for growth of spherical and icosahedral viruses}
+
+\author{William S. Klug}
+\email{klug@ucla.edu}
+\affiliation{%
+Department of Mechanical and Aerospace Engineering,
+University of California Los Angeles,
+Los Angeles, CA 90095-1597 USA
+}%
+
+\date{\today}
+
+\begin{abstract}
+
+
+%% Valid PACS numbers may be entered using the \verb+\pacs{#1}+ command.
+\end{abstract}
+
+%% \pacs{Valid PACS appear here}% PACS, the Physics and Astronomy
+%%                              % Classification Scheme.
+
+%%\keywords{Suggested keywords}%Use showkeys class option if keyword
+                              %display desired
+\maketitle
+
+%%
+%%--------------------------------------------------------------------
+%%
+\section{Introduction} 
+%%
+%%--------------------------------------------------------------------
+%%
+Here I outline a model, in the style of a Ginzbug-Landau theory, for the growth of an elastic shell onto the surface of a sphere.  Consider a flat, unstressed patch of a thin elastic sheet occupying domain $\bar{\Omega}\subset \mathbb{R}^3$, with boundary $\partial\bar{\Omega}$, with material particles described by reference position $\bar{\bm{x}}\in\bar{\Omega}$.  Physically, this patch is taken to represent the nucleation of a growing capsid shell, for which the capsid proteins are naturally uncurved so that  they form a natural hexahedral tiling of the 2-D plane.  Now let us imagine wrapping this patch onto the surface of a sphere of radius $R$, which I'll denote by $S^2_R\subset\mathbb{R}^3$.  The wrapping is described explicitly in terms of a deformation mapping 
+\[
+\bm{\varphi}(\bar{\bm{x}}):\bar{\Omega}\to S^2_R
+\]
+that gives the deformed positions of the material particles as $\bm{x} = \bm{\varphi}(\bar{\bm{x}})$.  The deformed configuration of the sheet now covers a portion of the sphere, denoted $\Omega\equiv \bm{\varphi}(\bar{\Omega})\subset S^2_R$.   For a given reference configuration $\bar{\Omega}$, the elastic energy can be minimized subject to the constraint that the sheet is wrapped onto the sphere, $\bm{x}=\bm{\varphi}(\bar{\bm{x}})\in S^2_R$.  When wrapping the sphere with a circular reference patch, it is intuitively apparent that compressive in-plane strains will persist toward the boundary and tensile strains toward the center.  For more complex patch shapes, it is less clear how the material will be strained.  
+
+We hypothesize that during the process of capsid growth, material will be added to the reference configuration $\bar{\Omega}$ in such a way as to minimize the rate of increase in elastic energy.  In other words, we suppose that grow faster at points on the boundary of the reference configuration $\partial\bar{\Omega}$ where elastic energy is lower, and slower at points where it is higher.  The model presented here is designed as a quantitative test of this hypothesis.
+
+%%
+%%--------------------------------------------------------------------
+%%
+
+%%
+%%--------------------------------------------------------------------
+%%
+\section{A diffuse boundary model}
+%%
+%%--------------------------------------------------------------------
+%%
+The strain energy of the shell is the sum of two
+contributions, one arising from bending of the surface, and the second
+resulting from inplane stretching \citep{LandauLifshitz,Timoshenko}.  Since we are forcing the sheet to wrap onto a sphere, the bending energy density is a constant term proportional to $1/R^2$ and maybe neglected.
+%
+The energy of stretching is described in terms of the two-dimensional
+Green Strain tensor with covariant components
+\begin{equation}
+E_{\alpha\beta} = \frac{1}{2}(a_{\alpha\beta} -
+\bar{a}_{\alpha\beta}) ,
+\end{equation}
+where $a_{\alpha\beta}$ and $\bar{a}_{\alpha\beta}$ are deformed and reference surface metrics with respect to a generic set of curvelinear coordinates parametrizing the configurations of the sheet as $\bm{x}(s^1,s^2)$ and $\bar{\bm{x}}(s^1,s^2)$.  The simplest and lowest order (i.e.,
+isotropic and linear) stress-strain relations lead to a strain energy
+of the form
+\begin{equation}\label{eq:strainEnergy}
+\mathcal{F}_E = \int_{\bar{\Omega}} \frac{1}{2}%
+  \left[
+    2\mu_0 E^{\alpha\beta}E_{\alpha\beta} + \lambda_0 (E^\alpha_\alpha)^2
+  \right]
+  d\bar{S} ,
+\end{equation}
+where $\lambda_0$ and $\mu_0$ are the two-dimensional Lam\'e constants,
+given in terms of the 2-D Young's modulus $E$ and Poisson's ratio
+$\nu$ as
+\[
+\lambda_0 = \frac{E\nu}{(1-\nu^2)} , \qquad \mu_0 = \frac{E}{2(1+\nu)} .
+\]
+%
+
+To sidestep the difficulties of explicitly parameterizing the reference domain  --- the growth of which is one of the key unknowns for which we wish to solve --- we describe $\bar{\Omega}$ implicitly through the use of an indicator field 
+\[
+\rho(\bar{\bm{x}}):\mathbb{R}^2\to[0,1] ,
+\]
+which can be taken to represent a normalized material density function, with $\rho=1$ representing regions containing material particles at their unstressed density, and $\rho=0$ representing regions containing no material particles.  Thus, the reference configuration is defined implicitly as
+\[
+\bar{\Omega} = \{\bar{\bm{x}}\in\mathbb{R}^2 \ | \ \rho(\bar{\bm{x}}) > 0 \} .
+\]
+This gives a natural definition of the area of the reference configuration of the sheet as
+\[
+A(\bar{\Omega}) = \int_{\mathbb{R}^2} \rho d\bar{S} .
+\]
+Additionally, we now write the elastic energy as
+\begin{equation}\label{eq:strainEnergyGL}
+\mathcal{F}_E = \int_{\mathbb{R}^2} \rho \frac{1}{2}%
+ \left[
+    2\mu_0 E^{\alpha\beta}E_{\alpha\beta} + \lambda_0 (E^\alpha_\alpha)^2
+  \right]
+  d\bar{S} .
+\end{equation}
+%
+Furthermore, to force the indicator field to be either 0 or 1 almost everywhere, we add a double well GL potential $g(\rho)$ with minima at 0 and 1, and we penalize gradients in the indicator field, i.e., 
+\begin{equation}\label{eq:GLEnergy}
+\mathcal{F}_{GL} = \int_{\mathbb{R}^2} \Big[ g(\rho) + \frac{\Gamma}{2} (\bar{a}^{\alpha\beta}\rho_{,\alpha}\rho_{,\beta}) \Big]
+  d\bar{S} .
+\end{equation}
+Note that the indicator gradient term will produce an effective line tension proportional to the length of the boundary of $\partial\bar{\Omega}$, defined as the region where $\rho$ transitions from 1 to 0.
+%
+Lastly, to model growth of the sheet we add a term proportional to the reference area
+\begin{equation}\label{eq:chemicalPotential}
+\mathcal{F}_{A} = -\int_{\mathbb{R}^2} \mu_A \rho \ d\bar{S} ,
+\end{equation}
+where $\mu_A$ is the chemical potential per unit area for adding new material particles to the sheet.  The total free energy is then a summation of all of the above terms
+\[
+\mathcal{F} = \mathcal{F}_E + \mathcal{F}_{GL} + \mathcal{F}_A
+\]
+
+To model growth of a capsid at constant chemical potential, we evolve the deformation map and indicator functions according to gradient flow as
+\begin{subequations}\label{eq:flow}
+\begin{eqnarray}
+ C^\varphi \frac{\partial \bm{\varphi}}{\partial t} &=& - \frac{\delta \mathcal{F}}{\delta \bm{\varphi}} \\
+C^\rho \frac{\partial \rho}{\partial t} &=& -  \frac{\delta \mathcal{F}}{\delta \rho} ,
+\end{eqnarray}
+\end{subequations}
+where kinetic coefficients $C^\varphi$ and $C^\rho$ maybe adjusted independently to model varying the rate of growth relative to the rate of stress relaxation.  These equations are the typical Allen-Cahn type for modeling the kinetics of a diffuse interface for a non-conserved order-parameter.
+
+\subsection{GL Energy and Line Tension} 
+The diffuse interface between where the indicator field transitions from $\rho=0$ to $\rho=1$ obtained from minimizing the total energy is characterized by an energy per unit length, or line tension, $\tau$,
+\[
+\tau = \sqrt{ \Gamma \Delta g} ,
+\]
+where $\Delta g$ is a measure of the barrier height of the GL potential $g(\rho)$.  The characteristic width of the interface is
+\[
+\xi = \sqrt{\Gamma / \Delta g} . 
+\]
+To set an expected range for parameters $\Delta g$ and $\Gamma$, we assume an interface width on the order of the size of an individual protein
+\[
+\xi \approx 1-2 \text{nm}
+\]
+and a barrier height of roughly a few $k_BT$ per protein
+\[
+\Delta g \approx 1-10 \frac{k_BT}{\pi \xi^2} \approx 0.1-10\frac{k_B T}{\text{nm}^2} .
+\]
+From these we obtain
+\[
+\tau/\xi = \Delta g
+\]
+%%
+%%--------------------------------------------------------------------
+%%
+\subsection{Kinetic coefficients}\label{sec:kinetics} %
+%%
+%%--------------------------------------------------------------------
+%%
+The simplest choice for modeling the kinetics of the two fields $\bm{\varphi}$ and $\rho$ is to set their kinetic coefficients to be constants.  However, we would like to also explore the effect of varying the rate of evolution of the deformation field in the ordered (near $\rho=1$) and disordered (near $\rho=0$) regions.  To achieve this, we may consider a generic power-series expansion for the corresponding kinetic coefficient
+\[
+C^\varphi:=\sum_{i=0}^n C^{\varphi,i}\rho^i .
+\]
+In particular, we consider the linear ($n=1$) case
+\[
+C^\varphi = C^{\varphi,0} + C^{\varphi,1} \rho .
+\]
+Physical intuition suggests $C^{\varphi,0}\ge 0$, with equality implying complete relaxation of the strain field in the disordered state where $\rho=0$.  Likewise, it seems reasonable to choose $C^{\varphi,1}\ge 0$, such that the deformation is allowed to relax slower in the ordered state, allowing strain to be ``locked in'' during growth.
+
+%%
+%%--------------------------------------------------------------------
+%%
+\section{\label{sec:FEM}Finite element formulation}
+%%
+%%--------------------------------------------------------------------
+%%
+
+Following the standard weighted residual approach, we derive the weak form functional, with arbitrary admissible weight or test functions $\delta\bm{\varphi}$ and $\delta\rho$
+\begin{multline}
+G[\bm{\varphi},\rho;\delta\bm{\varphi},\delta\rho] := \\ 
+\int_{\mathbb{R}^2} 
+\left[
+C^\varphi\frac{\partial\bm{\varphi}}{\partial t} + \frac{\delta \mathcal{F}}{\delta\bm{\varphi}} 
+\right]\cdot\delta\bm{\varphi} 
+d\bar{S} 
++ \int_{\mathbb{R}^2} 
+\left[
+C^\rho\frac{\partial\rho}{\partial t} + \frac{\delta \mathcal{F}}{\delta\rho}
+\right] \delta\rho
+d\bar{S} \\
+ = \int_{\mathbb{R}^2} 
+\left[
+C^\varphi\frac{\partial\bm{\varphi}}{\partial t}\cdot\delta\bm{\varphi}  +
+C^\rho\frac{\partial\rho}{\partial t} \delta\rho 
+\right]
+d\bar{S} + \delta\mathcal{F}
+\end{multline}
+The weak form of the BVP follows by demanding that the trial functions $(\bm{\varphi},\rho)$ satisfy $G[\bm{\varphi},\rho;\delta\bm{\varphi},\delta\rho]=0$ for all admissible test functions  $(\delta\bm{\varphi},\delta\rho)$.
+
+We next discretize the 2-D domain into a mesh of polygonal subdomains
+(finite elements), defining the reference position map over each of these elements
+by piecewise polynomial interpolation among a set of nodal points $\{\bar{\bm{x}}_a, a=1,\dots,N\}$ as
+\begin{equation}\label{eq:referenceInterpolation}
+  \bar{\bm{x}}(s^1,s^2) = \sum_{a=1}^\mathcal{N}{\bar{\bm{x}}_{a} N_{a}(s^{1},s^{2}) } ,
+\end{equation}
+where the piecewise polynomial functions
+$N_a(s^1,s^2)$ (shape functions) combine to form a globally $C^0$
+conforming position map.  
+%
+We adopt an isoparametric formulation in which the deformation map and the indicator field are interpolated using these same shape functions, among deformed nodal positions $\bm{x}_a$ and nodal indicator values $\rho_a$,
+\begin{equation}\label{eq:deformedInterpolation}
+  \bm{x}(s^1,s^2) = \bm{\varphi}(\bar{\bm{x}}) = \sum_{a=1}^\mathcal{N}{\bm{x}_{a} N_{a}(s^{1},s^{2}) } , 
+\end{equation}
+%
+\begin{equation}\label{eq:indicatorInterpolation}
+  \rho(s^1,s^2) = \sum_{a=1}^\mathcal{N}{\rho_a N_{a}(s^{1},s^{2}) } .
+\end{equation}
+Likewise, following the Galerkin appoach, we use the same interpolation for the test functions
+\begin{equation}
+  \delta\bm{\varphi} = \sum_{a=1}^\mathcal{N}{\delta\bm{x}_{a} N_{a} } , \quad
+  \delta\rho = \sum_{a=1}^\mathcal{N}{\delta\rho_a N_{a} } ,
+\end{equation}
+%
+with arbitrary nodal weights  $\delta\bm{x}_a$ and $\delta\rho_a$.
+
+Insertion of these interpolation equations into the weak form gives a set of semi-discrete Allen-Cahn time-evolution equations for the nodal variables
+\begin{subequations}\label{eq:FEflow}
+\begin{eqnarray}
+\sum_{b=1}^N C^\varphi_{ab}\dot{\bm{x}}_b &=& -  \frac{\partial \mathcal{F}}{\partial \bm{x}_a} \\
+\sum_{b=1}^N C^\rho_{ab}\dot{\rho_b} &=& - \frac{\partial \mathcal{F}}{\partial \rho_a} ,
+\end{eqnarray}
+\end{subequations}
+The terms on the right hand sided can be interpreted as nodal internal forces and nodal chemical potentials, and are given explicitly as
+\begin{equation*}
+\bm{f}_{a} = \frac{\partial \mathcal{F}}{\partial \bm{x}_{a}} = \int \bm{n}^\alpha N_{a,\alpha} d\bar{S} 
+\end{equation*}
+\begin{equation*}
+\mu_{a} = \frac{\partial \mathcal{F}}{\partial \rho_{a}} = \int \mu N_a + \lambda^\alpha N_{a,\alpha} d\bar{S} 
+\end{equation*}
+where 
+\begin{equation}
+\bm{n}^\alpha = \sigma^{\alpha\beta}\bm{a}_\beta = \rho\big[2\mu_0 E^{\alpha\beta} + \lambda_0(\text{tr }\mathbf{E})\bar{a}^{\alpha\beta}\big]\bm{a}_\beta,
+\end{equation}
+are the stress resultants, and 
+\begin{eqnarray*}
+\mu &=& \frac{1}{2}%
+ \left[
+    2\mu_0 E^{\alpha\beta}E_{\alpha\beta} + \lambda_0 (E^\alpha_\alpha)^2
+ \right] 
++ g' - \mu_A \\
+\lambda^\alpha &=& \Gamma \bar{a}^{\alpha\beta}\rho_{,\beta} 
+\end{eqnarray*}
+are chemical potential resultants.
+%
+The terms on the left-hand side of eq.(\ref{eq:FEflow}) are interpreted as generalized ``drag'' forces, with 
+\[
+C^\varphi_{ab} = \int C^\varphi   N_a N_b \; d\bar{S}, \quad
+C^\rho_{ab} = \int C^\rho N_a N_b \; d\bar{S} 
+\]
+denoting the components of nodal ``drag'' matrices.  In practice, these may be approximated by row-sum lumping, $C^{(\cdot)}_{a}:=\sum_{b=1}^N C^{(\cdot)}_{ab}$, yielding a diagonal or decoupled system of nodal equations
+\begin{subequations}\label{eq:diagFEflow}
+\begin{eqnarray}
+C^\varphi_{a}\dot{\bm{x}}_a &=& -  \bm{f}_a \\
+C^\rho_{a}\dot{\rho}_a &=& - \mu_a \quad\text{(no sum on $a$)}.
+\end{eqnarray}
+\end{subequations}
+Note that because the finite-element shape functions form a partition of unity ($\sum_{b=1}^N N_b = 1$), the lumped nodal drags are simply
+\[
+C^\varphi_{a} = \int C^\varphi  N_a \; d\bar{S}, \quad
+C^\rho_{a} = \int C^\rho  N_a \; d\bar{S} 
+\]
+
+%%
+%%--------------------------------------------------------------------
+%%
+\section{Time integration}\label{sec:time} %
+%%
+%%--------------------------------------------------------------------
+%%
+To evolve the semi-discrete nodal equations in time, we construct a sequence of time steps $t^0, t^1, \dots$, with $t^{n+1}=t^n+\Delta t$.  The nodal field values at time step $t^n$ are denoted $\bm{x}_a^{(n)}$ and $\rho_a^{(n)}$.  To step from a solution at $t^n$ to $t^{n+1}$, we consider both explicit (forward) Euler and implicit (backward) Euler integration schemes.
+ 
+\textit{Explicit Scheme:} The Forward Euler approximation for time derivatives $ \dot{f}^{(n)} \to (f^{(n+1)}-f^{(n)})/\Delta t$
+yields
+\begin{eqnarray*}
+\sum_{b}C_{ab}^{\varphi}(t^{n})\frac{\bm{x}_b^{(n+1)}-\bm{x}_b^{(n)}}{\Delta t} &=& -\bm{f}_a(t^{n}) \\
+\sum_{b}C_{ab}^{\rho}(t^{n})\frac{\rho_b^{(n+1)}-\rho_b^{(n)}}{\Delta t} &=& -\mu_a(t^{n})  .
+\end{eqnarray*}
+%
+Writing the update explicitly,
+\begin{eqnarray*}
+\bm{x}_a^{(n+1)}&=&\bm{x}_a^{(n)} -\Delta t \sum_{b}\big[C_{ab}(t^{n}) \big]^{-1}\bm{f}_b(t^n) \\
+\rho_a^{(n+1)}&=&\rho_a^{(n)} - \Delta t \sum_{b}\big[C_{ab}(t^{n}) \big]^{-1}\mu_b(t^n)  
+\end{eqnarray*}
+This scheme is obviously most effiecient when diagonal or lumped drags are used.
+
+\textit{Semi-implicit Scheme:}  We insert the  Backward Euler approximation for time derivatives $ \dot{f}^{(n)} \to (f^{(n)}-f^{(n-1)})/\Delta t$ into the nodal equations while evaluating the drag matrices at the previous time-step, to yield
+\begin{eqnarray*}
+\sum_{b}C_{ab}^{\varphi}(t^{n})\frac{\bm{x}_b^{(n+1)}-\bm{x}_b^{(n)}}{\Delta t} &=& -\bm{f}_a(t^{n+1})  \\
+\sum_{b}C_{ab}^{\rho}(t^{n})\frac{\rho_b^{(n+1)}-\rho_b^{(n)}}{\Delta t} &=& -\mu_a(t^{n+1})  
+\end{eqnarray*}
+%
+which is a system of nonlinear equations that must be solved iteratively for the unknowns at $t^{n+1}$.  To facilitate the use of generic optimization solvers, it is helpful to note this is equivalent to minimizing the following function
+\begin{multline*}
+I(\bm{x}^{(n+1)},\rho^{(n+1)}) = \mathcal{F}(\bm{x}^{(n+1)},\rho^{(n+1)}) \\ 
++ \sum_{a,b}\frac{ C^\varphi_{ab}(t^{n})}{2\Delta t}\big[\bm{x}_a^{(n+1)}-\bm{x}_a^{(n)}\big]\cdot\big[\bm{x}_b^{(n+1)}-\bm{x}_b^{(n)}\big] \\
++ \sum_{a,b}\frac{ C^\rho_{ab}(t^{n})}{2\Delta t}\big[\rho_a^{(n+1)}-\rho_a^{(n)}\big]\big[\rho_b^{(n+1)}-\rho_b^{(n)}\big] .
+\end{multline*}
+\newpage
+%%
+%%--------------------------------------------------------------------
+%%
+\appendix
+%%
+%%--------------------------------------------------------------------
+%%
+
+%%
+%%--------------------------------------------------------------------
+%%
+\section{Kinematics of a curved surface}\label{sec:kinematics} %
+%%
+%%--------------------------------------------------------------------
+%%
+Details regarding the geometry of surfaces can be found in any of the
+standard texts on differential geometry (e.g., \citep{Sokolnikoff,
+DoCarmo}).  Here I review the essential relations necessary for
+development of the finite element approximation. 
+
+Let $\bar{\mathcal{S}}\subset\mathbb{R}^3$ represent a shell surface
+in a (stress-free) reference state, and
+$\mathcal{S}\subset\mathbb{R}^3$ the surface of the same shell in a
+deformed configuration.  Both of these may be parameterized by a set
+of curvilinear coordinates $\{s^{1}, s^{2}\}$, such that the position
+vector on the reference and deformed configurations is given by the
+maps $\bar{\bm{x}}(s^{1}, s^{2})$ and $\bm{x}(s^{1}, s^{2})$,
+respectively.  The (covariant) basis vectors corresponding to the
+curvilinear coordinates $(s^\alpha)$ on the reference and deformed
+surfaces are
+%
+%
+\begin{equation}\label{eq:basis-vector}
+  \bar{\bm{a}}_\alpha = \frac{\partial \bar{\bm{x}}}{\partial s^\alpha} 
+  \equiv \bar{\bm{x}}_{,\alpha} , \quad
+  \bm{a}_\alpha = \frac{\partial \bm{x}}{\partial s^\alpha} 
+  \equiv \bm{x}_{,\alpha} .
+\end{equation}
+%
+The summation convention is implied with Greek indices taking values
+of 1 and 2, and comma is used to denote partial differentiation with
+respect to the surface coordinates here as well as in the rest of this
+paper. Subsequent derivations deal only with the deformed
+configuration, it being understood that reference quantities with an
+overbar are analogous.  
+
+The dual (contravariant) basis vectors $\bm{a}^{\alpha}$ are defined
+such that $\bm{a}^{\alpha} \cdot \bm{a}_{\beta} =
+\delta_{\beta}^{\alpha}$.
+%
+%\begin{equation}
+%  \bm{a}^{\alpha} \cdot \bm{a}_{\beta} = \delta_{\beta}^{\alpha} ,
+%\end{equation}
+%
+The covariant and contravariant components of the surface metric
+tensor in turn follow as
+%
+\begin{equation}
+  a_{\alpha \beta} = \bm{a}_\alpha \cdot \bm{a}_\beta , \qquad
+  a^{\alpha \beta} = \bm{a}^\alpha \cdot \bm{a}^\beta ,
+\end{equation}
+respectively.
+%
+The infinitesimal element of area over the surface $\mathcal{S}$
+at point ($s^{1}, s^{2}$) is then
+%
+\begin{equation}
+  dA = \sqrt{a} \, ds^{1}ds^{2} \equiv \sqrt{a} d^{2}s ,
+\end{equation}
+%
+where $\sqrt{a}$ is the surface measure and $a$ is the determinant of
+the covariant metric tensor
+%
+%% \begin{equation}
+\(
+  a = | a_{\alpha\beta} | .
+\)
+%% \end{equation}
+%
+Two-dimensional strain is related to local length changes on the
+surface.  If $d\bar{\bm{x}}$ and $d\bm{x}$ are the vectors connecting
+two infinitesimally separated points on the surface, respectively
+before and after deformation, then the difference of the squares of their magnitudes can be written
+\begin{eqnarray*}
+ds^2 - d\bar{s}^2 &=& d\bm{x}\cdot d\bm{x} - d\bar{\bm{x}}\cdot d\bar{\bm{x}}\\
+ &=& (\bm{a}_\alpha ds^\alpha)\cdot(\bm{a}_\beta ds^\beta) 
+ - (\bar{\bm{a}}_\alpha ds^\alpha)\cdot(\bar{\bm{a}}_\beta ds^\beta)\\
+ &=& (a_{\alpha\beta} - \bar{a}_{\alpha\beta}) ds^\alpha ds^\beta\\
+ &=& 2 E_{\alpha\beta} ds^\alpha ds^\beta
+\end{eqnarray*}
+where $E_{\alpha\beta}$ are defined as the covariant components of the
+Green Strain tensor
+\begin{equation}
+\mathbf{E} = \frac{1}{2}(a_{\alpha\beta} -
+\bar{a}_{\alpha\beta})\bar{\bm{a}}^\alpha \otimes \bar{\bm{a}}^\beta .
+\end{equation}
+
+Bending of the shell is related to changes in the shell director, defined as the unit normal to the surface,
+%
+\begin{equation} 
+\bm{d} \equiv \bm{a}_{3} 
+= \frac{\bm{a}_1 \times \bm{a}_2}{|\bm{a}_1\times \bm{a}_2|} 
+= \frac{\bm{a}_1 \times \bm{a}_2}{\sqrt{a}} . 
+\end{equation}
+%
+The symmetric curvature tensor or shape operator $\mathbf{S}$ is
+defined having covariant components
+\begin{equation}\label{eq:curvature-tensor}
+  b_{\alpha\beta}  = -\bm{d}_{,\alpha}\cdot\bm{a}_{\beta} = \bm{d} \cdot \bm{a}_{\alpha,\beta} = b_{\beta\alpha}.
+\end{equation}
+Bending is most naturally described in terms of two invariants of the
+curvature tensor, the mean curvature and Gaussian curvature.  The mean
+curvature is one half of the trace of the curvature tensor
+\begin{equation}\label{eq:mean-curvature-1}
+  H = \frac{S}{2}; \quad S = \text{tr }\mathbf{S} =
+  b^{\alpha}_{\alpha} = -\bm{a}^{\alpha} \cdot
+  \bm{d}_{,\alpha} ,
+\end{equation}
+%or in terms of basis vectors
+%\begin{equation}\label{eq:mean-curvature-2}
+%  H = -\frac{1}{2}\bm{a}^{\alpha} \cdot \bm{d}_{,\alpha}
+%\end{equation}
+and the Gaussian curvature is the determinant of the curvature
+tensor
+\begin{equation}\label{eq:G-curvature}
+  K = \det\mathbf{S} = | b^{\alpha}_{\beta} | = \frac{b}{a} ,
+\end{equation}
+where $b = |b_{\alpha\beta}|$ is the determinant of the matrix of
+covariant curvature components.
+
+
+\vfill
+
+%% \newpage %Just because of unusual number of tables stacked at end
+%% \bibliography{ref}% Produces the bibliography via BibTeX.
+
+\end{document}
+%
+% ****** End of file apssamp.tex ******

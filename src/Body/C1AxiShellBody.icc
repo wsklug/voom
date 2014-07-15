@@ -1,0 +1,495 @@
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                          William S. Klug
+//                University of California Los Angeles
+//                 (C) 2004-2008 All Rights Reserved
+//
+//----------------------------------------------------------------------
+
+/*! 
+  \file C1AxiShellBody.cc
+
+  \brief Implementation of the C1AxiShellBody class, corresponding to
+  the concept of a thin shell body.  The body is composed of
+  subdivision shell elements
+
+*/
+
+#include <string>
+#include <fstream>
+#include <ctime>
+#include <blitz/array-impl.h>
+
+#if defined(_OPENMP)
+#include <omp.h>
+#endif
+
+#ifdef WITH_MPI
+#include <mpe.h>
+#endif
+
+namespace voom
+{
+  using std::endl;
+  using std::cout;
+
+  template<class Material_t>
+  void C1AxiShellBody<Material_t>::initializeBody
+  (Material_t material,
+   ConnectivityContainer & connectivities,
+   const NodeContainer & nodes,
+   const unsigned quadOrder,
+   const double pressure,
+   const double tension,
+   const double totalCurvatureForce,
+   const double penaltyVolume,
+   const double penaltyArea,
+   const double penaltyTotalCurvature,
+   GlobalConstraint volumeConstraint,
+   GlobalConstraint areaConstraint,
+   GlobalConstraint totalCurvatureConstraint   ) {
+
+#ifdef WITH_MPI
+  MPI_Comm_size( MPI_COMM_WORLD, &_nProcessors );
+  MPI_Comm_rank( MPI_COMM_WORLD, &_processorRank );
+#endif
+
+  _output = paraview;
+
+    _penaltyArea = penaltyArea;
+    _penaltyVolume = penaltyVolume;
+    _penaltyTotalCurvature = penaltyTotalCurvature; 
+    _areaConstraint = areaConstraint;
+    _volumeConstraint = volumeConstraint;
+    _totalCurvatureConstraint = totalCurvatureConstraint;
+    _volume = 0.0;
+    _area = 0.0;
+    _totalCurvature = 0.0;
+	  
+    // initialize _nDOF and find shell (position) nodes
+
+    _dof = 0;
+    _nodes = nodes;
+    for(ConstNodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) {
+      _dof+=(*n)->dof();
+      FeNode_t * sn = dynamic_cast<FeNode_t*>(*n);
+      if( sn ) _shellNodes.push_back(sn); 
+    }
+        
+    _fixedPressure = pressure;
+    _fixedTension = tension;
+    _fixedTotalCurvatureForce = totalCurvatureForce;
+
+    NodeBase::DofIndexMap idx(1);
+    idx[0]=-1;
+    _pressureNode = new MultiplierNode(_nodes.size(), idx, pressure );
+
+    _tensionNode = new MultiplierNode(_nodes.size(), idx, tension );
+
+    _totalCurvatureNode = new MultiplierNode(_nodes.size(), idx, 
+					     totalCurvatureForce );
+    
+    std::cout << "C1AxiShellBody::initializeBody(): dof = "<< _dof 
+	      << std::endl;
+
+    //------------------------------------------------------------------------
+    // build elements using simple data structure
+    std::cout << "Building elements..." << std::endl;
+    clock_t t1=clock();
+
+    for(int f=0; f<connectivities.size(); f++) {
+      typename C1AxiShell<Material_t>::NodeContainer nds;
+      for(int I=0; I<4; I++) {	
+	nds.push_back( _shellNodes[connectivities[f](I)] );
+      }
+      FeElement_t * elem 
+	= new FeElement_t( LineQuadrature(quadOrder), 
+			   material,
+			   nds,
+			   _pressureNode,
+			   _tensionNode,
+			   _totalCurvatureNode
+			   );
+      _shells.push_back(elem);
+    }
+    _elements.reserve(_shells.size());
+    for(ConstFeElementIterator e=_shells.begin(); e!=_shells.end(); e++) {
+      _elements.push_back(*e);
+    }
+
+    clock_t t2=clock();
+    std::cout << "Done building elements.  Elapsed time: "
+	      << (double)(t2-t1)/CLOCKS_PER_SEC
+	      << std::endl;
+
+    // compute mechanics
+    compute(false, false, false);
+    _prescribedVolume = _volume;
+    _prescribedArea = _area;
+
+    _prescribedTotalCurvature = _totalCurvature;
+    std::cout << "Set prescribed total curvature: " << _prescribedTotalCurvature << std::endl;
+  }
+
+  //! compute
+  template< class Material_t >
+  void C1AxiShellBody<Material_t>::compute( bool f0, bool f1, bool f2 )
+  {
+    
+    int eBegin=0, eEnd=_elements.size();
+    int sBegin=0, sEnd=_shells.size();
+#ifdef WITH_MPI
+    MPE_Decomp1d( _elements.size(), _nProcessors, _processorRank, 
+		  &eBegin, &eEnd );
+    eBegin--;
+    MPE_Decomp1d( _shells.size(), _nProcessors, _processorRank, 
+		  &sBegin, &sEnd );
+    sBegin--;
+//     std::cout << _processorRank << ": [" << eBegin << "," << eEnd << ")"
+// 	      << " of " << _elements.size() << " elements." << std::endl;    
+//     MPI_Finalize();
+//     exit(0);
+#endif
+
+    // Predictor/corrector approach for constraint
+    for(ConstraintIterator c=_constraints.begin(); c!=_constraints.end(); c++) {
+      (*c)->predict();
+    }
+
+
+    //
+    // compute element areas and volumes
+    double volume = 0.0;
+    double area = 0.0;
+    double totalCurvature = 0.0;
+#ifdef _OPENMP	
+#pragma omp parallel for 			\
+  schedule(static) default(shared)		
+#endif	      
+    for(int si=sBegin; si<sEnd; si++) {
+      FeElement_t* s=_shells[si];
+      s->compute( false,false,false );
+      volume = volume + s->volume();     
+      area = area + s->area();
+      totalCurvature += s->totalCurvature();
+    }
+    _volume=volume;
+    _area=area;
+    _totalCurvature=totalCurvature;
+
+#ifdef WITH_MPI
+    double myVolume=_volume;
+    MPI_Allreduce(&myVolume, &_volume, 1, MPI_DOUBLE, 
+		  MPI_SUM, MPI_COMM_WORLD);
+    double myArea=_area;
+    MPI_Allreduce(&myArea, &_area, 1, MPI_DOUBLE, 
+		  MPI_SUM, MPI_COMM_WORLD);
+    double myCurvature=_totalCurvature;
+    MPI_Allreduce(&myCurvature, &_totalCurvature, 1, MPI_DOUBLE, 
+		  MPI_SUM, MPI_COMM_WORLD);
+#endif 
+
+    // global energy integrals (total area, volume, curvature)
+
+
+    double dV = _volume - _prescribedVolume;	
+    double dA = _area - _prescribedArea;
+    double dtc = _totalCurvature - _prescribedTotalCurvature;
+    
+    if(f0) {
+      _energy = 0.0;
+      
+      if( _volumeConstraint == penalty || _volumeConstraint == augmented  ) {
+	_energy += 0.5 * _penaltyVolume * sqr(dV/_prescribedVolume);
+      }
+      if( _volumeConstraint == multiplier || 
+	  _volumeConstraint == augmented  ||
+	  _volumeConstraint == noConstraint ) {
+	_energy += - _fixedPressure * dV;
+      }
+      
+
+      if( _areaConstraint == penalty || _areaConstraint == augmented ) {
+	_energy += 0.5 * _penaltyArea * sqr(dA/_prescribedArea)*_prescribedArea;
+      }
+      if( _areaConstraint == multiplier || 
+	  _areaConstraint == augmented  ||
+	  _areaConstraint == noConstraint ) {
+	_energy += _fixedTension * dA;
+      }
+      
+
+      if( _totalCurvatureConstraint == penalty || _totalCurvatureConstraint == augmented ) {
+	_energy += 0.5 * _penaltyTotalCurvature * sqr(dtc/_prescribedTotalCurvature);
+      }
+      if( _totalCurvatureConstraint == multiplier || 
+	  _totalCurvatureConstraint == augmented  ||
+	  _totalCurvatureConstraint == noConstraint ) {
+	_energy += _fixedTotalCurvatureForce * dtc;
+      }
+
+    }
+    
+    double pressure = 0.0;
+    double tension = 0.0;
+    double tcForce = 0.0;
+    if( _volumeConstraint == multiplier || 
+	_volumeConstraint == augmented  ||
+	_volumeConstraint == noConstraint ) {
+      pressure = _fixedPressure;
+    }
+
+    if( _volumeConstraint == penalty ||_volumeConstraint == augmented ) {
+      pressure += 
+	-_penaltyVolume * (_volume/_prescribedVolume-1.0)/_prescribedVolume;
+    }
+    _pressureNode->setPoint(pressure);
+
+    if( _areaConstraint == multiplier || 
+	_areaConstraint == augmented  || 
+	_areaConstraint == noConstraint ) {
+      tension = _fixedTension;
+    }
+    if( _areaConstraint == penalty || _areaConstraint == augmented ) {
+      tension += 
+	_penaltyArea * (_area/_prescribedArea-1.0);
+    }
+    _tensionNode->setPoint(tension);
+
+    if( _totalCurvatureConstraint == multiplier ||
+	_totalCurvatureConstraint == augmented  ||
+	_totalCurvatureConstraint == noConstraint ) {
+      tcForce = _fixedTotalCurvatureForce;
+    }
+    if( _totalCurvatureConstraint == penalty || _totalCurvatureConstraint ==augmented ) {
+       tcForce += 
+	_penaltyTotalCurvature *(_totalCurvature/_prescribedTotalCurvature-1.0)/_prescribedTotalCurvature;
+    }
+    _totalCurvatureNode->setPoint(tcForce);
+
+    //
+    // compute energy, forces and stiffness matrix in each element
+    // loop through all elements
+#ifdef _OPENMP	
+#pragma omp parallel for 		\
+  schedule(static) default(shared) 
+#endif	
+    for(int ei=eBegin; ei<eEnd; ei++) {
+      _elements[ei]->compute( f0, f1, f2 );
+    }
+
+    if(f0) { 
+      double elementEnergies = 0.0;
+#ifdef _OPENMP	
+#pragma omp parallel for
+#endif	
+      for(int ei=eBegin; ei<eEnd; ei++) {
+	Element* e=_elements[ei];
+	elementEnergies += e->energy();
+      }
+      _energy += elementEnergies;
+    }
+
+    // Predictor/corrector approach for constraint
+    for(ConstraintIterator c=_constraints.begin(); c!=_constraints.end(); c++) {
+      (*c)->correct();
+    }
+    return;
+  }
+
+  //! create input file used by Paraview, a 3D viewer
+  template < class Material_t >
+  void C1AxiShellBody< Material_t >::printParaview(const std::string name) const
+  {
+
+    int numShells = _shells.size();
+    
+    blitz::Array<double,1> energy(blitz::shape(numShells));
+    blitz::Array<double,1> bendingEnergy(blitz::shape(numShells));
+    blitz::Array<double,1> stretchingEnergy(blitz::shape(numShells));
+    blitz::Array<double,1> curvature(blitz::shape(numShells));
+
+    energy = 0.0;
+    curvature = 0.0;
+    bendingEnergy = 0.0;
+    stretchingEnergy = 0.0;
+
+#ifdef WITH_MPI
+    int eBegin=0, eEnd=0;
+    MPE_Decomp1d( _shells.size(), _nProcessors, _processorRank, 
+		  &eBegin, &eEnd );
+    eBegin--;
+#endif
+
+#ifdef WITH_MPI
+    for(int e=eBegin; e<eEnd && e<_shells.size(); e++) {
+	const FeElement_t*const*const pe=&(_shells[e]);
+#else
+    ConstFeElementIterator pe = _shells.begin();
+    for ( int e = 0; pe != _shells.end(); pe++, e++) {
+#endif
+      int npts=0;
+      typename FeElement_t::ConstQuadPointIterator 
+	p = (*pe)->quadraturePoints().begin();
+      for( ; p != (*pe)->quadraturePoints().end(); p++){
+	energy(e) += p->material.energyDensity();
+	bendingEnergy(e) += p->material.bendingEnergy();
+	stretchingEnergy(e) += p->material.stretchingEnergy();
+	curvature(e) += p->material.meanCurvature();
+	npts++;
+      }
+      energy(e) /= (double)( npts );
+      bendingEnergy(e) /= (double)( npts );
+      stretchingEnergy(e) /= (double)( npts );
+      curvature(e) /= (double)( npts );
+    }
+
+#ifdef WITH_MPI
+    blitz::Array<double,1> globalsum(blitz::shape(numShells));
+    globalsum = 0.0;
+    MPI_Reduce(energy.data(), globalsum.data(), energy.size(), 
+	       MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    blitz::cycleArrays(energy,globalsum);
+    MPI_Reduce(bendingEnergy.data(), globalsum.data(), bendingEnergy.size(), 
+	       MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    blitz::cycleArrays(bendingEnergy,globalsum);
+    MPI_Reduce(stretchingEnergy.data(), globalsum.data(), stretchingEnergy.size(), 
+	       MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    blitz::cycleArrays(stretchingEnergy,globalsum);
+    MPI_Reduce(curvature.data(), globalsum.data(), curvature.size(), 
+	       MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    blitz::cycleArrays(curvature,globalsum);
+#endif
+
+#ifdef WITH_MPI
+    if(_processorRank!=0) {
+      return;
+    }
+#endif
+
+//     dataName = name + ".printData.sum";
+//     dataStream.open(dataName.c_str());
+//     dataStream << energy << std::endl
+// 	       << curvature << std::endl;
+//     dataStream.close();
+
+    std::string fileName = name + ".vtk";
+    std::ofstream ofs(fileName.c_str());
+//     ofs.open(fileName.c_str(), std::ios::out);
+    if (!ofs) {
+      std::cout << "can not open output ("
+		<< fileName
+		<< ") file." << std::endl;
+      exit(0);
+    }
+    
+    ////////////////////////////////////////////////////////////////////
+    //
+    //    Node Section
+    //
+    ofs << "# vtk DataFile Version 2.0\n"
+	<< "Test example" << std::endl
+	<< "ASCII" << std::endl
+	<< "DATASET POLYDATA" << std::endl
+	<< "POINTS  " << _shellNodes.size() << "  double" << std::endl;
+    
+    //
+    // output nodal postions
+    ConstFeNodeIterator pn = _shellNodes.begin();
+    for ( ; pn!= _shellNodes.end(); pn ++) {
+      const Vector2D & nodalPos = (*pn)->position();
+      ofs << std::setprecision(16) 
+	  << nodalPos(0) << "  "
+	  << 0.0 << "  "
+	  << nodalPos(1) << std::endl;
+    }
+
+    /////////////////////////////////////////////////////////////////////
+    //
+    //    Element Section
+    //
+    ofs << "LINES  " << _shells.size() << "  "
+	<< 3*_shells.size() << std::endl;
+    for (ConstFeElementIterator pe = _shells.begin(); pe != _shells.end(); pe++) {
+      const typename FeElement_t::NodeContainer & pnc = (*pe)->nodes();
+      ofs << 2 << "  "
+	  << std::setw(10) << pnc[0] -> id()
+	  << std::setw(10) << pnc[2] -> id()
+	  << std::endl;
+    }
+     	
+    //////////////////////////////////////////////////////////////////////////
+    //
+    //  output color for each element ( corresponding to mean
+    //  curvature, energy...)
+    //
+    ofs << "CELL_DATA    " << _shells.size() << std::endl;
+    //
+    // output for strain energy
+    ofs << "SCALARS    strainEnergy    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for ( int e = 0; e<numShells; e++) 
+      ofs << energy(e) << std::endl;
+    ofs << std::endl;
+
+    //
+    // output for strain energy
+    ofs << "SCALARS    bendingEnergy    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for ( int e = 0; e<numShells; e++) 
+      ofs << bendingEnergy(e) << std::endl;
+    ofs << std::endl;
+
+    //
+    // output for strain energy
+    ofs << "SCALARS    stretchingEnergy    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for ( int e = 0; e<numShells; e++) 
+      ofs << stretchingEnergy(e) << std::endl;
+    ofs << std::endl;
+
+    //
+    // output for mean curvature
+    // since one color is mapping into one element, for
+    // several guass points integration, we compute their average value
+    ofs << "SCALARS    meanCurvature    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE meanCurvature    " << std::endl;		
+    for ( int e = 0; e<numShells; e++) 
+      ofs << curvature(e) << std::endl;
+    ofs << std::endl;
+
+    ofs << endl << "POINT_DATA " << _shellNodes.size() << endl
+	<< "VECTORS displacements float" << endl;
+    /*     << "LOOKUP_TABLE displacements" << endl; */
+    //
+    // output nodal postions
+    pn = _shellNodes.begin();
+    for ( ; pn!= _shellNodes.end(); pn ++) {
+      Vector2D nodalDisp;
+      nodalDisp = (*pn)->point() - (*pn)->position();
+      ofs << std::setprecision(16) 
+	  << nodalDisp(0) << '\t' 
+	  << 0.0 << '\t' 
+	  << nodalDisp(1)  << std::endl;
+    }
+    
+    ofs << endl << "VECTORS forces float" << endl;
+    /*     << "LOOKUP_TABLE displacements" << endl; */
+    //
+    // output nodal postions
+    pn = _shellNodes.begin();
+    for ( ; pn!= _shellNodes.end(); pn ++) {
+      const Vector2D & nodalForce = (*pn)->force();
+      ofs << std::setprecision(16) 
+	  << nodalForce(0) << '\t' 
+	  << 0.0 << '\t' 
+	  << nodalForce(1) << std::endl;
+    }
+    ofs.close();
+
+    return;
+  }
+
+  
+} // namespace voom

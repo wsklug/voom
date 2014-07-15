@@ -1,0 +1,1 @@
+./configure CXX=g++ CC=gcc F77=gfortran CXXFLAGS="-g -ggdb -O2 -funroll-loops -ffast-math -DTVMET_OPTIMIZE=1" CCFLAGS="-g -ggdb -O2 -funroll-loops -ffast-math" F77FLAGS="-g -ggdb -O2 -funroll-loops -ffast-math"

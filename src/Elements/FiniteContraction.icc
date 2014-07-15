@@ -1,0 +1,460 @@
+// -*- C++ -*-
+// LAPACK subroutine for computing eigenvalues and eigenvectors
+//
+// define prototype of LAPACK functions
+extern "C"void dsyev_(char *jobz, char *uplo, int *n, double *a, int *lda,
+		double *w, double *work, int *lwork, int *info);
+
+//#define _DEBUG_
+
+namespace voom {
+
+template<class DefQuadrature_t, class Material_t, class DefShape_t,
+		class VoltQuadrature_t, class EpMaterial_t, class VoltShape_t>
+
+void FiniteContraction<DefQuadrature_t, Material_t, DefShape_t,
+		VoltQuadrature_t, EpMaterial_t, VoltShape_t>::compute(bool f0, bool f1,
+		bool f2) {
+	//
+	// initialize things
+	//
+
+	if (f0) {
+		_energy = 0.0;
+		_strainEnergy = 0.0;
+	}
+
+	if (f1) {
+		_internalForce = Vector3D(0.0);
+		_cauchy = 0.0;
+		_PKStress = 0.0;
+		_vonMisesStress = 0.0;
+	}
+
+	int numQP = 0;
+
+	for (DefQuadPointIterator p=_defQuadPoints.begin(); p!=_defQuadPoints.end();
+			p++, numQP++) {
+
+		//
+		// compute deformation gradient
+		//
+		Matrix3D F(0.0);
+
+		const typename DefShape_t::DerivativeContainer & def_DN =
+				p->defShapeDerivatives;
+
+		for (int a=0; a<_dNodes.size(); a++) {
+			const Vector3D & xa = _dNodes[a]->point();
+			for (int i=0; i<3; i++) {
+				for (int J=0; J<3; J++) {
+					F(i, J) += xa(i)*def_DN[a](J);
+				}
+			}
+		}
+
+		Material_t& material = p->material;
+
+		// send updated deformation gradient to material
+		material.setDeformationGradient(F);
+		material.setT(p->voltage);
+		// compute strain energy and/or 1st PK stress
+		material.updateState(f0, f1, f2);
+
+		double weight = p->weight;
+
+		// compute energy
+		if (f0) {
+			// compute strain energy 
+			_strainEnergy += material.energyDensity()*weight;
+
+		}
+
+		// compute forces and stresses
+		if (f1) {
+
+			const Matrix3D & C = material.cauchyStress();
+			_cauchy += C;
+
+			const Matrix3D & P = material.piolaStress();
+			_PKStress += P;
+
+			_vonMisesStress += material.vonMisesStress();
+
+			// compute internal forces
+			// loop for all nodes to compute forces 
+			for (int a=0; a<_dNodes.size(); a++) {
+				for (int i=0; i<3; i++) {
+					for (int J=0; J<3; J++) {
+						_internalForce(a)(i) += P(i, J)*def_DN[a](J)*weight;
+					}
+				}
+			} // end nodes loop
+
+		} // end force calcs
+
+		// compute stiffness matrix
+		if (f2) {
+			//std::cerr << std::endl << std::endl << "\t"
+			//    << "Aaaarrrrrrggggggh!  No stiffness matrix yet!" 
+			//    << std::endl << std::endl;
+		}
+
+	} // end quadrature loop
+
+
+	if (f0) {
+		_energy = _strainEnergy;
+	}
+
+	// assemble element forces to nodes, compute average stress in an element
+	if (f1) {
+
+		if (numQP==4) {
+			_cauchy /= 4.0;
+			_PKStress /= 4.0;
+			_vonMisesStress /= 4.0;
+		} else if (numQP==5) {
+			_cauchy /= 5.0;
+			_PKStress /= 5.0;
+			_vonMisesStress /= 4.0;
+		}
+
+		int a=0;
+		for (NodeIterator na=_dNodes.begin(); na!=_dNodes.end(); na++, a++)
+			for (int i=0; i<3; i++) {
+				double f_ia = _internalForce(a)(i);
+				(*na)->addForce(i, f_ia);
+			}
+	}
+
+}
+
+template<class DefQuadrature_t, class Material_t, class DefShape_t,
+		class VoltQuadrature_t, class EpMaterial_t, class VoltShape_t>
+
+FiniteContraction<DefQuadrature_t, Material_t, DefShape_t, VoltQuadrature_t,
+		EpMaterial_t, VoltShape_t>::DefQuadPointStruct::DefQuadPointStruct(
+		double w, const Material_t & m, const DefShape_t & s,
+		const FiniteContraction::NodeContainer & nds, double volt) :
+	weight(w), material(m), voltage(volt){
+	defShapeFunctions = s.functions();
+
+	// Compute spatial derivatives of shape functions from
+	// parametric derivatives by transforming with matrix jacobian
+	// of isoparametric mapping.
+	// parametric derivatives from shape object
+	const typename DefShape_t::DerivativeContainer & dnds = s.derivatives();
+
+	 std::cout << "dnds = ";
+	    for(int alpha=0; alpha<3; alpha++) {	   
+	        for(int a=0; a<nds.size(); a++) {
+	 	 std::cout << dnds[a](alpha) << " ";
+	        } std::cout << std::endl;
+	    }
+	    std::cout << "nodes-position = ";
+	    for(int a=0; a<nds.size(); a++) {	   
+	    	        for(int i=0; i<3; i++) {
+	    	 	 std::cout << nds[a]->getPosition(i) << " ";
+	    	        } std::cout << std::endl;
+	    	    }
+	    
+	// matrix jacobian dxds;
+	tvmet::Matrix<double,3,3> dxds(0.0);
+	for (int i=0; i<3; i++) {
+		for (int alpha=0; alpha<3; alpha++) {
+			for (int a=0; a<nds.size(); a++) {
+				dxds(i, alpha) += dnds[a](alpha)*(nds[a]->getPosition(i) );
+			}
+		}
+	}
+
+	// debuggin
+	std::cout << "dxds = " << dxds << std::endl;
+
+	// compute scalar jacobian and scale the quadrature weight with it
+	// by calculating the determinant of dxds
+	double J = dxds(0, 0)*dxds(1, 1)*dxds(2, 2) + dxds(0, 1)*dxds(1, 2)*dxds(2,
+			0) + dxds(0, 2)*dxds(1, 0)*dxds(2, 1) - dxds(0, 0)*dxds(1, 2)*dxds(
+			2, 1) - dxds(0, 1)*dxds(1, 0)*dxds(2, 2) - dxds(0, 2)*dxds(2, 0)
+			*dxds(1, 1);
+
+	std::cout << "J = " << J << std::endl;
+
+	weight *= J;
+
+	// invert matrix jacobian
+	tvmet::Matrix<double,3,3> invJac(0.0);
+	invJac(0, 0) = dxds(1, 1)*dxds(2, 2) - dxds(1, 2)*dxds(2, 1);
+	invJac(0, 1) = dxds(0, 2)*dxds(2, 1) - dxds(0, 1)*dxds(2, 2);
+	invJac(0, 2) = dxds(0, 1)*dxds(1, 2) - dxds(0, 2)*dxds(1, 1);
+	invJac(1, 0) = dxds(1, 2)*dxds(2, 0) - dxds(1, 0)*dxds(2, 2);
+	invJac(1, 1) = dxds(0, 0)*dxds(2, 2) - dxds(0, 2)*dxds(2, 0);
+	invJac(1, 2) = dxds(0, 2)*dxds(1, 0) - dxds(0, 0)*dxds(1, 2);
+	invJac(2, 0) = dxds(1, 0)*dxds(2, 1) - dxds(1, 1)*dxds(2, 0);
+	invJac(2, 1) = dxds(0, 1)*dxds(2, 0) - dxds(0, 0)*dxds(2, 1);
+	invJac(2, 2) = dxds(0, 0)*dxds(1, 1) - dxds(0, 1)*dxds(1, 0);
+
+	invJac /= J;
+
+	// debuggin
+	//std::cout << "invJac = " << invJac << std::endl;
+
+	// spatial derivatives dndx
+
+			    
+	defShapeDerivatives.resize(dnds.size());
+	for (int a=0; a<nds.size(); a++) {
+		for (int i=0; i<3; i++) {
+			defShapeDerivatives[a](i) = 0.0;
+			for(int alpha=0; alpha<3; alpha++) {
+				// i think this is wrong, should be invJac(i,alpha)??
+					//shapeDerivatives[a](i) += dnds[a](alpha)*invJac(alpha,i);
+					defShapeDerivatives[a](i) += dnds[a](alpha)*invJac(alpha,i);
+				}
+			}
+		}
+	
+		 std::cout << "initializing element DN = " << std::endl;
+		    for(int a=0; a<nds.size(); a++) {	  
+		      for(int i=0; i<3; i++) {
+		        std::cout << defShapeDerivatives[a](i) << " ";
+		      } std::cout << std::endl;
+		    }
+		    std::cout << std::endl;
+
+		return;
+	}
+	//// to be removed 
+
+	//	struct VoltQuadPointStruct 
+	//	        {
+	//	          double	 weight;
+	//	          typename VoltShape_t::FunctionContainer voltShapeFunctions;
+	//	          typename VoltShape_t::DerivativeContainer voltShapeDerivatives;
+	//	          EpMaterial_t material;
+	//	          VoltQuadPointStruct(double w, const EpMaterial_t & epmat, const VoltShape_t & s, 
+	//	        		  const NodeContainer & voltnds);
+	//	        };
+	//
+	//	
+	////	
+	template<class DefQuadrature_t, class Material_t, class DefShape_t,
+	class VoltQuadrature_t, class EpMaterial_t, class VoltShape_t>
+
+	FiniteContraction<DefQuadrature_t, Material_t, DefShape_t,
+	VoltQuadrature_t, EpMaterial_t, VoltShape_t>
+	::VoltQuadPointStruct::
+	VoltQuadPointStruct(double w,
+			const EpMaterial_t & m,
+			const DefShape_t & d_s,
+			const VoltShape_t & v_s,
+			const FiniteContraction::NodeContainer & defNodes): weight(w), material(m)
+	{
+		voltShapeFunctions = v_s.functions();
+
+		// Compute spatial derivatives of shape functions from
+		// parametric derivatives by transforming with matrix jacobian
+		// of isoparametric mapping.
+
+		// parametric derivatives from shape object
+		const typename DefShape_t::DerivativeContainer & def_dnds = d_s.derivatives();
+
+		// matrix jacobian dxds;
+		tvmet::Matrix<double,3,3> dxds(0.0);
+		for(int i=0; i<3; i++) {
+			for(int alpha=0; alpha<3; alpha++) {
+				for(int a=0; a<defNodes.size(); a++) {
+					dxds(i,alpha) += def_dnds[a](alpha)*( defNodes[a]->getPosition(i) );
+				}
+			}
+		}
+
+		// compute scalar jacobian and scale the quadrature weight with it
+		// by calculating the determinant of dxds
+		double J = dxds(0,0)*dxds(1,1)*dxds(2,2)
+		+ dxds(0,1)*dxds(1,2)*dxds(2,0)
+		+ dxds(0,2)*dxds(1,0)*dxds(2,1)
+		- dxds(0,0)*dxds(1,2)*dxds(2,1)
+		- dxds(0,1)*dxds(1,0)*dxds(2,2)
+		- dxds(0,2)*dxds(2,0)*dxds(1,1);
+
+		weight *= J;
+
+		// invert matrix jacobian
+		tvmet::Matrix<double,3,3> invJac(0.0);
+		invJac(0,0) = dxds(1,1)*dxds(2,2) - dxds(1,2)*dxds(2,1);
+		invJac(0,1) = dxds(0,2)*dxds(2,1) - dxds(0,1)*dxds(2,2);
+		invJac(0,2) = dxds(0,1)*dxds(1,2) - dxds(0,2)*dxds(1,1);
+		invJac(1,0) = dxds(1,2)*dxds(2,0) - dxds(1,0)*dxds(2,2);
+		invJac(1,1) = dxds(0,0)*dxds(2,2) - dxds(0,2)*dxds(2,0);
+		invJac(1,2) = dxds(0,2)*dxds(1,0) - dxds(0,0)*dxds(1,2);
+		invJac(2,0) = dxds(1,0)*dxds(2,1) - dxds(1,1)*dxds(2,0);
+		invJac(2,1) = dxds(0,1)*dxds(2,0) - dxds(0,0)*dxds(2,1);
+		invJac(2,2) = dxds(0,0)*dxds(1,1) - dxds(0,1)*dxds(1,0);
+
+		invJac /= J;
+
+		const typename VoltShape_t::DerivativeContainer & volt_dnds = v_s.derivatives();
+		// spatial derivatives dndx
+		voltShapeDerivatives.resize(volt_dnds.size());
+		for(int a=0; a<defNodes.size(); a++) {
+			for(int i=0; i<3; i++) {
+				voltShapeDerivatives[a](i) = 0.0;
+				for(int alpha=0; alpha<3; alpha++) {
+					// i think this is wrong, should be invJac(i,alpha)??
+					//shapeDerivatives[a](i) += dnds[a](alpha)*invJac(alpha,i);
+					voltShapeDerivatives[a](i) += def_dnds[a](alpha)*invJac(alpha,i);
+				}
+			}
+		}
+
+		return;
+	}
+
+	//! Constructor
+	template<class DefQuadrature_t, class Material_t, class DefShape_t,
+	class VoltQuadrature_t, class EpMaterial_t, class VoltShape_t>
+
+	FiniteContraction<DefQuadrature_t, Material_t, DefShape_t,
+	VoltQuadrature_t, EpMaterial_t, VoltShape_t>::
+	FiniteContraction( const DefQuadrature_t & defQuad,
+			   const Material_t & mat,
+			   const NodeContainer & defNodes,
+			   const VoltQuadrature_t & vQuad,
+			   const EpMaterial_t & epMat,
+			   const VnodeContainer & voltNodes
+			   )
+	{
+		//! initialize NodeContainer
+		unsigned nDefNodes = defNodes.size();
+		unsigned nVoltNodes = voltNodes.size();
+
+		_dNodes = defNodes;
+		_vNodes = voltNodes;
+
+		for(ConstNodeIterator n=_dNodes.begin(); n!=_dNodes.end(); n++)
+		_baseNodes.push_back(*n);
+
+		//! initialize defQuad points
+		_defQuadPoints.clear();
+
+		int QP = 1;
+
+		for(typename DefQuadrature_t::ConstPointIterator p=defQuad.begin(); p!=defQuad.end(); p++) {
+			// debuggin
+			// std::cout << "defQuad point: " << QP << std::endl
+			// 		<< "defQuad point coordinates: " << p->coords << std::endl;
+			QP++;
+
+			VoltShape_t vShape( p->coords );
+			const typename VoltShape_t::FunctionContainer & v_N = vShape.functions();
+			double voltage = 0.0;
+			for(int a=0; a<_vNodes.size(); a++) {
+				const double & va = _vNodes[a]->point();
+				for(int i=0; i<3; i++) {
+					voltage += va*v_N[a];
+				}
+			}
+
+			DefShape_t dShape( p->coords );
+			_defQuadPoints.push_back( DefQuadPointStruct(p->weight, mat, dShape, _dNodes, voltage) );
+			if( dShape.functions().size() != nDefNodes ) {
+				std::cout << "Number of deformation nodes: " << nDefNodes << std::endl
+				<< "Number of functions: " << dShape.functions().size()
+				<< std::endl
+				<< "These should be equal." << std::endl;
+				exit(0);
+			}
+		}
+		
+		    
+		_voltQuadPoints.clear();
+		QP = 1;
+		for(typename VoltQuadrature_t::ConstPointIterator p=vQuad.begin(); p!=vQuad.end(); p++) {
+			// debuggin
+			// std::cout << "vQuad point: " << QP << std::endl
+			// 		<< "vQuad point coordinates: " << p->coords << std::endl;
+			QP++;
+			VoltShape_t vShape( p->coords );
+			DefShape_t dShape( p->coords );
+
+			_voltQuadPoints.push_back( VoltQuadPointStruct(p->weight, epMat, dShape, vShape, _dNodes) );
+			if( vShape.functions().size() != nVoltNodes ) {
+				std::cout << "Number of voltage nodes: " << nVoltNodes << std::endl
+				<< "Number of functions: " << vShape.functions().size()
+				<< std::endl
+				<< "These should be equal." << std::endl;
+				exit(0);
+			}
+		}
+
+		//! allocate memory for mechanics variables
+		_internalForce.resize( nDefNodes );
+
+		//! initialize values = 0 by default
+		compute(true, true, false);
+
+	}
+
+	template<class DefQuadrature_t, class Material_t, class DefShape_t,
+	class VoltQuadrature_t, class EpMaterial_t, class VoltShape_t>	
+	void
+	FiniteContraction<DefQuadrature_t, Material_t, DefShape_t,
+	VoltQuadrature_t, EpMaterial_t, VoltShape_t>::computeEP(bool f0, bool f1, bool f2)
+	{
+		//
+		// initialize things
+		//
+
+		//Matrix3D D(0.0);
+
+// 		int numQP = 0;
+
+// 		for(QuadPointIterator v=_voltQuadPoints.begin(),; v!=_voltQuadPoints.end(); v++, numQP++) {
+
+// 			//
+// 			// compute deformation gradient
+// 			//
+
+// 			const typename VoltShape_t::DerivativeContainer & v_N = p->voltShapeFunctions;
+// 			const typename VoltShape_t::DerivativeContainer & v_DN = p->voltShapeDerivatives;
+// 			int size = v_N.size();
+			
+// 			Material_t& material = p->material;
+
+// 			double capacitance = material->getCapacitance();
+// 			for(int i=0; i<size; i++) {
+// 				for(int j=0; j<size; j++) {
+// 					_C(i,j) += v_N[i]*capacitance*v_N[j]*p->weight;
+// 				}
+// 			}
+			
+// 			const Vector3D & conductivity = material->getConductivity();
+// 	         for (int a=0; a<3; a++) {
+// 	            for (int b=0; b<size; b++) {
+// 	               for (int c=0; c<3; c++) {
+// 	                  dummy_matrix(a,b)+=conductivity(a,c)*v_DN[b](c);
+// 	               }
+	             
+// 	            }
+
+// 	         }            
+// 	         for (int a=0; a<size; a++) {
+// 	            for (int b=0; b<size; b++) { 
+// 	               for (int c=0; c<3; c++) {
+// 	                  _conductivity(a,b)+=(p->weight)*v_DN[a](c)*dummy_matrix(c,b);
+// 	               }
+	             
+// 	            }
+
+// 	         }          
+			
+// 			double Im = material->getIm();
+// 			for(int j=0; j<size; J++) {
+// 				_Ib(i,j) += v_N[i]capacitance*v_N[j]*p->weight;
+// 			}
+
+	}
+
+} // namespace voom

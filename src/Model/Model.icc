@@ -1,0 +1,164 @@
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                    William S. Klug & Feng Feng
+//                University of California Los Angeles
+//                   (C) 2004 All Rights Reserved
+//
+//----------------------------------------------------------------------
+//
+// $Log$
+// Revision 1.3  2005/08/22 22:22:18  klug
+// Assembly shifted from elements to nodes.  Bodies now compute energy.
+// Model::setField renamed less ambiguously to putField.
+//
+// Revision 1.2  2005/06/27 03:43:51  klug
+// Removed some inappropriate instances of const.
+//
+// Revision 1.1  2005/05/23 17:54:15  klug
+// New interface with data storage pushed to solver.
+//
+//----------------------------------------------------------------------
+
+/*! 
+  \file Model.cc
+
+  \brief Model is a class for a Finite Element model conisting of one
+  or more Bodies, and possibly sets of interactions and constraints
+  among the bodies.
+
+*/
+
+#include<blitz/array-impl.h>
+#include "Model.h"
+
+namespace voom
+{
+
+  template<class Solver_t>
+  void Model::getField(Solver_t & solver) const {
+
+    for(ConstNodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) {
+      const NodeBase::DofIndexMap & idx = (*n)->index();
+      for(int ni=0; ni<(*n)->dof(); ni++)
+	solver.field(idx[ni]) = (*n)->getPoint(ni);
+    }
+
+  }
+
+  template<class Solver_t>
+  void Model::putField(const Solver_t & solver) {
+
+    for(NodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) {
+	const NodeBase::DofIndexMap & idx = (*n)->index();
+	for(int ni=0; ni<(*n)->dof(); ni++)
+	  (*n)->setPoint(ni, solver.field(idx[ni]));
+    }
+
+  }
+
+  template<class Solver_t>
+  void Model::addField(const Solver_t & solver) {
+
+    for(NodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) {
+      const NodeBase::DofIndexMap & idx = (*n)->index();
+      for(int ni=0; ni<(*n)->dof(); ni++)
+	(*n)->addPoint(ni, solver.field(idx[ni]));
+    }
+
+  }
+
+  //! Do mechanics, assemble, send data to solver
+  template<class Solver_t>
+  void Model::computeAndAssemble(Solver_t & solver, bool f0, bool f1, bool f2) 
+  {
+    // zero out all forces and stiffness in nodes before computing bodies
+    for(NodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) {
+      if(f1) {
+	for(int i=0; i<(*n)->dof(); i++) (*n)->setForce(i,0.0);
+      }
+      if(f2) {
+	for(int i=0; i<(*n)->dof(); i++) (*n)->setStiffness(i,0.0);
+      }
+    }
+
+    // Predictor/corrector approach for constraint
+    for(ConstraintIterator c=_constraints.begin(); c!=_constraints.end(); c++) {
+      (*c)->predict();
+    }
+
+    // compute bodies
+    for(BodyIterator b=_bodies.begin(); b!=_bodies.end(); b++) {      
+      (*b)->compute( f0, f1, f2);
+    }
+
+    // Predictor/corrector approach for constraint
+    for(ConstraintIterator c=_constraints.begin(); c!=_constraints.end(); c++) {
+      (*c)->correct();
+    }
+
+    // assemble
+    solver.zeroOutData(f0,f1,f2);
+
+    
+      
+    for(ConstBodyIterator b=_bodies.begin(); b!=_bodies.end(); b++) {
+      if(f0) solver.function() += (*b)->energy();
+    }
+
+    for(ConstNodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) {
+	
+      if(f1) {
+	const NodeBase::DofIndexMap & idx = (*n)->index();
+	for(int i=0; i<idx.size(); i++)
+	  // Force assembly is done directly to the nodes.  No further
+	  // assembly needed. Here we just copy it to the solver. At
+	  // some point we may want to use assembly (+=) as a way of
+	  // implementing parallelism (i.e., multiple nodes on
+	  // separate processors can have the same index so as to
+	  // assemble together.
+	  //
+	  // solver.gradient( idx[i] ) += (*n)->getForce(i);
+	  solver.gradient( idx[i] ) = (*n)->getForce(i);
+      }
+	
+      if(f2) {
+	// only compute diagonal of stiffness
+	const NodeBase::DofIndexMap & idx = (*n)->index();
+	for(int i=0; i<idx.size(); i++)
+	  solver.hessian( idx[i] ) = (*n)->getStiffness(i);
+// 	int B=0;
+// 	for(NodeBase::ConstNeighborIterator nB=(*n)->neighbors().begin(); 
+// 	    nB != (*n)->neighbors().begin(); nB++, B++) {
+// 	  const NodeBase::DofIndexMap & idxA = (*n)->index();
+// 	  const NodeBase::DofIndexMap & idxB = (*nB)->index();
+// 	  for(int kb=0; kb<idxB.size(); kb++) 
+// 	    for(int ia=0; ia<idxA.size(); ia++)
+// 	      solver.hessian( idxA[ia], idxB[kb] ) += 
+// 		(*n)->getStiffness(*nB,kb,ia);
+// // 	      solver.hessian( idxA[ia], idxB[kb] ) += 
+// //	        (*n)->stiffness(B,kb,ia);
+// 	}
+      }
+      
+    }
+
+
+
+#ifdef WITH_MPI
+    if(f0) {
+      double myf=solver.function();
+      MPI_Allreduce(&myf, &(solver.function()), 1, MPI_DOUBLE, 
+		    MPI_SUM, MPI_COMM_WORLD);
+    }
+    if(f1) {
+      blitz::Array<double,1> mygrad(solver.gradient(), blitz::shape(solver.size()), 
+				    blitz::duplicateData);
+      MPI_Allreduce(mygrad.data(), solver.gradient(), mygrad.size(), MPI_DOUBLE, 
+		  MPI_SUM, MPI_COMM_WORLD);
+    }
+#endif 
+
+  } // end Model::computeAndAssemble()
+  
+}; // namespace voom

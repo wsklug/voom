@@ -1,0 +1,3 @@
+The workings of this application are identical to the TetCapsid application,
+except the input mesh for this application must be 10-noded tetrahedrons.  
+Please see the Applications/TetCapsid/README for details.

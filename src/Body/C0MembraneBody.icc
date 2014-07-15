@@ -1,0 +1,548 @@
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                    	    William S. Klug
+//                University of California Los Angeles
+//                   (C) 2006 All Rights Reserved
+//
+//----------------------------------------------------------------------
+
+#include <string>
+#include <fstream>
+#include <blitz/array-impl.h>
+#include <boost/lexical_cast.hpp>
+
+#if defined(_OPENMP)
+#include <omp.h>
+#endif
+
+#ifdef WITH_MPI
+#include <mpe.h>
+#endif
+
+namespace voom
+{
+  using std::endl;
+  using std::cout;
+
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  C0MembraneBody<Quadrature_t,Material_t,Shape_t>::C0MembraneBody
+  (Material_t material,
+   ConnectivityContainer & connectivities,
+   const NodeContainer & nodes,
+   const unsigned quadOrder,
+   const double pressure,
+   const double tension,
+   const double penaltyVolume,
+   const double penaltyArea,
+   GlobalConstraint volumeConstraint,
+   GlobalConstraint areaConstraint) 
+  {
+
+#ifdef WITH_MPI
+  MPI_Comm_size( MPI_COMM_WORLD, &_nProcessors );
+  MPI_Comm_rank( MPI_COMM_WORLD, &_processorRank );
+#endif
+
+    _penaltyArea = penaltyArea;
+    _penaltyVolume = penaltyVolume;
+    _areaConstraint = areaConstraint;
+    _volumeConstraint = volumeConstraint;
+    _area = 0.0;
+    _volume = 0.0;
+    
+    // initialize _nDOF and find shell (position) nodes
+
+    _dof = 0;
+    _nodes = nodes;
+    for(ConstNodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) {
+      _dof+=(*n)->dof();
+      MembraneNode_t * sn = dynamic_cast<MembraneNode_t*>(*n);
+      if( sn ) _membraneNodes.push_back(sn); 
+    }
+        
+    NodeBase::DofIndexMap idx(1);
+    idx[0]=-1;
+    _pressureNode = new MultiplierNode(_nodes.size(), idx, pressure );
+    _fixedPressure = pressure;
+
+    _tensionNode = new MultiplierNode(_nodes.size(), idx, tension );
+    _fixedTension = tension;
+
+    std::cout << "C0MembraneBody::initializeBody(): dof = "<< _dof 
+	      << std::endl;
+
+    // create elements
+    std::cout << "begin to create elements..." << std::endl;
+    Quadrature_t quad(quadOrder);
+    _membranes.reserve( connectivities.size() );
+    std::cout << "made space for " << connectivities.size() << " elements."
+	      << std::endl;
+    for(ConstConnectivityIterator c=connectivities.begin();
+	c!=connectivities.end(); c++) {
+      // build elemental node container
+      typename MembraneElement_t::NodeContainer nds;
+      for(ElementConnectivity::const_iterator n=c->begin(); n!=c->end(); n++) {
+	nds.push_back( _membraneNodes[*n] );
+      }
+      // create element
+      _membranes.push_back( new C0Membrane<Quadrature_t, Material_t, Shape_t>(quad, material, nds, _pressureNode, _tensionNode, _volumeConstraint, _areaConstraint) );
+    }
+
+    _elements.reserve(_membranes.size());
+    for(ConstMembraneElementIterator e=_membranes.begin(); e!=_membranes.end(); e++) {
+      _elements.push_back(*e);
+
+      _active.push_back(true);
+    }
+    std::cout << "finished creating " << _elements.size() << " elements." << std::endl;
+    
+    // compute mechanics/geometry
+    compute(false, false, false);
+
+    _prescribedArea = _area;
+    _prescribedVolume = _volume;
+    
+  }
+  
+  //! compute
+  template< class Quadrature_t, class Material_t, class Shape_t >
+  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::compute( bool f0, bool f1, bool f2 )
+  {
+    int eBegin=0, eEnd=_elements.size();
+    int sBegin=0, sEnd=_membranes.size();
+#ifdef WITH_MPI
+    MPE_Decomp1d( _elements.size(), _nProcessors, _processorRank, 
+		  &eBegin, &eEnd );
+    eBegin--;
+    MPE_Decomp1d( _membranes.size(), _nProcessors, _processorRank, 
+		  &sBegin, &sEnd );
+    sBegin--;
+#endif
+
+
+    // Predictor/corrector approach for constraint
+    for(ConstraintIterator c=_constraints.begin(); c!=_constraints.end(); c++) {
+      (*c)->predict();
+    }
+
+    // Initialize energy and forces
+    if(f0) _energy = 0.0;
+
+     for(int si=sBegin; si<sEnd; si++) {
+       if( !_active[si] ) continue;
+       MembraneElement_t* s=_membranes[si];
+       s->compute( false,false,false );
+     }
+
+    //
+    // compute element areas and volumes
+    double volume = 0.0;
+    double area = 0.0;
+// code fails in icpc for some reason
+// #ifdef _OPENMP	
+// #pragma omp parallel for 			\
+//   schedule(static) default(shared)		\
+//   reduction(+:volume) reduction(+:area) 
+// #endif	      
+    for(int si=sBegin; si<sEnd; si++) {
+      if( !_active[si] ) continue;
+      MembraneElement_t* s=_membranes[si];
+      volume = volume + s->volume();     
+      area = area + s->area();
+    }
+    _volume=volume;
+    _area=area;
+
+
+    double dV = _volume - _prescribedVolume;	
+    double dA = _area - _prescribedArea;
+
+    if(f0) {
+      _energy = 0.0;
+      
+      if( _volumeConstraint == penalty || _volumeConstraint == augmented ) {
+	_energy += 0.5 * _penaltyVolume * sqr(dV/_prescribedVolume);
+      }
+      if( _volumeConstraint == multiplier || _volumeConstraint == augmented ) {
+	_energy += - _fixedPressure * dV;
+      }
+      
+
+      if( _areaConstraint == penalty || _areaConstraint == augmented ) {
+	_energy += 0.5 * _penaltyArea * sqr(dA/_prescribedArea);
+      }
+      if( _areaConstraint == multiplier || _areaConstraint == augmented ) {
+	_energy += _fixedTension * dA;
+      }
+      
+    }
+    
+    double pressure = 0.0;
+    double tension = 0.0;
+    if( _volumeConstraint == multiplier || _volumeConstraint ==augmented ) {
+      pressure = _fixedPressure;
+    }
+
+    if( _volumeConstraint == penalty ||_volumeConstraint == augmented ) {
+      pressure += 
+	-_penaltyVolume * (_volume/_prescribedVolume-1.0)/_prescribedVolume;
+    }
+    _pressureNode->setPoint(pressure);
+
+    if( _areaConstraint == multiplier || _areaConstraint == augmented ) {
+      tension = _fixedTension;
+    }
+    if( _areaConstraint == penalty || _areaConstraint == augmented ) {
+      tension += 
+	_penaltyArea * (_area/_prescribedArea-1.0)/_prescribedArea;
+    }
+    _tensionNode->setPoint(tension);
+
+
+
+    // Model now initializes forces and stiffness
+//     if(f1) {
+//       for(NodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) 
+// 	for(int i=0; i<(*n)->dof(); i++)
+// 	  (*n)->setForce(i,0.0);
+//     }
+    // Need to zero out stiffness too!!!!!!!!!!
+
+    
+    // compute energy, forces and stiffness matrix in each element
+    // loop through all elements
+#ifdef _OPENMP	
+#pragma omp parallel for 		\
+  schedule(static) default(shared) 
+#endif	
+    for(int ei=eBegin; ei<eEnd; ei++) {
+      if( !_active[ei] ) continue;
+      _elements[ei]->compute( f0, f1, f2 );
+    }
+
+    if(f0) { 
+// #ifdef _OPENMP	
+// #pragma omp parallel for
+// #endif	
+      for(int ei=eBegin; ei<eEnd; ei++) {
+	if( !_active[ei] ) continue;
+	Element* e=_elements[ei];
+	_energy += e->energy();
+      }
+// #ifdef WITH_MPI
+//       double myEnergy=_energy;
+//       MPI_Allreduce(&myEnergy, &_energy, 1, MPI_DOUBLE, 
+// 		    MPI_SUM, MPI_COMM_WORLD);
+// #endif 
+    }
+
+// #ifdef WITH_MPI
+//     if(f1) {
+//       for(NodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) 
+// 	for(int i=0; i<(*n)->dof(); i++) {
+// 	  double force = 0.0;
+// 	  double myForce = (*n)->getForce(i); 
+// 	  MPI_Allreduce(&myForce, &force, 1, MPI_DOUBLE, 
+// 			MPI_SUM, MPI_COMM_WORLD);
+// 	  (*n)->setForce(i,force);
+// 	}
+//     }
+// #endif
+
+
+    // Predictor/corrector approach for constraint
+    for(ConstraintIterator c=_constraints.begin(); c!=_constraints.end(); c++) {
+      (*c)->correct();
+    }
+
+
+
+#ifdef WITH_MPI
+    double myVolume=_volume;
+    MPI_Allreduce(&myVolume, &_volume, 1, MPI_DOUBLE, 
+		  MPI_SUM, MPI_COMM_WORLD);
+    double myArea=_area;
+    MPI_Allreduce(&myArea, &_area, 1, MPI_DOUBLE, 
+		  MPI_SUM, MPI_COMM_WORLD);
+#endif 
+
+    return;
+  }
+	
+
+	
+  //! create input file used by Paraview, a 3D viewer
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::printParaview(std::string name) const
+  {
+
+    int numShells = _membranes.size();
+    
+    blitz::Array<double,1> energy(blitz::shape(numShells));
+
+    energy = 0.0;
+
+    ConstMembraneElementIterator pe = _membranes.begin();
+    for ( int e = 0; pe != _membranes.end(); pe++, e++) {
+      int npts=0;
+      typename MembraneElement_t::ConstQuadPointIterator 
+	p = (*pe)->quadraturePoints().begin();
+      for( ; p != (*pe)->quadraturePoints().end(); p++){
+	energy(e) += p->material.energyDensity();
+	npts++;
+      }
+      energy(e) /= (double)( npts );
+    }
+
+
+    std::string fileName = name + ".vtk";
+    std::ofstream ofs(fileName.c_str());
+//     ofs.open(fileName.c_str(), std::ios::out);
+    if (!ofs) {
+      std::cout << "can not open output ("
+		<< fileName
+		<< ") file." << std::endl;
+      exit(0);
+    }
+    
+    ////////////////////////////////////////////////////////////////////
+    //
+    //    Node Section
+    //
+    ofs << "# vtk DataFile Version 2.0\n"
+	<< "Test example" << std::endl
+	<< "ASCII" << std::endl
+	<< "DATASET UNSTRUCTURED_GRID" << std::endl
+	<< "POINTS  " << _membraneNodes.size() << "  double" << std::endl;
+    
+    //
+    // output nodal postions
+    ConstMembraneNodeIterator pn = _membraneNodes.begin();
+    for ( ; pn!= _membraneNodes.end(); pn ++) {
+      const Vector3D & nodalPos =  (*pn)->position();
+      ofs << std::setprecision(16) 
+	  << nodalPos(0) << "  "
+	  << nodalPos(1) << "  "
+	  << nodalPos(2) << std::endl;
+    }
+
+    /////////////////////////////////////////////////////////////////////
+    //
+    //    Element Section
+    //
+    int nActiveMembranes=0;
+    for(int e=0; e<_membranes.size(); e++) {
+      if(_active[e]) nActiveMembranes++;
+    }
+
+    int nodes_per_element = _membranes[0]->nodes().size();
+
+    ofs << "CELLS  " << nActiveMembranes << "  "
+	<<  (nodes_per_element+1)*nActiveMembranes << std::endl;
+    for(int e=0; e<_membranes.size(); e++) {
+      if(!_active[e])  continue;
+      const MembraneElement_t * pe = _membranes[e];
+      const typename MembraneElement_t::NodeContainer & pnc = (pe)->nodes();
+      ofs << nodes_per_element << "  ";
+      for(int a=0; a<nodes_per_element; a++) {      
+	ofs << std::setw(10) << pnc[a] -> id();
+      }
+      ofs << std::endl;
+    }
+
+    int vtk_cell_type=0;
+    if( nodes_per_element == 3 ) {
+      // 3-node triangle
+      vtk_cell_type = 5;
+    } else if( nodes_per_element == 6 ) {
+      // 6-node triangle
+      vtk_cell_type = 22;
+    } 
+    
+    ofs << "CELL_TYPES  " << nActiveMembranes << std::endl;
+    for(int f=0; f<nActiveMembranes; f++) {
+      ofs << vtk_cell_type << std::endl;
+    }
+
+     	
+    //////////////////////////////////////////////////////////////////////////
+    //
+    //  output color for each element ( corresponding to mean
+    //  curvature, energy...)
+    //
+    ofs << "CELL_DATA    " << nActiveMembranes << std::endl;
+    //
+    // output for strain energy
+    ofs << "SCALARS    strainEnergy    double    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for ( int e = 0; e<numShells; e++) {
+      if(!_active[e])  continue;
+      ofs << energy(e) << std::endl;
+    }
+    ofs << std::endl;
+
+
+    ofs << "FIELD FieldData " << 2*_stressDirections.size() << std::endl;
+    // 
+    // output Normal Cauchy stresses along stress directions 
+    // 
+    // on second thought, make that 2nd-PK stresses
+    //
+    for(int i=0; i<_stressDirections.size(); i++) {
+
+      std::string stressName = "S";
+      std::string strainName = "E";
+      stressName += boost::lexical_cast<std::string>( i );
+      strainName += boost::lexical_cast<std::string>( i );
+
+      blitz::Array<double,1> stress(blitz::shape(numShells));
+      blitz::Array<double,1> strain(blitz::shape(numShells));
+
+      stress = 0.0;
+      strain = 0.0;
+
+
+      ConstMembraneElementIterator pe = _membranes.begin();
+      for ( int e = 0; pe != _membranes.end(); pe++, e++) {
+
+	int npts=0;
+	typename MembraneElement_t::ConstQuadPointIterator 
+	  p = (*pe)->quadraturePoints().begin();
+	for( ; p != (*pe)->quadraturePoints().end(); p++){
+	  Vector2D N(0.0);
+	  for(int alpha=0; alpha<2; alpha++) {
+	    N(alpha) += tvmet::dot( _stressDirections[i],  
+				    p->material.refShellGeometry().a()[alpha] 
+				    );
+	  }
+	  double J = 0.0;
+	  double s = 0.0;
+	  double E = 0.0;
+	  const Tensor2D & metricDual 
+	    =  p->material.shellGeometry().metricTensorInverse();
+	  const Tensor2D & refDual 
+	    =  p->material.refShellGeometry().metricTensorInverse();
+	  const Tensor2D & stressDual 
+	    =  p->material.stress();
+	  
+	  Tensor2D strainDual(0.0);
+	  
+	  for(int alpha=0; alpha<2; alpha++) {
+	    for( int beta=0; beta<2; beta++) {
+
+	      for(int gamma=0; gamma<2; gamma++) {
+		for(int nu=0; nu<2; nu++) {
+		  E += 
+		    refDual(alpha,gamma)*refDual(beta,nu)*
+		    ( p->material.strain()(gamma,nu) ) * N(alpha) * N(beta);
+		}
+	      }
+
+	      J += metricDual(alpha,beta) * N(alpha) * N(beta);
+	      s += stressDual(alpha,beta) * N(alpha) * N(beta);
+	    }
+	  }
+	  J *= ( p->material.shellGeometry().metric()    ) /
+	    ( p->material.refShellGeometry().metric() );
+	  
+	  stress(e) += s;// /J;
+	  strain(e) += E;
+	  npts++;
+	}
+	stress(e) /= (double)( npts );
+	strain(e) /= (double)( npts );
+      }
+	
+	
+      ofs << stressName << " 1 " << numShells << " double" << std::endl;
+      for ( int e = 0; e<numShells; e++) {
+	if(!_active[e])  continue;
+	ofs << stress(e) << std::endl;
+      }
+      ofs << std::endl;
+
+      ofs << strainName << " 1 " << numShells << " double" << std::endl;
+      for ( int e = 0; e<numShells; e++) {
+	if(!_active[e])  continue;
+	ofs << strain(e) << std::endl;
+      }
+      ofs << std::endl;
+
+    }
+
+    ofs << endl << "POINT_DATA " << _membraneNodes.size() << endl
+	<< "VECTORS displacements double" << endl;
+    /*     << "LOOKUP_TABLE displacements" << endl; */
+    //
+    // output nodal postions
+    pn = _membraneNodes.begin();
+    for ( ; pn!= _membraneNodes.end(); pn ++) {
+      Vector3D nodalDisp;
+      nodalDisp = (*pn)->point() - (*pn)->position();
+      ofs << std::setprecision(16) 
+	  << nodalDisp(0)
+	  << '\t' <<nodalDisp(1)
+	  << '\t' <<nodalDisp(2) << std::endl;
+    }
+    
+    ofs << endl << "VECTORS forces double" << endl;
+    /*     << "LOOKUP_TABLE displacements" << endl; */
+    //
+    // output nodal postions
+    pn = _membraneNodes.begin();
+    for ( ; pn!= _membraneNodes.end(); pn ++) {
+      const Vector3D & nodalForce = (*pn)->force();
+      ofs << std::setprecision(16) 
+	  << nodalForce(0)
+	  << '\t' <<nodalForce(1)
+	  << '\t' <<nodalForce(2) << std::endl;
+    }
+    ofs.close();
+
+    return;
+  }
+
+  //! create Alias-Wavefront .obj file
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::printObj(const std::string name) const
+  {
+#ifdef WITH_MPI
+    if(_processorRank!=0) return;
+#endif
+
+    std::string fileName = name + ".obj";
+    std::ofstream ofs(fileName.c_str(), std::ios::out);
+    if (!ofs) {
+      std::cout << "can not open output ("
+		<< fileName
+		<< ") file." << std::endl;
+      exit(0);
+    }
+
+    // output nodal postions
+    ConstMembraneNodeIterator pn = _membraneNodes.begin();
+    for ( ; pn!= _membraneNodes.end(); pn ++) {
+      const Vector3D & nodalPos =  (*pn)->position();
+      ofs << "v " << std::setprecision(16) 
+	  << std::setw(24) << nodalPos(0) 
+	  << std::setw(24) << nodalPos(1) 
+	  << std::setw(24) << nodalPos(2) << std::endl;
+    }
+    
+    // output face connectivities
+    for(ConstMembraneElementIterator pe=_membranes.begin(); pe!=_membranes.end(); pe++) {
+      const typename MembraneElement_t::NodeContainer & pnc = (*pe)->nodes();
+      ofs << "f "
+	  << std::setw(10) << pnc[0] -> id()
+	  << std::setw(10) << pnc[1] -> id()
+	  << std::setw(10) << pnc[2] -> id()
+	  << std::endl;
+    }
+    ofs.close();		
+
+    return;
+  }
+
+
+} // namespace voom

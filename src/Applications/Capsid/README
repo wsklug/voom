@@ -1,0 +1,104 @@
+This directory contains the source for two executables, indent and
+relax, each of which links to ../libvoom.a.  The Automake scripts are
+setup to build the executables using GCC.  If you want to use the
+Intel compilers, some modifications are necessary as provided in the
+file Makefile.am.icpc.  Summary descroptions of both programs are below.
+
+
+
+NAME
+	indent - indent a triangulated shell
+
+SYNOPSIS
+	indent modelName [options]
+
+DESCRIPTION
+	This program inputs a triangulated mesh of a close shell
+	(i.e., no boundary) and indents the shell between a rigid flat
+	surface and a rigid indenter (which may be spherical or flat).
+
+	The vertex positions and connectivities of the mesh are input
+	from the file modelName.vtk which is in legacy VTK format (see
+	www.vtk.org).
+
+	The vertex positions are scaled so that the average radius of
+	the shell is one.  The 2-D Young's modulus and bending modulus
+	are computed from an input FvK ratio as follows
+
+	Y = 1/\kappa = \sqrt{\gamma}
+
+	This is done such that the definition \gamma = YR^2/\kappa is
+	obtained along with a force-normalization condition
+	\sqrt{Y\kappa}=1.
+
+	An initial and minimum increment size are specified for the
+	indentation process, but the increment size is adaptively
+	modified for efficiency.
+
+	The sequence of deformed shapes is output to VTK files, and
+	force-indentation data is output to the ascii text file
+	modelName.fz.
+
+	The following options can be added as arguments at invocation
+
+	-b yes|no
+		The boundary condition flag specifies whether the
+		apices of the mesh should be constrained against
+		lateral movement to prevent rotation of the shell.
+
+	-g gamma 
+		The input FvK number.  
+
+	-i max_indentation
+		The final indentation value at which the calculation
+		should stop.
+
+	-m min_step
+		The minimum indentation increment/step size.
+
+	-p yes|no
+		The prestress flag: if "no" then the reference
+		configuration of shell is set to be spherical with a
+		spontaneous curvature equal to the inverse radius.
+
+	-r 
+		Model the indenter as a rigid (hemi)sphere.  By
+		default the indenter is modeled as a flat plate.
+
+	-s step
+		The initial indentation increment/step size.
+
+	-v viscosity
+		Artificial viscosity parameter used to stabilize the
+		minimization algorithm when tracking a force drop in
+		the indentation curve.
+
+
+
+NAME
+	relax - relax an input mesh to compute aspherity
+
+SYNOPSIS
+	relax modelName
+
+DESCRIPTION
+	This program inputs a triangulated mesh of a close shell
+	(i.e., no boundary), minimizes the combination of bending and
+	stretching area to compute aspherity over a range of FvK numbers.
+
+	The vertex positions and connectivities of the mesh are input
+	from the file modelName.vtk which is in legacy VTK format (see
+	www.vtk.org).
+
+	The vertex positions are scaled so that the average radius of
+	the shell is one.  The 2-D Young's modulus and bending modulus
+	are computed from an input FvK ratio as follows
+
+	Y = 1/\kappa = \sqrt{\gamma}
+
+	This is done such that the definition \gamma = YR^2/\kappa is
+	obtained along with a force-normalization condition
+	\sqrt{Y\kappa}=1.
+	
+	The relaxed shapes are output to VTK files, and the aspherity
+	vs. FvK data is output to the file modelName.aspherity.dat.

@@ -1,0 +1,32 @@
+/*!
+  \mainpage 
+
+  The <b>V</b>ariational <b>O</b>bject-<b>O</b>riented
+  <b>M</b>echanics (VOOM) library, is a collection of C++ classes
+  designed for development of numerical simulations of continuum solid
+  and structural mechanics problems, using the Finite Element Method.
+  The simulation framework is organized according to the use of
+  variational principles in the formulation of mechanics problems,
+  including virtual work and minimum potential energy for elasticity,
+  and variational constitutive updates for inelasticity.  
+
+  Many VOOM classes make use of code from two third-party open-source
+  projects designed for fast and efficient scientific computation, <a
+  href=http://oonumerics.org/blitz/><tt>blitz++</tt></a>, and <a
+  href=http://tvmet.sourceforge.net/><tt>tvmet</tt></a>.  The
+  <tt>Vector</tt> and <tt>Matrix</tt> classes from <tt>tvmet</tt> are
+  used for small fixed-size (known at compile time) one- and
+  two-dimensional arrays.  The <tt>blitz++ Array</tt> class is used
+  for dynamic arrays (sized at run time) and higher dimensional arrays
+  (3-D or higher).  Thorough documentation on <tt>blitz++</tt> and
+  <tt>tvmet</tt> can be found at their respective web sites.
+
+  VOOM is developed for research and teaching uses under the direction
+  of Professor W.S. Klug in the <a
+  href=http://www.mae.ucla.edu>Mechanical and Aerospace Engineering
+  department</a> at <a href=http://www.ucla.edu>UCLA</a>.
+
+  <hr>
+  <a href=mailto:klug@seas.ucla.edu>William S. Klug</a>, University of California Los Angeles, &copy;
+  2004-2005 All rights reserved.
+*/

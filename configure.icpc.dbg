@@ -1,0 +1,1 @@
+./configure CXX=icpc CXXFLAGS="-g -ggdb  -DTVMET_OPTIMIZE=1 -ansi -cxxlib-icc " F77=ifort F77FLAGS="-g -ggdb"

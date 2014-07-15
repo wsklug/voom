@@ -1,0 +1,18 @@
+load txy.dat;
+N=100;
+dt = 1.0e-6;
+t=txy(:,1)*dt;
+xy=txy(:,2:6*N+1);
+x0=xy(:,1:6:6*N);
+y0=xy(:,2:6:6*N);
+x2=xy(:,5:6:6*N);
+y2=xy(:,6:6:6*N);
+dx=x2-x0;
+dy=y2-y0;
+theta=asin(dy./dx);
+theta2=theta.^2;
+thetaave=sum(theta2,2)/size(theta2,2);
+vis=1.0e-09;
+l=1.0e3;
+kT=4.1;
+plot(t,thetaave,'r.-');

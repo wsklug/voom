@@ -1,0 +1,102 @@
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                         William S. Klug
+//                University of California Los Angeles
+//                   (C) 2004 All Rights Reserved
+//
+//----------------------------------------------------------------------
+
+namespace voom {
+  template <unsigned int STRAIN_DIMENSION>
+  bool LinearizedMaterial<STRAIN_DIMENSION>::checkConsistency() {
+
+    double eps = 1.0e-6;
+    double tol = 1.0e-9;
+    
+    // compute random small strain tensor
+    srand(time(0));
+    VoigtVector epsilon;
+    for(int i=0; i<epsilon.size(); i++) {
+      epsilon(i) = 0.2 * ( rand()/static_cast<double>(INT_MAX) - 0.5 );
+    }
+    setStrain(epsilon);
+    updateState(false,true,true);
+    VoigtVector sigma;
+    sigma = stress();
+    VoigtMatrix c;
+    c = moduli();
+
+    // compute Dw, and Dsigma by numerical differentiation and
+    // compare to sigma and c
+    VoigtVector Dw;
+    VoigtMatrix Dsigma;
+    
+    for(int i=0; i<epsilon.size(); i++) {
+      epsilon(i) += eps;
+      setStrain(epsilon);
+      updateState(true,true,false);
+      Dw(i) = energyDensity();
+      { 
+	const VoigtVector & s = stress();
+	for(int j=0; j<epsilon.size(); j++)
+	  Dsigma(i,j) = s(j);
+      }
+      epsilon(i) -= eps+eps;
+      setStrain(epsilon);
+      updateState(true,true,false);
+      Dw(i) -= energyDensity();
+      Dw(i) /= (eps+eps);
+      { 
+	const VoigtVector & s = stress();
+	for(int j=0; j<epsilon.size(); j++) {
+	  Dsigma(i,j) -= s(j);
+	  Dsigma(i,j) /= (eps+eps);
+	}
+      }
+      epsilon(i) += eps;
+      setStrain(epsilon);
+    }
+
+    double DwNorm=0.0;
+    double DsigmaNorm=0.0;
+    double DwError=0.0;
+    double DsigmaError=0.0;
+    for(int i=0; i<epsilon.size(); i++) {
+      DwNorm += Dw(i)*Dw(i);
+      DwError = std::max(DwError,fabs(sigma(i)-Dw(i)));
+     for(int j=0; j<epsilon.size(); j++) {
+      DsigmaNorm += Dsigma(i,j)*Dsigma(i,j);       
+      DsigmaError = std::max(DsigmaError,fabs(c(i,j)-Dsigma(i,j)));       
+     }
+    }
+    DwNorm = sqrt(DwNorm);
+    DsigmaNorm = sqrt(DsigmaNorm);
+    if( DwError     > tol*DwNorm  || 
+	//DDwError    > tol2*DDwNorm || 
+	DsigmaError > tol*DsigmaNorm ) {
+      std::cout << "LinearizedMaterial::checkConsistency() FAILED!"<<std::endl;
+      std::cout <<std::setw(18)<<"DwError ="<<std::setw(12)<<DwError 
+		<<std::setw(18)<<"tol*DwNorm =" <<std::setw(12)<<tol*DwNorm
+		<<std::endl
+		<<std::setw(18)<<"DsigmaError ="<<std::setw(12)<<DsigmaError 
+		<<std::setw(18)<<"tol*DsigmaNorm ="<<std::setw(12)<<tol*DsigmaNorm
+		<<std::endl;
+      std::cout << "epsilon =" << std::endl 
+		<< epsilon << std::endl
+		<< "sigma =" << std::endl 
+		<< sigma << std::endl
+		<< "Dw =" << std::endl 
+		<< Dw << std::endl
+		<< "c =" << std::endl 
+		<< c << std::endl
+		<< "Dsigma =" << std::endl 
+		<< Dsigma << std::endl;
+      return false;
+    }
+
+    std::cout << "LinearizedMaterial::checkConsistency() PASSED!"<<std::endl;
+    return true;
+  }
+
+};

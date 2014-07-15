@@ -1,0 +1,25 @@
+CONFIGURING AND COMPILING
+=========================
+
+Intel compilers (icc,icpc,ifort):
+
+1. Place a symbolic link to the icc-specific Makefile.am
+
+$ ln -s Makefile.am.icpc Makefile.am
+
+2. To configure using standard optimization and OpenMP support:
+
+$ ./configure CXX=icpc CXXFLAGS="-O2  -DTVMET_OPTIMIZE=1 -ansi -openmp" F77=ifort F77FLAGS="-O2" --with-blitz-root=/u/home3/klug/local/blitz-icc --with-tvmet-root=/u/home3/klug/local/tvmet-icc
+
+--
+
+GCC compilers (gcc, g++, gfortran):
+
+1. Symbolic link:
+
+$ ln -s Makefile.am.gcc Makefile.am
+
+2. Configure with optimization and OpenMP:
+
+$ ./configure CXX=g++ CXXFLAGS="-O2  -DTVMET_OPTIMIZE=1 -ansi -fopenmp" F77=gfortran F77FLAGS="-O2" --with-blitz-root=/u/home3/klug/local/blitz-gcc --with-tvmet-root=/u/home3/klug/local/tvmet-gcc
+

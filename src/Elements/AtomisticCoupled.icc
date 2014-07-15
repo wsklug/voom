@@ -1,0 +1,241 @@
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                         Melissa M. Gibbons
+//                University of California Los Angeles
+//                  (C) 2007-2008 All Rights Reserved
+//
+//----------------------------------------------------------------------
+
+////////////////////////////////////////////////////////////////////
+// LAPACK subroutine for computing eigenvalues and eigenvectors
+//
+// define prototype of LAPACK functions
+extern "C" void dsyev_(char *jobz, char *uplo, int *n, double *a, int *lda,
+		       double *w, double *work, int *lwork, int *info);
+
+//#define _DEBUG_
+
+namespace voom
+{
+
+  template<class Shape_t>
+  void AtomisticCoupled<Shape_t>::compute(bool f0, bool f1, bool f2)
+  {
+    //
+    // initialize things
+    //    
+    if( f0 ) {
+      _energy = 0.0;
+      _strainEnergy = 0.0;
+    }
+
+    if( f1 ) {
+      _internalForce = Vector3D(0.0);
+    }
+
+    int A=0;
+    for(AtomIterator atit=_atoms.begin(); atit!=_atoms.end(); atit++,A++) {
+      
+      // compute energy
+      if ( f0 ){
+	// energy not computed by this code
+      }
+      
+      // compute forces
+      if ( f1 ) {
+	// compute internal forces
+	// loop for all nodes to compute forces 
+	for (int I=0; I<_nodes.size(); I++) {
+	  double sfv = _shapeFunctions(A,I);
+	  for(int i=0; i<3; i++) {
+	    _internalForce(I)(i) += (*atit)->getForce(i)*sfv;
+	  }
+	} // end nodes loop	
+      } // end force calcs
+      
+      // compute stiffness matrix
+      if( f2 ) {
+	//std::cerr << std::endl << std::endl << "\t"
+	//    << "Aaaarrrrrrggggggh!  No stiffness matrix yet!" 
+	//    << std::endl << std::endl;
+      }
+
+    }
+
+    // compute energy
+    if(f0) {
+      _energy = _strainEnergy;
+    }
+    
+    // assemble element forces to nodes
+    if(f1) {
+      
+      int a=0;
+      for(NodeIterator na=_nodes.begin();  na!=_nodes.end(); na++, a++) {
+	for(int i=0; i<3; i++) {
+	  double f_ia = _internalForce(a)(i);
+	  (*na)->addForce( i, f_ia );
+	}
+      }
+
+    }
+    
+  }
+  
+  template<class Shape_t>
+  void AtomisticCoupled<Shape_t>::recalcAtomGlobPos()
+  {
+    double x1 = _nodes[3]->getPoint(0);
+    double y1 = _nodes[3]->getPoint(1);
+    double z1 = _nodes[3]->getPoint(2);
+    double x2 = _nodes[5]->getPoint(0);
+    double y2 = _nodes[5]->getPoint(1);
+    double z2 = _nodes[5]->getPoint(2);
+    
+    for(ConstAtomIterator a=_atoms.begin(); a!=_atoms.end(); a++) {
+     
+      double ngcx = x1 + ( (*a)->getPosition(0) + 1.0 )/2.0*(x2 - x1);
+      double ngcy = y1 + ( (*a)->getPosition(1) + 1.0 )/2.0*(y2 - y1);
+      double ngcz = z1 + ( (*a)->getPosition(2) + 1.0 )/2.0*(z2 - z1);
+
+      (*a)->setPoint(0,ngcx);
+      (*a)->setPoint(1,ngcy);
+      (*a)->setPoint(2,ngcz);
+    }
+  }
+
+  // template<class Shape_t>
+//   Vector3D AtomisticCoupled<Shape_t>::CalcPrincipalStrains()
+//   {	
+
+//     Vector3D prinStrain;
+//     int numQP = 0;
+    
+//     for(QuadPointIterator p=_quadPoints.begin(); 
+// 	p!=_quadPoints.end(); p++, numQP++){
+      
+//       //
+//       // compute deformation gradient
+//       //
+//       Matrix3D F(0.0);
+      
+//       const typename Shape_t::DerivativeContainer &  DN = p->shapeDerivatives;
+      
+//       for(int a=0; a<_nodes.size(); a++) {
+// 	const Vector3D & xa = _nodes[a]->point();
+// 	for(int i=0; i<3; i++) {
+// 	  for(int J=0; J<3; J++){
+// 	    F(i,J) += xa(i)*DN[a](J);
+// 	  } 
+// 	}
+//       }
+      
+//       // C:  right Cauchy-green strain tensor
+//       Tensor3D C;
+//       C = (tvmet::trans(F))*F;
+
+//       // compute Eigenvalues and Eigenvectors by calling LAPACK library
+//       char jobz = 'N';
+//       char uplo = 'L';
+//       int  n    = 3;
+//       int  lda  = n;
+//       int  lwork = 3*n-1;
+//       int  info;
+//       double eigenvalues[3];
+//       double work[lwork];
+      
+//       // calling lapack function here to compute
+//       // eigenvalues of C1
+//       dsyev_(&jobz, &uplo, &n, C.data(),
+// 	     &lda, eigenvalues, work, &lwork, &info);
+//       for(int i=0; i<3; i++) {
+// 	prinStrain(i) = eigenvalues[i];
+//       }
+
+//       if (info != 0) {
+// 	std::cout << "Something is wrong in DSYEV_" << std::endl;
+// 	exit(0);
+//       }
+      
+//     } // end quadrature loop
+    
+//     if(numQP==4) {
+//       prinStrain /= 4.0;
+//     } else
+//       if(numQP==5) {
+// 	prinStrain /= 5.0;
+//       }
+
+//     return prinStrain;    
+//   }
+  
+  //! Constructor
+  template<class Shape_t>
+  AtomisticCoupled<Shape_t>::
+  AtomisticCoupled(const NodeContainer & nodes, const AtomContainer & atoms)
+  {
+    //! initialize NodeContainer
+    unsigned nNodes = nodes.size();      
+    _nodes = nodes;
+    
+    for(ConstNodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) 
+      _baseNodes.push_back(*n);
+    
+    //! initialize AtomContainer
+    unsigned nAtoms = atoms.size();
+    _atoms = atoms;
+
+    _shapeFunctions.resize(nAtoms,nNodes);
+
+    double x1 = nodes[3]->getPoint(0);
+    double y1 = nodes[3]->getPoint(1);
+    double z1 = nodes[3]->getPoint(2);
+    double x2 = nodes[5]->getPoint(0);
+    double y2 = nodes[5]->getPoint(1);
+    double z2 = nodes[5]->getPoint(2);
+    
+    int i=0;
+    for(ConstAtomIterator a=atoms.begin(); a!=atoms.end(); a++,i++) {
+      
+      Point globCrds;
+      globCrds[0] = (*a)->getPoint(0);
+      globCrds[1] = (*a)->getPoint(1);
+      globCrds[2] = (*a)->getPoint(2);
+
+      double percentx = (globCrds[0]-x1)/(x2-x1);
+      double percenty = (globCrds[1]-y1)/(y2-y1);
+      double percentz = (globCrds[2]-z1)/(z2-z1);
+      double paramx = -1.0+percentx*2.0;
+      double paramy = -1.0+percenty*2.0;
+      double paramz = -1.0+percentz*2.0;
+
+      // use setPosition method in DeformationNode to set parametric coords
+      (*a)->setPosition(0,paramx);
+      (*a)->setPosition(1,paramy);
+      (*a)->setPosition(2,paramz);
+
+      Point paramCoords;
+      paramCoords(0) = paramx;
+      paramCoords(1) = paramy;
+      paramCoords(2) = paramz;
+      
+      // set shape functions
+      Shape_t shp( paramCoords );
+
+      int j=0;
+      for(ConstNodeIterator n=_nodes.begin(); n!=_nodes.end(); n++,j++) 
+	_shapeFunctions(i,j) = shp.functions()[j]
+;
+    }
+
+    //! allocate memory for mechanics variables
+    _internalForce.resize( nNodes );
+    
+    //! initialize values = 0 by default
+    // DON'T DO ANYMORE, AS DURING INITIALIZATION, ATOM FORCES NOT READ IN YET
+    //compute(true, true, false); 
+
+  }
+
+} // namespace voom

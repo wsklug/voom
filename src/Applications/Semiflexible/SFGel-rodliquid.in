@@ -1,0 +1,26 @@
+# This is an input file for the SemiflexibleGel rodliquid application.  To run the application, pass the name of this file to rodliquid.
+# Note that all lines beginning with a '#' will be ignored.
+# PLEASE DO NOT MODIFY ANYTHING SAVE FOR LEADING `#`s AND NUMERICAL VALUES.
+
+#Parameter  	Description		Value	 	Units
+
+#First up are rod/system parameters
+kT		Temperature		4.1e-3		pN-microns
+visc		Viscosity		1.0e-3		pN-s/micron^2
+dt		Time step		1.0e-4		seconds
+kBond		Spring Constant		1.0e2		pN/micron	
+L		Filament length		2.0		microns 
+FilDens		Density of filaments	0.12		microns^-2
+Wx/L		System width, x direct.	20.0		no units
+Wy/L		System width, y direct.	20.0		no units
+
+#Now come parameters having to do with the two-body potential
+PotentialType	Type of potential	Gaussian	no units  	  
+Charge Sep.	Separation of charges	0.3		microns
+Max. PP Sep.	Max. sep. to calculate	4.0		microns
+EnergyScale	Scale of energy		1.0e2		pN-microns
+LengthScale	Extent of potential	1.0		microns
+
+#Now come parameters having to do with the solver
+MaxTime		Maximum time to sim.	1.0		seconds
+PrintTime	How often to print	1.0e-2		seconds

@@ -1,0 +1,1 @@
+g++ -O2 extractDecimateSurface.cc -o extractDecimateSurface -I/u/home/campus/klug/local/vtk-gcc/include/vtk-5.4 -L/u/home/campus/klug/local/vtk-gcc/lib/vtk-5.4 -lvtkIO -lvtkGraphics -lvtkGenericFiltering -lvtkFiltering -lvtkCommon -lvtksys -ldl -lpthread

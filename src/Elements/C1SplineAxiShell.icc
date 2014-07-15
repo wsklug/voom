@@ -1,0 +1,332 @@
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                         William S. Klug
+//                University of California Los Angeles
+//                   (C) 2008 All Rights Reserved
+//
+//----------------------------------------------------------------------
+
+////////////////////////////////////////////////////////////////////
+// LAPACK subroutine for computing eigenvalues and eigenvectors
+//
+// define prototype of LAPACK functions
+extern "C" void dsyev_(char *jobz, char *uplo, int *n, double *a, int *lda,
+		       double *w, double *work, int *lwork, int *info);
+
+//#define _DEBUG_
+
+namespace voom
+{
+
+  template<class Material_t>
+  void C1SplineAxiShell<Material_t>::compute(bool f0, bool f1, bool f2)
+  {
+    //
+    // initialize things
+    //
+    // if applied volume constraint, _volume is needed for computing
+    // if applied area constraint, _area is needed for computing
+    // both energy and forces
+    _volume = 0.0;
+    _area = 0.0;
+    _totalCurvature = 0.0;
+
+    if( f0 ) {
+      _energy = 0.0;
+      _strainEnergy = 0.0;
+      _stretchingEnergy = 0.0;
+      _bendingEnergy = 0.0;
+      _work = 0.0;
+    }
+
+    if( f1 ) {
+      Vector3D zero(0);
+      _internalForce = zero;
+      _pressureForce = zero;
+      _tensionForce = zero;
+    }
+		
+    // loop for every quadrature point
+    for(QuadPointIterator p=_quadPoints.begin(); 
+	p!=_quadPoints.end(); p++){
+      //
+      // compute Shell geometry
+      //
+			
+      // compute position, basis vector, and derivatives of basis vector
+      // 
+
+      const Spline::FunctionArray & N 
+	= p->shape.functions();
+      const Spline::DerivativeArray & DN 
+	= p->shape.derivatives();
+      const Spline::DerivativeArray & DDN 
+	= p->shape.secondDerivatives();
+
+      double r=0.0, z=0.0, dr=0.0, dz=0.0, ddr=0.0, ddz=0.0; 
+      for (int b = 0; b < _nodes.size(); b++){
+	double rb = _nodes[b]->getPoint(0);
+	double zb = _nodes[b]->getPoint(1);
+	r += N[b] * rb;
+	z += N[b] * zb;
+	dr += DN[b] * rb;
+	dz += DN[b] * zb;
+	ddr += DDN[b] * rb;
+	ddz += DDN[b] * zb;
+      }
+
+      // Components of all vectors are expressed in the (r,\phi,z)
+      // coordinate system so here we use Vector3D
+      Vector3D x(0.0);
+      x = r, 0.0, z;
+
+      tvmet::Vector< Vector3D, 2 > a;
+      // \begin{eqnarray*}
+      // \bm{a}_1 &=& \bm{x}_{,s} = \bm{x}' = r'\bm{e}_r + z'\bm{e}_z
+      // \\
+      // \bm{a}_2 &=& \bm{x}_{,\phi} = r\bm{e}_\phi
+      // \end{eqnarray*}
+      a(0) = dr, 0.0, dz;
+      a(1) = 0.0, r, 0.0;
+
+      tvmet::Matrix< Vector3D, 2, 2 > aPartials;
+      // \begin{eqnarray*}
+      // \bm{a}_{1,1} &=& \bm{x}'' = r''\bm{e}_r + z''\bm{e}_z \\
+      // \bm{a}_{1,2} &=& \bm{a}_{2,1} = \bm{x}_{,s\phi} = r'\bm{e}_\phi \\
+      // \bm{a}_{2,2} &=& \bm{x}_{,\phi\phi} = -r\bm{e}_r 
+      // \end{eqnarray*}
+      aPartials(0,0) = ddr, 0.0, ddz;
+      aPartials(0,1) = 0.0, dr, 0.0;
+      aPartials(1,0) = aPartials(0,1); // by symmetry
+      aPartials(1,1) = -r, 0.0, 0.0;
+       
+      Material_t& material = p->material;
+      // compute shell geometry
+      ShellGeometry geometry( a, aPartials );
+      const Vector3D& d = geometry.d();
+      const tvmet::Vector< Vector3D, 2 >& aDual = geometry.aDual();
+      const tvmet::Vector<Vector3D, 2>& dPartials = geometry.dPartials();
+      const tvmet::Matrix<Vector3D, 2, 2>& dualPartials = geometry.aDualPartials();
+			
+      // store the deformed geometry in shell geometry class
+      material.setGeometry(geometry);
+
+      // compute strain energy, stress and moment resultants
+      material.updateState(f0, f1, f2); 
+			
+      const double metric = geometry.metric();
+      const double refMetric = ( material.refShellGeometry()).metric();
+      const double jacobian = metric/refMetric;
+      const double weight =  2.0 * M_PI * metric * p->weight;
+      
+      // compute area for the area constaint energy
+      _area += weight;
+
+      // compute volume for the volume constraint energy
+//       _volume +=  dot(d,x) * weight / 3.0;
+      _volume += M_PI * sqr(r) * dz * p->weight;
+
+      // compute total curvature for constraint energy
+      _totalCurvature += material.meanCurvature()*weight;
+      
+      // compute energy
+      if ( f0 ){
+	// compute strain energy 
+	_strainEnergy += material.energyDensity() * weight;	
+	_stretchingEnergy += material.stretchingEnergy() * weight;	
+	_bendingEnergy += material.bendingEnergy() * weight;	
+      }
+
+      // compute forces
+      if ( f1 ) {
+	//
+	// get stress and moment resultants
+	const tvmet::Vector< Vector3D, 3 >& sr = material.stressResultants();
+	const tvmet::Vector< Vector3D, 2 >& mr = material.momentResultants();
+
+	double pressure = 0.0;
+	if(_volumeConstraint!=noConstraint) 
+	  pressure = _pressureNode->point();
+
+	double tension = 0.0;
+	if(_areaConstraint!=noConstraint) 
+	  tension = _tensionNode->point();
+
+	double totalCurvatureForce = 0.0;
+	if(_totalCurvatureConstraint!=noConstraint) 
+	  totalCurvatureForce = _totalCurvatureNode->point();
+
+	// loop for all nodes to compute forces 
+	for (int I=0; I<_nodes.size(); I++) {
+
+	  // compute gradients of basis vectors w.r.t. nodal dof
+	  Tensor3D grad_a[2];
+	  grad_a[0] = 
+	    DN[I], 0.0, 0.0,
+	    0.0,   0.0, 0.0,
+	    0.0,   0.0, DN[I];
+
+	  grad_a[1] = 
+	    0.0,  0.0, 0.0,
+	    N[I], 0.0, 0.0,
+	    0.0,  0.0, 0.0;
+	    
+	  Tensor3D grad_aPartials[2][2];
+	  grad_aPartials[0][0] = 
+	    DDN[I], 0.0, 0.0,
+	    0.0,    0.0, 0.0,
+	    0.0,    0.0, DDN[I];
+
+	  grad_aPartials[0][1] = 
+	    0.0,   0.0, 0.0,
+	    DN[I], 0.0, 0.0,
+	    0.0,   0.0, 0.0;
+	  grad_aPartials[1][0] = grad_aPartials[0][1];
+
+	  grad_aPartials[1][1] = 
+	    -N[I], 0.0, 0.0,
+	    0.0,   0.0, 0.0,
+	    0.0,   0.0, 0.0;
+	    
+	  Tensor3D grad_dPartials[2];
+	  for(int alpha=0; alpha<2; alpha++) {
+	    grad_dPartials[alpha] = 
+	      0.0,0.0,0.0,
+	      0.0,0.0,0.0,
+	      0.0,0.0,0.0;
+	    for(int beta=0; beta<2; beta++) {
+	      Vector3D v;
+	      v = trans(grad_a[beta])*d;
+	      Tensor3D T;
+	      tensorProduct( dualPartials(beta,alpha), v, T );
+	      grad_dPartials[alpha] -= T;
+		
+	      v = trans(grad_a[beta])*dPartials(alpha) 
+		+ trans(grad_aPartials[beta][alpha])*d;
+	      tensorProduct( aDual(beta), v, T );
+	      grad_dPartials[alpha] -= T;
+	    }
+	  }
+
+	  // compute internal forces
+
+	  for ( int alpha = 0; alpha < 2; alpha++){
+	    // Stress Resultant part
+ 	    _internalForce(I)  +=  trans( grad_a[alpha] ) * sr(alpha) * weight;
+	    // Moment Resultant part
+	    _internalForce(I) += trans( grad_dPartials[alpha] ) * mr(alpha) * weight;
+	    // Tension part
+	    _tensionForce(I) += 
+	      tension * trans( grad_a[alpha] ) * aDual[alpha] * weight;
+	    // compute pressure/volume constraint forces 
+// 	    _pressureForce(I) -= weight * pressure/3.0 * 
+// 	      ( d*N[I] + trans(grad_a[alpha])*( dot(x,d)*aDual[alpha] -
+// 						dot(x,aDual[alpha])*d ) );
+	  }
+	  _pressureForce(I)(0) -= pressure*M_PI*(p->weight)*2.0*r*N[I]*dz;
+	  _pressureForce(I)(2) -= pressure*M_PI*(p->weight)*sqr(r)*DN[I];
+// 	  _pressureForce(I) -= pressure * d * N[I] * weight;
+	  
+	} // end nodes loop
+	
+      } // end force calcs
+
+      // compute stiffness matrix
+      if( f2 ) {
+      }
+      
+    } // end quadrature loop
+
+    if(f0) {
+      _energy = _strainEnergy;
+    }
+
+    
+    if(f1) {
+      int a=0, ia=0;
+      for(NodeIterator na=_nodes.begin();  na!=_nodes.end(); na++, a++) {
+	double fr = _internalForce(a)(0) 
+	  	  + _pressureForce(a)(0) 
+	  	  + _tensionForce(a)(0);
+	(*na)->addForce( 0, fr );
+	//skip fphi
+	double fz = _internalForce(a)(2) 
+	  	  + _pressureForce(a)(2) 
+	  	  + _tensionForce(a)(2);
+	(*na)->addForce( 1, fz );
+      }
+    }
+
+
+  }
+
+
+  template<class Material_t>
+  void C1SplineAxiShell<Material_t>::updateRefConfiguration() {
+    for(QuadPointIterator p=_quadPoints.begin(); 
+	p!=_quadPoints.end(); p++){
+      //
+      // compute Shell geometry
+      //
+			
+      // compute position, basis vector, and derivatives of basis vector
+       const Spline::FunctionArray & N 
+	= p->shape.functions();
+      const Spline::DerivativeArray & DN 
+	= p->shape.derivatives();
+      const Spline::DerivativeArray & DDN 
+	= p->shape.secondDerivatives();
+
+      double R=0.0, Z=0.0, dR=0.0, dZ=0.0, ddR=0.0, ddZ=0.0; 
+      for (int b = 0; b < _nodes.size(); b++){
+	double Rb = _nodes[b]->position()(0);
+	double Zb = _nodes[b]->position()(1);
+	R += N[b] * Rb;
+	Z += N[b] * Zb;
+	dR += DN[b] * Rb;
+	dZ += DN[b] * Zb;
+	ddR += DDN[b] * Rb;
+	ddZ += DDN[b] * Zb;
+      }
+
+      // Components of all vectors are expressed in the (r,\phi,z)
+      // coordinate system so here we use Vector3D
+      Vector3D X(0.0);
+      X = R, 0.0, Z;
+
+      tvmet::Vector< Vector3D, 2 > a;
+      // \begin{eqnarray*}
+      // \bm{a}_1 &=& \bm{x}_{,s} = \bm{x}' = r'\bm{e}_r + z'\bm{e}_z
+      // \\
+      // \bm{a}_2 &=& \bm{x}_{,\phi} = r\bm{e}_\phi
+      // \end{eqnarray*}
+      a(0) = dR, 0.0, dZ;
+      a(1) = 0.0, R, 0.0;
+
+      tvmet::Matrix< Vector3D, 2, 2 > aPartials;
+      // \begin{eqnarray*}
+      // \bm{a}_{1,1} &=& \bm{x}'' = r''\bm{e}_r + z''\bm{e}_z \\
+      // \bm{a}_{1,2} &=& \bm{a}_{2,1} = \bm{x}_{,s\phi} = r'\bm{e}_\phi \\
+      // \bm{a}_{2,2} &=& \bm{x}_{,\phi\phi} = -r\bm{e}_r 
+      // \end{eqnarray*}
+      aPartials(0,0) = ddR, 0.0, ddZ;
+      aPartials(0,1) = 0.0, dR, 0.0;
+      aPartials(1,0) = aPartials(0,1); // by symmetry
+      aPartials(1,1) = -R, 0.0, 0.0;
+			
+      Material_t& material = p->material;
+      // compute shell geometry
+      ShellGeometry refgeometry( a, aPartials );
+			
+      // store the reference geometry in shell geometry class
+      material.setRefGeometry(refgeometry);
+
+    }    
+    compute(true,true,true);
+    
+    return;
+  }
+   
+
+} // namespace voom

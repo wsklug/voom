@@ -1,0 +1,682 @@
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                         William S. Klug
+//                University of California Los Angeles
+//                 (C) 2004-2008 All Rights Reserved
+//
+//----------------------------------------------------------------------
+
+/*! 
+  \file SemiflexibleGel.cc
+
+  \brief SemiflexibleGel is a concrete class derived from Body, implementing
+  the concept of a collection of cross-linked semiflexible polymers (i.e., beams)
+
+*/
+
+namespace voom {
+  
+  template<int N>
+  SemiflexibleGel<N>::Filament::Filament( const DefNodeContainer & n, double kAngle, 
+					  double viscosity, double kT, double dt, 
+					  double kC, int fitOrder) 
+    : nodes(n) {
+    
+    double Lp = kC/kT;
+    double L0 = norm2(nodes[0]->point()-nodes[1]->point());
+    double Larc = (nodes.size()-1)*L0*(1.0+(L0/(6.0*Lp)));
+    for( int i=0; i<nodes.size()-1; i++ ) {
+      // create Bonds and Rods
+      //
+      // i -- i+1 
+      // 
+      Bond * b = new Bond( nodes[i], nodes[i+1], kT, kC, fitOrder, nodes.size()-1, Larc, true, 1.0e2 ) ;
+      bonds.push_back(b);
+      Rod * r = new Rod( nodes[i], nodes[i+1], viscosity, kT, dt ) ;
+      rods.push_back(r);
+
+    }
+    
+    for( int i=0; i<nodes.size()-2; i++ ) {
+      // create Angles
+      //
+      // i         i+2 
+      //   \     /
+      //     i+1	  
+      Angle * a = new Angle( nodes[i], nodes[i+1], nodes[i+2], kAngle );
+      angles.push_back(a);
+    }	
+  }
+ 
+  template<int N>
+  SemiflexibleGel<N>::Filament::~Filament() {
+    for(int i=0; i< bonds.size(); i++) delete( bonds[i]);
+    for(int i=0; i<  rods.size(); i++) delete(  rods[i]);
+    for(int i=0; i<angles.size(); i++) delete(angles[i]);
+  }
+
+//   template<int N>
+//   static SemiflexibleGel<N> * SemiflexibleGel<N>::setupNewGel() {
+//     SemiflexibleGel<N> * gel = new SemiflexibleGel<N>();
+//     // set up gel //
+
+//     return gel;
+//   }
+
+  template<int N>
+  void SemiflexibleGel<N>::compute( bool f0, bool f1, bool f2 ) {
+
+    // Predictor/corrector approach for constraint
+    for(ConstraintIterator c=_constraints.begin(); c!=_constraints.end(); c++) {
+      (*c)->predict();
+    }
+
+    if( f0 ) _energy = 0.0;
+    
+    // compute energy and forces
+    for( FilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+      for( BondIterator b = (*f)->bonds.begin(); b!= (*f)->bonds.end(); b++ ) {
+	(*b)->compute(f0,f1,f2);
+      }
+      for( RodIterator r = (*f)->rods.begin(); r!= (*f)->rods.end(); r++ ) {
+	(*r)->compute(f0,f1,f2);
+      }
+      for( AngleIterator a = (*f)->angles.begin(); a!= (*f)->angles.end(); a++ ) {
+	(*a)->compute(f0,f1,f2);
+      }
+    }
+
+
+    for( CrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++) {
+      (*c)->compute(f0,f1,f2);
+    }
+
+    for( MotorIterator m=_motors.begin(); m!=_motors.end(); m++) {
+      if((*m)->isAttached()) (*m)->compute(f0,f1,f2);
+    }
+    
+
+    // sum energy
+    if( f0 ) {
+      for( FilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+	for( BondIterator b = (*f)->bonds.begin(); b!= (*f)->bonds.end(); b++ ) {
+	  _energy += (*b)->energy();
+	}
+	for( AngleIterator a = (*f)->angles.begin(); a!= (*f)->angles.end(); a++ ) {
+	  _energy += (*a)->energy();
+	}
+      }
+      for(CrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++) {
+        _energy += (*c)->energy();
+      }
+    }
+
+    // Predictor/corrector approach for constraint
+    for(ConstraintIterator c=_constraints.begin(); c!=_constraints.end(); c++) {
+      (*c)->correct();
+    }
+
+  }
+
+  template<int N>
+  void SemiflexibleGel<N>::printParaview(const std::string name) const {
+
+//     std::cout << "SemiflexibleGel<N>::printParaview()." << std::endl;
+    //
+    // open file
+    //
+    std::string fileName = name + ".vtk";
+    std::ofstream ofs(fileName.c_str());
+    if (!ofs) {
+      std::cout << "Error: can not open paraview output file "
+		<< fileName
+		<< std::endl;
+      return;
+    }
+    
+    //
+    //    Node position data
+    //
+    
+    // count up all filament nodes
+    int nNodes = 0;
+    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+      nNodes += (*f)->nodes.size();
+    }
+    nNodes += _motors.size()*2;
+
+    //Mo
+    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+      const DefNodeContainer & crosslinknodes = (*c)-> getNodes();
+      nNodes += crosslinknodes.size();
+    }
+    
+    ofs << "# vtk DataFile Version 2.0\n"
+	<< "Test example" << std::endl
+	<< "ASCII" << std::endl
+	<< "DATASET POLYDATA" << std::endl
+	<< "POINTS  " << nNodes << "  double" << std::endl;
+    
+
+    // output nodal postions
+    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+      ConstDefNodeIterator pn = (*f)->nodes.begin();
+      for ( ; pn!= (*f)->nodes.end(); pn ++) {
+	const Vector2D & nodalPos = (*pn)->point();
+	ofs << std::setprecision(16) 
+	    << nodalPos(0) << "  "
+	    << 0.0 << "  "
+	    << nodalPos(1) << std::endl;
+      }
+    }
+
+    for (ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++) {
+      const Vector2D & nodalPos1 = (*m)->getEndPoint1();
+      const Vector2D & nodalPos2 = (*m)->getEndPoint2();
+      ofs << std::setprecision(16)
+	  << nodalPos1(0) << "  "
+	  << 0.0 << "  "
+          << nodalPos1(1) <<std::endl;
+      ofs << std::setprecision(16)
+	  << nodalPos2(0) << "  "
+	  << 0.0 << "  "
+          << nodalPos2(1) <<std::endl;
+    }
+
+    //Mo
+    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+      const DefNodeContainer & crosslinknodes = (*c)-> getNodes();
+      ConstDefNodeIterator pn = crosslinknodes.begin();
+      for ( ; pn!= crosslinknodes.end(); pn ++) {
+        const Vector2D & nodalPos = (*pn)->position();
+        ofs << std::setprecision(16) 
+	    << nodalPos(0) << "  "
+	    << 0.0 << "  "
+	    << nodalPos(1) << std::endl;
+      }
+    }
+
+    //
+    // segment connectivity data
+    //
+    int nSegments=0;
+    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+      nSegments+=(*f)->bonds.size();
+    }
+    nSegments += _motors.size();
+
+    //Mo
+    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+      nSegments++;
+    }
+
+    ofs << "LINES  " << nSegments << "  "
+	<< 3*nSegments << std::endl;
+    int nodeID=0;
+    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+      for(int a=0; a < (*f)->bonds.size(); a++) {
+
+	ofs << 2 << "  "
+	    << std::setw(10) << nodeID
+	    << std::setw(10) << nodeID+1
+	    << std::endl;
+	nodeID++;
+      }
+      nodeID++;
+    }
+    for( ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++ ) {
+      ofs << 2 << "  "
+	  << std::setw(10) << nodeID
+	  << std::setw(10) << nodeID+1
+	  << std::endl;
+      nodeID += 2;
+    }
+     	
+    //Mo
+    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+      ofs << 2 << "  "
+	  << std::setw(10) << nodeID
+	  << std::setw(10) << nodeID+1
+	  << std::endl;
+      nodeID+=2;
+    }
+
+    //
+    //  output energy for each segment
+    //
+    ofs << "CELL_DATA    " << nSegments << std::endl;
+
+    ofs << "SCALARS    Energy    double    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+      int firstAngle=0;
+      int lastAngle=(*f)->angles.size()-1;   //What happened to those two variables???  --Mo
+      for(int a=0; a < (*f)->bonds.size(); a++) {
+	double energy = (*f)->bonds[a]->energy();
+// 	energy += 0.5*(*f)->bonds[std::max(a-1,firstAngle)]->energy();
+// 	energy += 0.5*(*f)->bonds[std::min(a,lastAngle)]->energy();
+	ofs << energy << std::endl;
+      }
+    }
+    for( ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++ ) {
+      ofs << (*m)->energy() << std::endl;
+    }
+      ofs << std::endl;
+
+    //Mo
+    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+      double energy = (*c)->energy();
+      ofs << energy << std::endl;
+    }
+      
+    ofs << std::endl;
+
+    ofs << std::endl << "POINT_DATA " << nNodes << std::endl
+	<< "VECTORS displacements double" << std::endl;
+
+    // output nodal displacements
+    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+      ConstDefNodeIterator pn = (*f)->nodes.begin();
+      for ( ; pn!= (*f)->nodes.end(); pn ++) {
+	Vector2D nodalDisp;
+	nodalDisp = (*pn)->point() - (*pn)->position();
+	ofs << std::setprecision(16) 
+	    << nodalDisp(0) << '\t' 
+	    << 0.0 << '\t' 
+	    << nodalDisp(1)  << std::endl;
+      }
+    }
+    for (ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++) {
+      Vector2D nodalPos1; 
+      nodalPos1 = (*m)->getEndPoint1()-(*m)->getStartPoint();
+      Vector2D nodalPos2;
+      nodalPos2 = (*m)->getEndPoint2()-(*m)->getStartPoint();
+      ofs << std::setprecision(16)
+	  << nodalPos1(0) << "  "
+	  << 0.0 << "  "
+          << nodalPos1(1) <<std::endl;
+      ofs << std::setprecision(16)
+	  << nodalPos2(0) << "  "
+	  << 0.0 << "  "
+          << nodalPos2(1) <<std::endl;
+    }
+    
+    //Mo
+    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+      const DefNodeContainer & crosslinknodes = (*c)-> getNodes();
+      ConstDefNodeIterator pn = crosslinknodes.begin();
+      for ( ; pn!= crosslinknodes.end(); pn ++) {
+        Vector2D nodalDisp;
+        nodalDisp = (*pn)->point() - (*pn)->position();
+        ofs << std::setprecision(16) 
+	    << nodalDisp(0) << '\t'
+	    << 0.0 << '\t'
+	    << nodalDisp(1) << std::endl;
+	//cout << " semiflexible " << (*pn) <<' ' << (*pn)->point() <<endl;
+      }
+      
+    }
+
+    ofs << std::endl << "VECTORS forces double" << std::endl;
+    // output nodal forces
+    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+      ConstDefNodeIterator pn = (*f)->nodes.begin();
+      for ( ; pn!= (*f)->nodes.end(); pn ++) {
+	const Vector2D & nodalForce = (*pn)->force();
+	ofs << std::setprecision(16) 
+	    << nodalForce(0) << '\t' 
+	    << 0.0 << '\t' 
+	    << nodalForce(1) << std::endl;
+      }
+    }
+
+    for (ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++) {
+      ofs << std::setprecision(16)
+	  << 0.0 << '\t'
+	  << 0.0 << '\t'
+	  << 0.0 << std::endl;
+      ofs << std::setprecision(16)
+	  << 0.0 << '\t'
+	  << 0.0 << '\t'
+	  << 0.0 << std::endl;
+    }
+
+
+    //Mo
+    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+      const DefNodeContainer & crosslinknodes = (*c)-> getNodes();
+      ConstDefNodeIterator pn = crosslinknodes.begin();
+      for ( ; pn!= crosslinknodes.end(); pn ++) {
+        const Vector2D & nodalForce = (*pn)->force();
+        ofs << std::setprecision(16) 
+	    << nodalForce(0) << '\t'
+	    << 0.0 << '\t'
+	    << nodalForce(1) << std::endl;
+      }
+    }
+    
+    ofs.close();
+
+    return;
+
+  }
+
+  template<int N>
+  void SemiflexibleGel<N>::attachMotor(MolMot * mot, const Filament * f1, const Filament * f2) {
+      int nNodesFil1 = f1->nodes.size();
+      int nNodesFil2 = f2->nodes.size();
+      DefNodeIterator node1Iter = f1->nodes.begin();
+      DefNodeIterator node2Iter = f2->nodes.begin();
+      DefNode * node1A = *node1Iter;
+      DefNode * node2A = *node2Iter;
+      DefNode * node1B = *(f1->nodes.end()-1);
+      DefNode * node2B = *(f2->nodes.end()-1);
+      VectorND x1A = node1A->point();
+      VectorND x1B = node1B->point();
+      VectorND x2A = node2A->point();
+      VectorND x2B = node2B->point();
+      VectorND xintersect1;
+      VectorND xintersect2;
+      double end_to_end1 = norm2(x1B-x1A);
+      double end_to_end2 = norm2(x2B-x1A);
+      double tol = (end_to_end1+end_to_end2)/2.0;
+
+      double a1,a2;
+      if(abs(x1B[0]-x1A[0]) > 1.0e-6 && abs(x2B[0]-x2A[0]) > 1.0e-6) {
+	a1 = (x1B[1]-x1A[1])/(x1B[0]-x1A[0]);
+	a2 = (x2B[1]-x2A[1])/(x2B[0]-x2A[0]);
+	xintersect1[0] = (x1A[1]-x2A[1]+a2*x2A[0]-a1*x1A[0])/(a2-a1);
+	xintersect1[1] = (a2*(x1A[1]-a1*x1A[0])-a1*(x2A[1]-a2*x2A[0]))/(a2-a1);
+      }
+      else if(abs(x1B[0]-x1A[0]) <= 1.0e-6 && abs(x2B[0]-x2A[0]) > 1.0e-6){
+	xintersect1[0] = x1A[0];
+	a2 = (x2B[1]-x2A[1])/(x2B[0]-x2A[0]);
+	xintersect1[1] = a2*x1A[0] + x2A[1] - a2*x2A[0];
+      }
+      else if(abs(x2B[0]-x2A[0]) <= 1.0e-6 && abs(x1B[0]-x1A[0]) > 1.0e-6) {
+	xintersect1[0] = x2A[0];
+	a1 = (x1B[1]-x1A[1])/(x1B[0]-x1A[0]);
+	xintersect1[1] = x1A[1] - a1*(x1A[0] - x2A[0]);
+      }
+      else {
+	xintersect1[0] = (x1A[0]+x2A[0])/2.0;
+	xintersect1[1] = 1.0e30;
+      }
+
+      int node_jump1 = min((int)(nNodesFil1*norm2(xintersect1-x1A)/end_to_end1),nNodesFil1-2);
+      int node_jump2 = min((int)(nNodesFil2*norm2(xintersect1-x2A)/end_to_end2),nNodesFil2-2);
+
+      if(dot(x1B-x1A,xintersect1-x1A)<0.0) {
+	node_jump1 = 0;
+      }
+
+      if(dot(x2B-x2A,xintersect1-x2A)<0.0) {
+	node_jump2 = 0;
+      }
+      
+      bool intersected = false;
+      int rad = 1;
+      int curRadCounter = 0;
+      int totCounter = 0;
+      int node1_offset = node_jump1;
+      int node2_offset = node_jump2;
+      
+      while(intersected == false && totCounter < (nNodesFil1-1)*(nNodesFil2-1)) {
+	if(node1_offset >= 0 && node2_offset >= 0 && node1_offset < nNodesFil1 - 1 && node2_offset < nNodesFil2 - 1 && (abs(node1_offset-node_jump1) >= (rad-1)/2 || abs(node2_offset-node_jump2) >= (rad-1)/2)) {
+	  node1A = *(node1Iter + node1_offset);
+	  node1B = *(node1Iter + node1_offset + 1);
+	  node2A = *(node2Iter + node2_offset);
+	  node2B = *(node2Iter + node2_offset + 1);
+	  x1A = node1A->point();
+	  x1B = node1B->point();
+	  x2A = node2A->point();
+	  x2B = node2B->point();
+	  intersected = IntersectionFinder<N>::checkIntersection(x1A,x1B,x2A,x2B,xintersect1,xintersect2,tol,_box);
+	  if(intersected == true) {
+	    mot->setPosition(f1->nodes,node1_offset,f2->nodes,node2_offset,xintersect1,xintersect2);
+	    _motors.push_back(mot);
+	  }
+	  totCounter++;
+	}
+	curRadCounter++;
+	if(curRadCounter >= sqr(rad)) {
+	  rad += 2;
+	  curRadCounter = 0;
+	}
+	
+	node2_offset = node_jump2 - ((rad-1)/2) + curRadCounter%rad;
+	node1_offset = node_jump1 - ((rad-1)/2) + curRadCounter/rad;
+      }
+  }
+
+  template<int N>
+  void SemiflexibleGel<N>::attachCrosslink(Clink * cl, const Filament * f1, const Filament * f2) {
+      int nNodesFil1 = f1->nodes.size();
+      int nNodesFil2 = f2->nodes.size();
+      DefNodeIterator node1Iter = f1->nodes.begin();
+      DefNodeIterator node2Iter = f2->nodes.begin();
+      DefNode * node1A = *node1Iter;
+      DefNode * node2A = *node2Iter;
+      DefNode * node1B = *(f1->nodes.end()-1);
+      DefNode * node2B = *(f2->nodes.end()-1);
+      VectorND x1A = node1A->point();
+      VectorND x1B = node1B->point();
+      VectorND x2A = node2A->point();
+      VectorND x2B = node2B->point();
+      VectorND xintersect1;
+      VectorND xintersect2;
+      double end_to_end1 = norm2(x1B-x1A);
+      double end_to_end2 = norm2(x2B-x1A);
+      double tol = (end_to_end1+end_to_end2)/2.0;
+
+      double a1,a2;
+      if(abs(x1B[0]-x1A[0]) > 1.0e-6 && abs(x2B[0]-x2A[0]) > 1.0e-6) {
+	a1 = (x1B[1]-x1A[1])/(x1B[0]-x1A[0]);
+	a2 = (x2B[1]-x2A[1])/(x2B[0]-x2A[0]);
+	xintersect1[0] = (x1A[1]-x2A[1]+a2*x2A[0]-a1*x1A[0])/(a2-a1);
+	xintersect1[1] = (a2*(x1A[1]-a1*x1A[0])-a1*(x2A[1]-a2*x2A[0]))/(a2-a1);
+      }
+      else if(abs(x1B[0]-x1A[0]) <= 1.0e-6 && abs(x2B[0]-x2A[0]) > 1.0e-6){
+	xintersect1[0] = x1A[0];
+	a2 = (x2B[1]-x2A[1])/(x2B[0]-x2A[0]);
+	xintersect1[1] = a2*x1A[0] + x2A[1] - a2*x2A[0];
+      }
+      else if(abs(x2B[0]-x2A[0]) <= 1.0e-6 && abs(x1B[0]-x1A[0]) > 1.0e-6) {
+	xintersect1[0] = x2A[0];
+	a1 = (x1B[1]-x1A[1])/(x1B[0]-x1A[0]);
+	xintersect1[1] = x1A[1] - a1*(x1A[0] - x2A[0]);
+      }
+      else {
+	xintersect1[0] = (x1A[0]+x2A[0])/2.0;
+	xintersect1[1] = 1.0e30;
+      }
+
+      int node_jump1 = min((int)(nNodesFil1*norm2(xintersect1-x1A)/end_to_end1),nNodesFil1-2);
+      int node_jump2 = min((int)(nNodesFil2*norm2(xintersect1-x2A)/end_to_end2),nNodesFil2-2);
+
+      if(dot(x1B-x1A,xintersect1-x1A)<0.0) {
+	node_jump1 = 0;
+      }
+
+      if(dot(x2B-x2A,xintersect1-x2A)<0.0) {
+	node_jump2 = 0;
+      }
+      
+      bool intersected = false;
+      int rad = 1;
+      int curRadCounter = 0;
+      int totCounter = 0;
+      int node1_offset = node_jump1;
+      int node2_offset = node_jump2;
+      
+      while(intersected == false && totCounter < (nNodesFil1-1)*(nNodesFil2-1)) {
+	if(node1_offset >= 0 && node2_offset >= 0 && node1_offset < nNodesFil1 - 1 && node2_offset < nNodesFil2 - 1 && (abs(node1_offset-node_jump1) >= (rad-1)/2 || abs(node2_offset-node_jump2) >= (rad-1)/2)) {
+	  node1A = *(node1Iter + node1_offset);
+	  node1B = *(node1Iter + node1_offset + 1);
+	  node2A = *(node2Iter + node2_offset);
+	  node2B = *(node2Iter + node2_offset + 1);
+	  x1A = node1A->point();
+	  x1B = node1B->point();
+	  x2A = node2A->point();
+	  x2B = node2B->point();
+	  intersected = IntersectionFinder<N>::checkIntersection(x1A,x1B,x2A,x2B,xintersect1,xintersect2,tol,_box);
+	  if(intersected == true) {
+	    double eps1 = norm2(xintersect1-x1A)/end_to_end1;
+	    double eps2 = norm2(xintersect2-x2A)/end_to_end2;
+	    cl->setPosition(node1A,node1B,node2A,node2B,eps1,eps2);
+	    addCrosslink(cl);
+	  }
+	  totCounter++;
+	}
+	curRadCounter++;
+	if(curRadCounter >= sqr(rad)) {
+	  rad += 2;
+	  curRadCounter = 0;
+	}
+	
+	node2_offset = node_jump2 - ((rad-1)/2) + curRadCounter%rad;
+	node1_offset = node_jump1 - ((rad-1)/2) + curRadCounter/rad;
+      }
+  }
+
+  template<int N>
+  void SemiflexibleGel<N>::attachCrosslink(Filament * f1, Filament * f2, double kcl) {
+    int nNodesFil1 = f1->nodes.size();
+    int nNodesFil2 = f2->nodes.size();
+    DefNodeIterator node1Iter = f1->nodes.begin();
+    DefNodeIterator node2Iter = f2->nodes.begin();
+    DefNode * node1A = *node1Iter;
+    DefNode * node2A = *node2Iter;
+    DefNode * node1B = *(f1->nodes.end()-1);
+    DefNode * node2B = *(f2->nodes.end()-1);
+    VectorND x1A = node1A->point();
+    VectorND x1B = node1B->point();
+    VectorND x2A = node2A->point();
+    VectorND x2B = node2B->point();
+    VectorND xintersect1;
+    VectorND xintersect2;
+    double end_to_end1 = norm2(x1B-x1A);
+    double end_to_end2 = norm2(x2B-x2A);
+    double tol = (end_to_end1+end_to_end2)/2.0;
+
+    double a1,a2;
+    if(abs(x1B[0]-x1A[0]) > 1.0e-6 && abs(x2B[0]-x2A[0]) > 1.0e-6) {
+      a1 = (x1B[1]-x1A[1])/(x1B[0]-x1A[0]);
+      a2 = (x2B[1]-x2A[1])/(x2B[0]-x2A[0]);
+      xintersect1[0] = (x1A[1]-x2A[1]+a2*x2A[0]-a1*x1A[0])/(a2-a1);
+      xintersect1[1] = (a2*(x1A[1]-a1*x1A[0])-a1*(x2A[1]-a2*x2A[0]))/(a2-a1);
+    }
+    else if(abs(x1B[0]-x1A[0]) <= 1.0e-6 && abs(x2B[0]-x2A[0]) > 1.0e-6){
+      xintersect1[0] = x1A[0];
+      a2 = (x2B[1]-x2A[1])/(x2B[0]-x2A[0]);
+      xintersect1[1] = a2*x1A[0] + x2A[1] - a2*x2A[0];
+    }
+    else if(abs(x2B[0]-x2A[0]) <= 1.0e-6 && abs(x1B[0]-x1A[0]) > 1.0e-6) {
+      xintersect1[0] = x2A[0];
+      a1 = (x1B[1]-x1A[1])/(x1B[0]-x1A[0]);
+      xintersect1[1] = x1A[1] - a1*(x1A[0] - x2A[0]);
+    }
+    else {
+      xintersect1[0] = (x1A[0]+x2A[0])/2.0;
+      xintersect1[1] = 1.0e30;
+    }
+
+    int node_jump1 = min((int)(nNodesFil1*norm2(xintersect1-x1A)/end_to_end1),nNodesFil1-2);
+    int node_jump2 = min((int)(nNodesFil2*norm2(xintersect1-x2A)/end_to_end2),nNodesFil2-2);
+
+    if(dot(x1B-x1A,xintersect1-x1A)<0.0) {
+      node_jump1 = 0;
+    }
+
+    if(dot(x2B-x2A,xintersect1-x2A)<0.0) {
+      node_jump2 = 0;
+    }
+    
+    bool intersected = false;
+    int rad = 1;
+    int curRadCounter = 0;
+    int totCounter = 0;
+    int node1_offset = node_jump1;
+    int node2_offset = node_jump2;
+    
+    while(intersected == false && totCounter < (nNodesFil1-1)*(nNodesFil2-1)) {
+      if(node1_offset >= 0 && node2_offset >= 0 && node1_offset < nNodesFil1 - 1 && node2_offset < nNodesFil2 - 1 && (abs(node1_offset-node_jump1) >= (rad-1)/2 || abs(node2_offset-node_jump2) >= (rad-1)/2)) {
+	node1A = *(node1Iter + node1_offset);
+	node1B = *(node1Iter + node1_offset + 1);
+	node2A = *(node2Iter + node2_offset);
+	node2B = *(node2Iter + node2_offset + 1);
+	x1A = node1A->point();
+	x1B = node1B->point();
+	x2A = node2A->point();
+	x2B = node2B->point();
+	end_to_end1 = norm2(x1B-x1A);
+	end_to_end2 = norm2(x2B-x2A);
+	tol = (end_to_end1+end_to_end2)/2.0;
+	intersected = IntersectionFinder<N>::checkIntersection(x1A,x1B,x2A,x2B,xintersect1,xintersect2,tol,_box);
+	if(intersected == true) {
+	  double eps1 = norm2(xintersect1-x1A)/end_to_end1;
+	  double eps2 = norm2(xintersect2-x2A)/end_to_end2;
+	  if(kcl >= 0.0) { // if the crosslink spring constant is non-negative, add real crosslink //
+	    Clink * cl = new Crosslink<N>(node1A,node1B,node2A,node2B,eps1,eps2,kcl,_box);
+	    addCrosslink(cl);
+	  }
+	  else { // a negative crosslink spring constant means we glue nodes together //
+	    DefNode * tie1;
+	    DefNode * tie2;
+	    VectorND AA,BB,AB,BA;
+	    AA = x1A - x2A;
+	    BB = x1B - x2B;
+	    AB = x1A - x2B;
+	    BA = x1B - x2A;
+	    _box->mapDistance(AA);
+	    _box->mapDistance(BB);
+	    _box->mapDistance(AB);
+	    _box->mapDistance(BA);
+	    double AAlen,BBlen,ABlen,BAlen;
+	    AAlen = norm2(AA);
+	    BBlen = norm2(BB);
+	    ABlen = norm2(AB);
+	    BAlen = norm2(BA);
+	    double minlen = min(AAlen,BBlen);
+	    if(AAlen < BBlen) {
+	      tie1 = node1A;
+	      tie2 = node2A;
+	    }
+	    else {
+	      tie1 = node1B;
+	      tie2 = node2B;
+	    }
+	    
+	    if(ABlen < minlen) {
+	      tie1 = node1A;
+	      tie2 = node2B;
+	      minlen = ABlen;
+	    }
+	    
+	    if(BAlen < minlen) {
+	      tie1 = node1B;
+	      tie2 = node2A;
+	    }
+	    if(_crossNodeMap.find(tie1) == _crossNodeMap.end() && _crossNodeMap.find(tie2) == _crossNodeMap.end()) {
+	      PeriodicTie<N> * pt = new PeriodicTie<N>(tie1,tie2,_box);
+	      addConstraint(pt);
+	      _crossNodeMap.insert(pair< DefNode*, DefNode* >(tie2,tie1));
+	      _crossNodeMap.insert(pair< DefNode*, DefNode* >(tie1,tie1));
+// 	      std::cout << "Added crosslink # " << _constraints.size() << std::endl;
+	    }
+	  }
+	}
+	totCounter++;
+      }
+      curRadCounter++;
+      if(curRadCounter >= sqr(rad)) {
+	rad += 2;
+	curRadCounter = 0;
+      }
+      
+      node2_offset = node_jump2 - ((rad-1)/2) + curRadCounter%rad;
+      node1_offset = node_jump1 - ((rad-1)/2) + curRadCounter/rad;
+    }
+  }
+};

@@ -1,0 +1,454 @@
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                    	    Melissa M. Gibbons
+//                University of California Los Angeles
+//                   (C) 2007 All Rights Reserved
+//
+//----------------------------------------------------------------------
+
+#include <string>
+#include <fstream>
+#include <blitz/array-impl.h>
+#include <tvmet/Matrix.h>
+
+#if defined(_OPENMP)
+#include <omp.h>
+#endif
+
+#ifdef WITH_MPI
+#include <mpe.h>
+#endif
+
+namespace voom
+{
+  using std::endl;
+  using std::cout;
+  
+  typedef tvmet::Matrix<double, 3, 3> Matrix3D;
+  
+  template<class Shape_t>
+  void CapsidAtomisticBody<Shape_t>::initializeBody
+  (ConnectivityContainer & connectivities,
+   const NodeContainer & nodes,
+   std::vector<int> & atomElementConnectivity,
+   CapsidAtomContainer & atoms) 
+  {
+    
+#ifdef WITH_MPI
+    MPI_Comm_size( MPI_COMM_WORLD, &_nProcessors );
+    MPI_Comm_rank( MPI_COMM_WORLD, &_processorRank );
+#endif
+    
+    
+    // initialize _nDOF and find hexahedral (position) nodes  
+    _dof = 0;
+    _nodes = nodes;
+    for(ConstNodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) {
+      _dof+=(*n)->dof();
+      CapsidNode_t * sn = dynamic_cast<CapsidNode_t*>(*n);
+      if( sn ) _capsidNodes.push_back(sn); 
+    }
+    
+    std::cout << "CapsidAtomisticBody::initializeBody(): dof = "<< _dof 
+	      << std::endl;
+    
+    // store all atoms  
+    for(ConstCapsidAtomIterator a=atoms.begin(); a!=atoms.end(); a++)
+      _capsidAtoms.push_back(*a);
+    
+    // create elements
+    std::cout << "begin to create elements..." << std::endl;  
+    _capsidElements.reserve( connectivities.size() );
+    std::cout << "made space for " << connectivities.size() << " elements."
+	      << std::endl;
+    
+    int ElNum = 1;
+    for(ConstConnectivityIterator c=connectivities.begin();
+	c!=connectivities.end(); c++) {    
+      
+      // build elemental node container
+      typename CapsidElement_t::NodeContainer nds;
+      for(ElementConnectivity::const_iterator n=c->begin(); n!=c->end(); n++) {
+	nds.push_back( _capsidNodes[*n] );
+      }
+
+      // build elemental atom container
+      typename CapsidElement_t::AtomContainer atms;
+      ConstCapsidAtomIterator ait=atoms.begin();
+      int i=0;
+      for( ; ait!=atoms.end(); ait++, i++) {
+	if(atomElementConnectivity[i]==ElNum) atms.push_back(*ait);
+      }
+      
+      // create element
+      _capsidElements.push_back( new AtomisticCoupled<Shape_t>(nds,atms) );    
+      ElNum++;
+    }
+    
+    _elements.reserve(_capsidElements.size());
+    for(ConstCapsidElementIterator e=_capsidElements.begin(); e!=_capsidElements.end(); e++) {
+      _elements.push_back(*e);
+    }
+    std::cout << "finished creating " << _elements.size() << " elements." << std::endl;
+    
+    // compute mechanics/geometry
+    //compute(true, true, false);
+  }
+  
+  //! compute
+  template<class Shape_t >
+  void CapsidAtomisticBody<Shape_t>::compute( bool f0, bool f1, bool f2 )
+  {
+    
+    int eBegin=0, eEnd=_elements.size();
+    int sBegin=0, sEnd=_capsidElements.size();
+    
+#ifdef WITH_MPI
+    MPE_Decomp1d( _elements.size(), _nProcessors, _processorRank, 
+		  &eBegin, &eEnd );
+    eBegin--;
+    MPE_Decomp1d( _capsidElements.size(), _nProcessors, _processorRank, 
+		  &sBegin, &sEnd );
+    sBegin--;
+#endif
+
+    // Predictor/corrector approach for contact
+    for(ContactIterator c=_contacts.begin(); c!=_contacts.end(); c++) {
+      (*c)->predict();
+    }
+
+    // Initialize energy and forces
+    if(f0) _energy = 0.0;
+    if(f1) {
+      for(NodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) 
+	for(int i=0; i<(*n)->dof(); i++)
+	  (*n)->setForce(i,0.0);
+    }
+    // Need to zero out stiffness too!!!!!!!!!!
+
+    // compute energy, forces and stiffness matrix in each element
+    // loop through all elements
+#ifdef _OPENMP	
+#pragma omp parallel for 		\
+  schedule(static) default(shared) 
+#endif	
+    for(int ei=sBegin; ei<sEnd; ei++) {
+      _capsidElements[ei]->compute( f0, f1, f2);      
+    }
+
+    if(f0) { 
+// #ifdef _OPENMP	
+// #pragma omp parallel for
+// #endif	
+      for(int ei=eBegin; ei<eEnd; ei++) {
+	Element* e=_elements[ei];
+	_energy += e->energy();
+      }
+// #ifdef WITH_MPI
+//       double myEnergy=_energy;
+//       MPI_Allreduce(&myEnergy, &_energy, 1, MPI_DOUBLE, 
+// 		    MPI_SUM, MPI_COMM_WORLD);
+// #endif 
+    }
+
+// #ifdef WITH_MPI
+//     if(f1) {
+//       for(NodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) 
+// 	for(int i=0; i<(*n)->dof(); i++) {
+// 	  double force = 0.0;
+// 	  double myForce = (*n)->getForce(i); 
+// 	  MPI_Allreduce(&myForce, &force, 1, MPI_DOUBLE, 
+// 			MPI_SUM, MPI_COMM_WORLD);
+// 	  (*n)->setForce(i,force);
+// 	}
+//     }
+// #endif
+
+    // Predictor/corrector approach for contact
+    for(ContactIterator c=_contacts.begin(); c!=_contacts.end(); c++) {
+      (*c)->correct();
+    }
+
+    return;
+  }
+
+  //! create input file used by Paraview, a 3D viewer
+  template<class Shape_t>
+  void CapsidAtomisticBody<Shape_t>::printParaview(const std::string name) const
+  {
+    // will output data to a .vtk file at every increment of "plate" displacement
+
+    int numEls = _capsidElements.size();
+    
+#ifdef WITH_MPI
+    blitz::Array<double,1> globalsum(blitz::shape(numEls));
+    globalsum = 0.0;
+    MPI_Reduce(energy.data(), globalsum.data(), energy.size(), 
+	       MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    blitz::cycleArrays(energy,globalsum);
+#endif
+
+#ifdef WITH_MPI
+    if(_processorRank!=0) {
+      return;
+    }
+#endif
+
+    std::string fileName = name + ".vtk";
+    std::ofstream ofs(fileName.c_str());
+    if (!ofs) {
+      std::cout << "can not open output ("
+		<< fileName
+		<< ") file." << std::endl;
+      exit(0);
+    }
+    
+    ////////////////////////////////////////////////////////////////////
+    //
+    //    Node Section
+    //
+    ofs << "# vtk DataFile Version 2.0\n"
+	<< "Test example" << std::endl
+	<< "ASCII" << std::endl
+	<< "DATASET UNSTRUCTURED_GRID" << std::endl
+	<< "POINTS  " << _capsidNodes.size() << "  double" << std::endl;
+    
+    //
+    // output nodal postions
+    ConstCapsidNodeIterator pn = _capsidNodes.begin();
+    for ( ; pn!= _capsidNodes.end(); pn ++) {
+      const Vector3D & nodalPos =  (*pn)->position();
+      ofs << std::setprecision(16) 
+	  << nodalPos(0) << "  "
+	  << nodalPos(1) << "  "
+	  << nodalPos(2) << std::endl;
+    }
+
+    /////////////////////////////////////////////////////////////////////
+    //
+    //    Element Section
+    //
+    ofs << "CELLS  " << _capsidElements.size() << "  "
+	<< 9*_capsidElements.size() << std::endl;
+    for (ConstCapsidElementIterator pe = _capsidElements.begin(); pe != _capsidElements.end(); pe++) {
+      const typename CapsidElement_t::NodeContainer & pnc = (*pe)->nodes();
+      ofs << 8 << "  "
+	  << std::setw(10) << pnc[0] -> id()
+	  << std::setw(10) << pnc[1] -> id()
+	  << std::setw(10) << pnc[2] -> id()
+	  << std::setw(10) << pnc[3] -> id()
+	  << std::setw(10) << pnc[4] -> id()
+	  << std::setw(10) << pnc[5] -> id()
+	  << std::setw(10) << pnc[6] -> id()
+	  << std::setw(10) << pnc[7] -> id()
+	  << std::endl;
+    }
+     
+    ofs << "CELL_TYPES " << _capsidElements.size() << std::endl;
+    for( int i=0; i<_capsidElements.size(); i++ ) {
+      ofs << 12 << std::endl;
+    }
+	
+    ofs << endl << "POINT_DATA " << _capsidNodes.size() << endl
+	<< "VECTORS displacements float" << endl;
+   
+    // output nodal postions
+    pn = _capsidNodes.begin();
+    for ( ; pn!= _capsidNodes.end(); pn ++) {
+      Vector3D nodalDisp;
+      nodalDisp = (*pn)->point() - (*pn)->position();
+      ofs << std::setprecision(16) 
+	  << nodalDisp(0)
+	  << '\t' <<nodalDisp(1)
+	  << '\t' <<nodalDisp(2) << std::endl;
+    }
+    
+    ofs << endl << "VECTORS forces float" << endl;
+   
+    // output nodal forces
+    pn = _capsidNodes.begin();
+    for ( ; pn!= _capsidNodes.end(); pn ++) {
+      const Vector3D & nodalForce = (*pn)->force();
+      ofs << std::setprecision(16) 
+	  << nodalForce(0)
+	  << '\t' <<nodalForce(1)
+	  << '\t' <<nodalForce(2) << std::endl;
+    }
+
+    ofs << "CELL_DATA    " << _capsidElements.size() << std::endl;   
+    // output for von Mises stress
+    ofs << "SCALARS    Energy    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for (ConstCapsidElementIterator pe = _capsidElements.begin(); pe != _capsidElements.end(); pe++ ) 
+      ofs << (*pe)->strainEnergy() << std::endl;
+    ofs << std::endl;
+
+    ofs.close();
+
+    // OUTPUT ATOM DATA - FOR NOW JUST GLOBAL POSITIONS
+    std::string atomfileName = name + "Atoms.vtk";
+    std::ofstream ofs2(atomfileName.c_str());
+    if (!ofs2) {
+      std::cout << "can not open output ("
+		<< atomfileName
+		<< ") file." << std::endl;
+      exit(0);
+    }
+    
+    ////////////////////////////////////////////////////////////////////
+    //
+    //    Node Section
+    //
+    ofs2 << "# vtk DataFile Version 2.0\n"
+	 << "Test example" << std::endl
+	 << "ASCII" << std::endl
+	 << "DATASET POLYDATA" << std::endl
+	 << "POINTS  " << _capsidAtoms.size() << "  double" << std::endl;
+    
+    //
+    // output nodal postions
+    ConstCapsidAtomIterator a = _capsidAtoms.begin();
+    for ( ; a!= _capsidAtoms.end(); a++) {
+      //tvmet::vector<double,3> atomPos = (*a)->;
+      ofs2 << std::setprecision(16) 
+	   << (*a)->getPoint(0) << "  "
+	   << (*a)->getPoint(1) << "  "
+	   << (*a)->getPoint(2) << std::endl;
+    }
+    
+    ofs2.close();
+
+    return;
+  }
+
+ //! create input file of output data used by Paraview, a 3D viewer
+ //  template<class Shape_t>
+//   void CapsidAtomisticBody<Shape_t>::printParaviewPostProcess(const std::string name) const
+//   {
+//     // will output data to a .vtk file at every increment of "plate" displacement
+
+//     int numEls = _capsidElements.size();
+    
+
+// #ifdef WITH_MPI
+//     blitz::Array<double,1> globalsum(blitz::shape(numEls));
+//     globalsum = 0.0;
+//     MPI_Reduce(energy.data(), globalsum.data(), energy.size(), 
+// 	       MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+//     blitz::cycleArrays(energy,globalsum);
+// #endif
+
+// #ifdef WITH_MPI
+//     if(_processorRank!=0) {
+//       return;
+//     }
+// #endif
+
+//     std::string fileName = name + ".vtk";
+//     std::ofstream ofs(fileName.c_str());
+//     if (!ofs) {
+//       std::cout << "can not open output ("
+// 		<< fileName
+// 		<< ") file." << std::endl;
+//       exit(0);
+//     }
+    
+//     ////////////////////////////////////////////////////////////////////
+//     //
+//     //    Node Section
+//     //
+//     ofs << "# vtk DataFile Version 2.0\n"
+// 	<< "Test example" << std::endl
+// 	<< "ASCII" << std::endl
+// 	<< "DATASET UNSTRUCTURED_GRID" << std::endl
+// 	<< "POINTS  " << _capsidNodes.size() << "  double" << std::endl;
+    
+//     //
+//     // output nodal postions
+//     ConstCapsidNodeIterator pn = _capsidNodes.begin();
+//     for ( ; pn!= _capsidNodes.end(); pn ++) {
+//       const Vector3D & nodalPos =  (*pn)->position();
+//       ofs << std::setprecision(16) 
+// 	  << nodalPos(0) << "  "
+// 	  << nodalPos(1) << "  "
+// 	  << nodalPos(2) << std::endl;
+//     }
+
+//     /////////////////////////////////////////////////////////////////////
+//     //
+//     //    Element Section
+//     //
+//     ofs << "CELLS  " << _capsidElements.size() << "  "
+// 	<< 5*_capsidElements.size() << std::endl;
+//     for (ConstCapsidElementIterator pe = _capsidElements.begin(); pe != _capsidElements.end(); pe++) {
+//       const typename CapsidElement_t::NodeContainer & pnc = (*pe)->nodes();
+//       ofs << 4 << "  "
+// 	  << std::setw(10) << pnc[0] -> id()
+// 	  << std::setw(10) << pnc[1] -> id()
+// 	  << std::setw(10) << pnc[2] -> id()
+// 	  << std::setw(10) << pnc[3] -> id()
+// 	  << std::endl;
+//     }
+     
+//     ofs << "CELL_TYPES " << _capsidElements.size() << std::endl;
+//     for( int i=0; i<_capsidElements.size(); i++ ) {
+//       ofs << 10 << std::endl;
+//     }
+	
+//     //////////////////////////////////////////////////////////////////////////
+//     //
+//     //  output color for each element ( corresponding to energy...)
+//     //
+//     ofs << "CELL_DATA    " << _capsidElements.size() << std::endl;
+   
+//     // output for von Mises stress
+//     ofs << "SCALARS    MisesStress    float    1" << std::endl;
+//     ofs << "LOOKUP_TABLE default" << std::endl;
+//     for (ConstCapsidElementIterator pe = _capsidElements.begin(); pe != _capsidElements.end(); pe++ ) 
+//       ofs << (*pe)->CalcMisesStress() << std::endl;
+//     ofs << std::endl;
+
+//     // output for principal strains in each element
+//     ofs << "VECTORS PrincipalStrains floats" << endl;
+//     for (ConstCapsidElementIterator pe = _capsidElements.begin(); pe != _capsidElements.end(); pe++ ) {
+//       Vector3D prinStrain;
+//       prinStrain = (*pe)->CalcPrincipalStrains();
+//       ofs << std::setprecision(16)
+// 	  << prinStrain(0)
+// 	  << '\t' << prinStrain(1)
+// 	  << '\t' << prinStrain(2) << std::endl;
+//     }
+//     ofs << std::endl;
+
+//     ofs << endl << "POINT_DATA " << _capsidNodes.size() << endl
+// 	<< "VECTORS displacements float" << endl;
+   
+//     // output nodal postions
+//     pn = _capsidNodes.begin();
+//     for ( ; pn!= _capsidNodes.end(); pn ++) {
+//       Vector3D nodalDisp;
+//       nodalDisp = (*pn)->point() - (*pn)->position();
+//       ofs << std::setprecision(16) 
+// 	  << nodalDisp(0)
+// 	  << '\t' <<nodalDisp(1)
+// 	  << '\t' <<nodalDisp(2) << std::endl;
+//     }
+    
+//     ofs << endl << "VECTORS forces float" << endl;
+   
+//     // output nodal forces
+//     pn = _capsidNodes.begin();
+//     for ( ; pn!= _capsidNodes.end(); pn ++) {
+//       const Vector3D & nodalForce = (*pn)->force();
+//       ofs << std::setprecision(16) 
+// 	  << nodalForce(0)
+// 	  << '\t' <<nodalForce(1)
+// 	  << '\t' <<nodalForce(2) << std::endl;
+//     }
+//     ofs.close();
+
+//     return;
+//   }
+
+} // namespace voom

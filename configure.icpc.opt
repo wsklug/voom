@@ -1,0 +1,1 @@
+./configure CXX=icpc CXXFLAGS="-O2  -DTVMET_OPTIMIZE=1 -ansi -cxxlib-icc -openmp" F77=ifort F77FLAGS="-O2"

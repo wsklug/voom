@@ -1,0 +1,863 @@
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                    HoHai Van and William S. Klug
+//                University of California Los Angeles
+//                    (C) 2006 All Rights Reserved
+// 
+// Revision 11: 01/26/07:
+// Anisotropic formulation.
+//
+// Revision 10: 10/26/06:
+// New class uses the Courtemache atria model.
+//
+// Revision 9: 10/18/06:
+// Computing the gating variables will from a predefined table to save 
+// clock cycles, i.e., multiplication is much faster than exp and pow.
+//
+// Revision 8: 10/10/06:
+// Added compute_ECG which computes the ECG component for each element.
+// Not tested.
+//
+// Revision 7: 9/25/06:
+// The new class will be used for both 2D and 3D applications.
+//
+// Revision 6: 9/20/06:
+// Added time adaptive scheme for quadrature points.  Note: This feature
+// has been commented off until dt can be decreased to be able to be 
+// implemented.
+//
+// Revision 5: 9/5/06:
+// Changed to Luo-Rudy model
+//
+// Revision 4:  9/3/06: 
+// Moved the calculation of the gating variables to a lookup table called
+// gate to speed up the program.  Update: did not speed up program
+//
+// Revision 3:  8/26/06:
+// The gating variables formulations were changed to the analytical method
+// which allowed the time step to be larger.  Also, the code now includes
+// adaptive time stepping to update the gating variables only when dv/dt
+// is a certain number. (Note adaptive time step not working)
+//
+// Revision 2:  8/17/06:  
+// This version simulates the Beeler-Reuter model.  Changes were also made
+// in the compute function to split up the voltage calculation and the time
+// stepping of the gating variables.  
+//----------------------------------------------------------------------
+
+#include "CP.fibrosis.h"
+#include <tvmet/Vector.h>
+#include <tvmet/Matrix.h>
+#include <blitz/array.h>
+#include <mathimf.h>
+#include <stdio.h>
+#include <time.h>
+#include <iostream>
+#include <math.h>
+#include <fstream>
+
+
+using namespace std;
+
+namespace voom {
+
+  /*!  The QuadPointStruct constructor has to initialize the spatial
+    derivatives of the shape functions as well as the effective
+    quadrature weight (scaled by the scalar jacobian).  First we     
+    compute the Jacobian
+    \f[
+    J = \det(J_{i\alpha}), \qquad J_{i\alpha} = \sum_{a=1}^{\cal N} N_{a,\alpha} x_{ia} , \qquad N_{a,\alpha} = \frac{\partial N_a}{\partial s^\alpha}
+    \f]
+    and then compute the spatial derivatives of the shape functions
+    \f[
+    \frac{\partial N_a}{\partial x_i} = J^{-1}_{\alpha i} \frac{\partial N_a}{\partial s_\alpha}
+    \f]
+   */
+  template< class Quadrature_t,
+	    class Shape_t , 
+            const int dim_t>
+  CardiacPotential<Quadrature_t,Shape_t, dim_t>::QuadPointStruct::
+  QuadPointStruct(float w, 
+		  const Shape_t & s, 
+		  const CardiacPotential<Quadrature_t,Shape_t,dim_t>::VoltageNodeContainer & nds)
+  {
+    weight = w;
+    shapeFunctions = s.functions();
+    const int dim=dim_t;    
+    // Compute spatial derivatives of shape functions from
+    // parametric derivatives by transforming with matrix jacobian
+    // of isoparametric mapping.
+    
+    // parametric derivatives from shape object
+    const typename Shape_t::DerivativeContainer & dnds = s.derivatives();
+  
+    // matrix jacobian dxds;
+    tvmet::Matrix<float,dim,dim> dxds(0.0);
+    for(int i=0; i<dim; i++) {
+      for(int alpha=0; alpha<dim; alpha++) {	   
+	for(int a=0; a<nds.size(); a++) {
+	  dxds(i,alpha) += dnds[a](alpha)*( nds[a]->getPosition(i) );
+	}
+      }	      
+    }
+    
+    tvmet::Matrix<float,dim,dim> invJac(0.0);
+
+    // compute scalar jacobian and scale the quadrature weight with it
+    float J;
+    if (dim==2) { 
+       J=dxds(0,0)*dxds(1,1) - dxds(0,1)*dxds(1,0);
+       // invert matrix jacobian
+       invJac(0,0) = dxds(1,1);
+       invJac(1,1) = dxds(0,0);
+       invJac(0,1) = -dxds(0,1);
+       invJac(1,0) = -dxds(1,0);
+       }
+
+    if (dim==3) {
+      J = dxds(0,0)*(dxds(1,1)*dxds(2,2)-dxds(1,2)*dxds(2,1))
+              -dxds(1,0)*(dxds(0,1)*dxds(2,2)-dxds(0,2)*dxds(2,1))
+              +dxds(2,0)*(dxds(0,1)*dxds(1,2)-dxds(0,2)*dxds(1,1));
+      invJac(0,0) = (dxds(1,1)*dxds(2,2)-dxds(1,2)*dxds(2,1));
+      invJac(0,1) =-(dxds(0,1)*dxds(2,2)-dxds(0,2)*dxds(2,1));
+      invJac(0,2) = (dxds(0,1)*dxds(1,2)-dxds(0,2)*dxds(1,1));
+      invJac(1,0) =-(dxds(1,0)*dxds(2,2)-dxds(1,2)*dxds(2,0));
+      invJac(1,1) = (dxds(0,0)*dxds(2,2)-dxds(0,2)*dxds(2,0));
+      invJac(1,2) =-(dxds(0,0)*dxds(1,2)-dxds(0,2)*dxds(1,0));
+      invJac(2,0) = (dxds(1,0)*dxds(2,1)-dxds(1,1)*dxds(2,0));
+      invJac(2,1) =-(dxds(0,0)*dxds(2,1)-dxds(0,1)*dxds(2,0));
+      invJac(2,2) = (dxds(0,0)*dxds(1,1)-dxds(0,1)*dxds(1,0));
+
+       }
+//    cout<<J<<endl;
+    weight *= J;
+	
+    invJac /= J;
+
+    // spatial derivatives dndx
+    shapeDerivatives.resize(dnds.size());
+    for(int a=0; a<nds.size(); a++) {	  
+      for(int i=0; i<dim; i++) {
+	      shapeDerivatives[a](i) = 0.0;
+	      for(int alpha=0; alpha<dim; alpha++) {	   
+	        shapeDerivatives[a](i) += dnds[a](alpha)*invJac(alpha,i);
+	      }
+      }
+    }
+
+    internalNode = new InternalNode(0,NodeBase::DofIndexMap(16),InternalNode::Point(0.0));
+    
+    /*! 
+       Note: this will call the default constructor for the internal
+       nodes.  Thus they will need to be initialized later (setting
+       id and index members), when we want to use them with a
+       solver.
+
+       Each internal node will represent an ionic gating variable.  
+
+    */
+
+    return;
+  }
+
+  /*!  
+  This function computes the lumped capacitance of the each node and adds it to the
+  damping component of each node
+
+  */
+  template< class Quadrature_t,
+	    class Shape_t,
+            const int dim_t >
+  void CardiacPotential<Quadrature_t,Shape_t,dim_t>::computeLumpedCapacitance() {
+    for(QuadPointIterator p=_quadPoints.begin();p!=_quadPoints.end(); p++){
+      const typename Shape_t::FunctionContainer &  N = p->shapeFunctions;
+      //Compute capacitance
+      float c_m=1.0;
+      for(int a=0; a<_vNodes.size(); a++) {
+	float c = N[a]*c_m *(p->weight);
+	_vNodes[a]->addDamping(0,c);
+      }
+      
+    }
+   return;
+  }
+
+    //! Constructor
+    template< class Quadrature_t,
+	    class Shape_t, 
+            const int dim_t>
+    CardiacPotential<Quadrature_t,Shape_t,dim_t>::
+    CardiacPotential( const Quadrature_t & quad,
+	              const VoltageNodeContainer & nodes,
+                      float D, float fiber[3], int cell_type)
+    {
+    //! initialize NodeContainer
+    unsigned nNodes = nodes.size();
+    _vNodes = nodes;
+    _cell_type=cell_type;
+  
+
+        
+    //! initialize quad points
+    _quadPoints.clear();
+    for(typename Quadrature_t::ConstPointIterator p=quad.begin(); p!=quad.end(); p++) {
+      Shape_t shp( p->coords );
+      _quadPoints.push_back( QuadPointStruct(p->weight, shp, _vNodes) ); 
+	if( shp.functions().size() != nNodes ) {
+	  std::cout << "Number of nodes: " << nNodes << std::endl
+		    << "Number of functions: " << shp.functions().size()
+		    << std::endl
+		    << "These should be equal." << std::endl;
+	  exit(0);
+	}
+      
+    }
+
+    computeLumpedCapacitance();
+
+    for(ConstQuadPointIterator p=_quadPoints.begin(); p!=_quadPoints.end(); p++) {
+      _iNodes.push_back(p->internalNode);
+       }
+
+    //! initialize the gating variables by default
+    _stiffness.resize( _vNodes.size(), _vNodes.size() );
+    _stiffness = 0.0;
+    const int dim=dim_t;
+
+    for(QuadPointIterator p=_quadPoints.begin();p!=_quadPoints.end(); p++){
+      const typename Shape_t::FunctionContainer &  N = p->shapeFunctions;
+      const typename Shape_t::DerivativeContainer &  DN = p->shapeDerivatives;
+      InternalNode * in = p->internalNode;
+
+      //Compute voltage, capacitance, and stiffness matrix
+      float volt_quad=0.0;
+      float c_m=1.0;
+      float Dx=D;
+      float Dy=D;
+      float Dz=D;
+
+
+      if (dim==2) {
+         for(int a=0; a<_vNodes.size(); a++) {
+	    volt_quad += N[a]*_vNodes[a]->point();
+            for(int b=0;b<_vNodes.size();b++) {
+               _stiffness(a,b)+=(p->weight)*(DN[a](0)*Dx*DN[b](0)
+                        +DN[a](1)*Dy*DN[b](1));
+            }
+          }
+      }
+
+      tvmet::Matrix<float,3,3> diffusion_matrix(0.0);
+
+//    Calculate the diffusion tensor using anisotropic fiber angles here.
+      diffusion_matrix(0,0)=D;
+      diffusion_matrix(1,1)=D;
+      diffusion_matrix(2,2)=D;
+
+      float vector;
+//    Normalize the fiber vector
+      vector=sqrt(fiber[0]*fiber[0]+fiber[1]*fiber[1]+fiber[2]*fiber[2]);
+
+//    If the fiber vector is nonzero, the diffusion tensor is anisotropic
+      if (vector >= 0.00001) {
+        fiber[0]=fiber[0]/vector;
+        fiber[1]=fiber[1]/vector;
+        fiber[2]=fiber[2]/vector;
+        float dup=D;
+        float duv=0.00065;
+        diffusion_matrix(0,0)=duv+(dup-duv)*fiber[0]*fiber[0];
+        diffusion_matrix(1,1)=duv+(dup-duv)*fiber[1]*fiber[1];
+        diffusion_matrix(2,2)=duv+(dup-duv)*fiber[2]*fiber[2];
+        diffusion_matrix(1,0)=0+(dup-duv)*fiber[1]*fiber[0];
+        diffusion_matrix(0,1)=0+(dup-duv)*fiber[0]*fiber[1];
+        diffusion_matrix(2,0)=0+(dup-duv)*fiber[2]*fiber[0];
+        diffusion_matrix(0,2)=0+(dup-duv)*fiber[2]*fiber[0];
+        diffusion_matrix(2,1)=0+(dup-duv)*fiber[2]*fiber[1];
+        diffusion_matrix(1,2)=0+(dup-duv)*fiber[2]*fiber[1];
+        }
+      
+      _dummy_matrix.resize(3, _vNodes.size() );
+      _dummy_matrix = 0.0;
+
+
+      if (dim==3) {
+         for (int a=0;a<dim;a++) {
+            for (int b=0;b<_vNodes.size();b++) {
+               for (int c=0;c<dim;c++) {
+                  _dummy_matrix(a,b)+=diffusion_matrix(a,c)*DN[b](c);
+               }
+             
+            }
+
+         }            
+         for (int a=0;a<_vNodes.size();a++) {
+            volt_quad +=N[a]*_vNodes[a]->point();
+            for (int b=0;b<_vNodes.size();b++) { 
+               for (int c=0;c<dim;c++) {
+                  _stiffness(a,b)+=(p->weight)*DN[a](c)*_dummy_matrix(c,b);
+               }
+             
+            }
+
+         }            
+
+      }
+
+      if ((_cell_type==0)||(_cell_type==3)) {
+      
+      in->setPoint(0,2.91e-3);
+      in->setPoint(1,0.965);
+      in->setPoint(2,0.978);
+      in->setPoint(3,3.04e-2);
+      in->setPoint(4,0.999);
+      in->setPoint(5,4.96e-3);
+      in->setPoint(6,0.999);
+      in->setPoint(7,3.29e-5);
+      in->setPoint(8,1.5949e-4);
+      in->setPoint(9,1.37e-4);
+      in->setPoint(10,0.999);
+      in->setPoint(11,0.999);
+      in->setPoint(12,0.775);
+      in->setPoint(13,0.0);
+      in->setPoint(14,1.0);
+      in->setPoint(16,1.02e-4);
+      in->setPoint(17,1.49);
+      in->setPoint(18,1.49);     
+
+      float d=1.37e-4;
+      float f=0.999;
+      float fCa=0.775;
+      float GCaL=0.54*0.1238;
+      float RT_F=26.71283192;
+      float cai=1.02e-4;
+      float u=0.0;
+      float v=1.0;
+      float w=0.999;
+      float carel=1.49;
+      float ICaL=GCaL*d*f*fCa*(volt_quad-65.);
+      
+      
+      float temp=exp(0.35*volt_quad/RT_F)*11.2*11.2*11.2*1.8-
+                  exp(-0.65*volt_quad/RT_F)*140*140*140*cai; 
+      float temp1=3.18*(87.5*87.5*87.5+140.*140*140)*(1.+0.1*exp(-0.65*volt_quad/RT_F));
+      float INaCa=1600.*temp/temp1;
+      
+      
+      float Irel=30.*u*u*v*w*(carel-cai);
+      float Fn=96.48*Irel-100.*(0.25*ICaL+0.1*INaCa)/96.4867;
+
+      in->setPoint(15,Fn);
+      }
+      if (_cell_type==1) {
+      in->setPoint(0,0.0);
+      in->setPoint(1,1.0);
+      }
+
+      } //end loop of quad points
+//  cout<<"gate value in element "<<gate_table<<endl;
+
+  return;
+  }
+
+  /*!  The compute method needs to compute the nodal ionic and
+    diffusive currents as well as the (diagonal) lumped conduction
+    matrix coefficients.  
+    The currents are written 
+    \f[
+    f^{ion}_{a} = \int_\Omega N_a \frac{I_{ion}}{C} dV
+    \f]
+    and 
+    \f[
+    f^{dif}_{a} = \int_\Omega \nabla N_a \cdot (D\nabla V) dV 
+    = \int_\Omega  N_{a,i} \cdot (D_{ij} V_{,j}) dV ,
+    \f]
+    and the row-summed conduction coefficients are 
+    \f[
+    C_a = \sum_{b=1}^{\cal N} C_{ab} = \sum_{b=1}^{\cal N} \int_\Omega N_a N_b dV .
+    \f]
+    Assuming the shape functions satisfy theaddDamping partition of unity property, 
+    the conduction coefficients simplify to 
+    \f[
+    C_a = \int_\Omega N_a dV .
+    \f]
+    
+    Approximating these nodal integrals by quadrature, we obtain
+    \f[
+    f^{ion}_{a} = \sum_{p=1}^Q (N_a \frac{I_{ion}}{C} J )|_{s^p} w_p
+    \f]
+    \f[
+    f^{dif}_{a} = \sum_{p=1}^Q ( N_{a,i} \cdot (D_{ij} V_{,j}) J )|_{s^p} w_p  
+    \f]
+    \f[
+    C_a = \sum_{p=1}^Q ( N_a J )|_{s^p} w_p 
+    \f]
+    where \f$s^p\f$ are the parametric coordinates of the Gauss points 
+    and \f$J\f$ is the jacobian of the isoparametric mapping.
+
+    We loop over the quad points, and at each quad point perform the 
+    following steps:
+    <ol>
+    <li> Compute the voltage and its gradient
+    \f[ 
+    V = \sum_{a} N_a V_a \qquad V_i = \sum_a N_{a,i} V_a
+    \f]
+    <li> Compute the ionic current \f$I^{ion}(V)\f$
+    <li> Compute quad point contributions to the sums for \f$f_a^{ion}\f$, 
+    \f$f_a^{dif}\f$, and \f$C_a\f$.  Add these to the $a^{th}$ node using
+    the methods updateForce, and addDamping.
+    </ol>      
+  */
+  // for now we won't worry about the boolean f1, etc.  Just compute
+  // forces and lumped conduction matrix
+
+
+
+  template< class Quadrature_t,
+	    class Shape_t,
+            const int dim_t >
+  float CardiacPotential<Quadrature_t,Shape_t,dim_t>::
+  compute_ECG(tvmet::Vector<float,3> Ref) {
+  
+    tvmet::Vector<float, 3> DgradVm(0.0);
+  	tvmet::Vector<float,3> gradR(0.0);
+    float ECG=0.0;
+		// First calculate D*grad*Vm
+		for(int a=0;a<3;a++) {
+			for (int b=0;b<_vNodes.size();b++) {
+				DgradVm(a)+=_dummy_matrix(a,b)*(_vNodes[b]->getPoint(0));				
+			}
+		}
+
+    for(QuadPointIterator p=_quadPoints.begin(); p!=_quadPoints.end(); p++){
+      const typename Shape_t::FunctionContainer &  N = p->shapeFunctions;
+      const typename Shape_t::DerivativeContainer &  DN = p->shapeDerivatives;
+
+
+      for (int a=0;a<3;a++) {
+        for (int b=0;b<_vNodes.size();b++) {
+          float x =_vNodes[b]->position(0);
+          float y =_vNodes[b]->position(1);
+          float z =_vNodes[b]->position(2);
+          float R=sqrt(fabs(pow(Ref(0)-x,2)+pow(Ref(1)-y,2)+pow(Ref(2)-z,2)));
+          gradR(a)+=(p->weight)*DN[a](b)/R;     
+        }
+   		}
+    }
+    for (int a=0;a<3;a++) {
+			ECG+=DgradVm(a)*gradR(a);
+    }
+    return ECG;
+  }
+
+  template< class Quadrature_t,
+	    class Shape_t,
+            const int dim_t >
+  void CardiacPotential<Quadrature_t,Shape_t,dim_t>::
+  compute_ion(float _dt, float i_stim,bool rk2_flag,float ACh) {
+
+    bool fast_element=false;
+    float dt=_dt;
+    int step=1;
+//    float volt_quad=0.0;
+
+//    for(QuadPointIterator p=_quadPoints.begin(); 
+//       p!=_quadPoints.end(); p++){
+//       const typename Shape_t::FunctionContainer &  N = p->shapeFunctions;
+//       InternalNode * in = p->internalNode;
+       //Compute voltage at the quadrature point and put it in Internalnode
+//       for(int a=0; a<_vNodes.size(); a++) {
+//          volt_quad += N[a]*(_vNodes[a]->getPoint(0));
+//          }
+//       in->setPoint(7,volt_quad);
+//       float volt_quad_old=in->getPoint(8);
+//       if (fabs(volt_quad-volt_quad_old)>=0.01) {fast_element=true;}
+
+//       } // end over quad points
+
+    //if (fast_element) {dt/=10.0;step*=10;}***Reserved for adaptive time stepping. See comment below****
+
+    // this portion of compute advances the internal nodes (gating variables) by dt
+    for(QuadPointIterator p=_quadPoints.begin(); 
+       p!=_quadPoints.end(); p++){
+       const typename Shape_t::FunctionContainer &  N = p->shapeFunctions;
+       InternalNode * in = p->internalNode;
+
+       //Calculate gating variables
+       float volt_quad=0.0;
+       for(int a=0; a<_vNodes.size(); a++) {
+          volt_quad += N[a]*(_vNodes[a]->getPoint(0));
+          }
+
+       if ((_cell_type==0)||(_cell_type==3)) {
+       float m =   in->getPoint(0);
+       float h =   in->getPoint(1);
+       float j =   in->getPoint(2);
+       float oa=   in->getPoint(3);
+       float oi=   in->getPoint(4);
+       float ua=   in->getPoint(5);
+       float ui=   in->getPoint(6);
+       float xr=   in->getPoint(7);
+       float xs=   in->getPoint(8);
+       float d =   in->getPoint(9);
+       float f =   in->getPoint(10);
+       float w =   in->getPoint(11);
+
+//   float gate[12];
+//       for (int i=0;i<12;i++) {
+//          gate[i]=in->getPoint(i);
+//       }
+
+       float fCa = in->getPoint(12);
+       float u =   in->getPoint(13);
+       float v =   in->getPoint(14);
+       float Fn=   in->getPoint(15);
+       float cai=  in->getPoint(16);
+       float caup= in->getPoint(17);
+       float carel=in->getPoint(18);     
+
+       float i_ion=0.0;
+       if (_cell_type==0) ACh=0.0;
+
+
+//       for (int i=0;i<step;i++) {
+          int index=int((volt_quad+90.0)*10.0);
+          if (volt_quad<=-90.0) index=0;
+          if (volt_quad>=80.0) index=1699;
+          float scale_factor=(volt_quad-(-90.0+index*0.1))*10.0;
+
+// This is the table
+//#pragma ivdep
+//          for (int i=0; i<12;i++) {
+//          float tau=gate_table[index][0]+scale_factor*(gate_table[index+1][0]-gate_table[index][0]);
+//          float inf=gate_table[index][1]+scale_factor*(gate_table[index+1][1]-gate_table[index][1]);
+//          gate[i]=inf-(inf-gate[i])*expf(-dt*tau);
+//          }
+
+          float m_tau=gate_table[index][0]+scale_factor*(gate_table[index+1][0]-gate_table[index][0]);
+          float m_inf=gate_table[index][1]+scale_factor*(gate_table[index+1][1]-gate_table[index][1]);
+          m=m_inf-(m_inf-m)*expf(-dt*m_tau);
+          
+          float h_tau=gate_table[index][2]+scale_factor*(gate_table[index+1][2]-gate_table[index][2]);
+          float h_inf=gate_table[index][3]+scale_factor*(gate_table[index+1][3]-gate_table[index][3]);
+          h=h_inf-(h_inf-h)*expf(-dt*h_tau);
+
+          float j_tau=gate_table[index][4]+scale_factor*(gate_table[index+1][4]-gate_table[index][4]);
+          float j_inf=gate_table[index][5]+scale_factor*(gate_table[index+1][5]-gate_table[index][5]);
+          j=j_inf-(j_inf-j)*expf(-dt*j_tau);
+
+          float oa_tau=gate_table[index][6]+scale_factor*(gate_table[index+1][6]-gate_table[index][6]);
+          float oa_inf=gate_table[index][7]+scale_factor*(gate_table[index+1][7]-gate_table[index][7]);
+          oa=oa_inf-(oa_inf-oa)*expf(-dt*oa_tau);
+
+          float oi_tau=gate_table[index][8]+scale_factor*(gate_table[index+1][8]-gate_table[index][8]);
+          float oi_inf=gate_table[index][9]+scale_factor*(gate_table[index+1][9]-gate_table[index][9]);
+          oi=oi_inf-(oi_inf-oi)*expf(-dt*oi_tau);
+
+          float ua_tau=gate_table[index][10]+scale_factor*(gate_table[index+1][10]-gate_table[index][10]);
+          float ua_inf=gate_table[index][11]+scale_factor*(gate_table[index+1][11]-gate_table[index][11]);
+          ua=ua_inf-(ua_inf-ua)*expf(-dt*ua_tau);
+
+          float ui_tau=gate_table[index][12]+scale_factor*(gate_table[index+1][12]-gate_table[index][12]);
+          float ui_inf=gate_table[index][13]+scale_factor*(gate_table[index+1][13]-gate_table[index][13]);
+          ui=ui_inf-(ui_inf-ui)*expf(-dt*ui_tau);
+
+          float xr_tau=gate_table[index][14]+scale_factor*(gate_table[index+1][14]-gate_table[index][14]);
+          float xr_inf=gate_table[index][15]+scale_factor*(gate_table[index+1][15]-gate_table[index][15]);
+          xr=xr_inf-(xr_inf-xr)*expf(-dt*xr_tau);
+
+          float xs_tau=gate_table[index][16]+scale_factor*(gate_table[index+1][16]-gate_table[index][16]);
+          float xs_inf=gate_table[index][17]+scale_factor*(gate_table[index+1][17]-gate_table[index][17]);
+          xs=xs_inf-(xs_inf-xs)*expf(-dt*xs_tau);
+
+          float d_tau=gate_table[index][18]+scale_factor*(gate_table[index+1][18]-gate_table[index][18]);
+          float d_inf=gate_table[index][19]+scale_factor*(gate_table[index+1][19]-gate_table[index][19]);
+          d=d_inf-(d_inf-d)*expf(-dt*d_tau);
+
+          float f_tau=gate_table[index][20]+scale_factor*(gate_table[index+1][20]-gate_table[index][20]);
+          float f_inf=gate_table[index][21]+scale_factor*(gate_table[index+1][21]-gate_table[index][21]);
+          f=f_inf-(f_inf-f)*expf(-dt*f_tau);
+
+          float w_tau=gate_table[index][22]+scale_factor*(gate_table[index+1][22]-gate_table[index][22]);
+          float w_inf=gate_table[index][23]+scale_factor*(gate_table[index+1][23]-gate_table[index][23]);
+          w=w_inf-(w_inf-w)*expf(-dt*w_tau);
+
+
+         
+
+/*
+          double a_m;
+          if (fabs(volt_quad+47.13)<=0.001) a_m=3.2;
+          else a_m=0.32*(volt_quad+47.13)/(1.0-exp(-0.1*(volt_quad+47.13)));
+          double b_m=0.08*exp(-volt_quad/11.0);
+          double m_tau=(a_m+b_m);
+          double m_inf=a_m/m_tau;
+          m=m_inf-(m_inf-m)*exp(-dt*m_tau);
+          
+          double a_h,b_h,a_j,b_j;
+          if (volt_quad>=-40.0) {
+            a_h=0.0;
+            b_h=1.0/(0.13*(1.0+exp((volt_quad+10.66)/-11.1)));
+            a_j=0.0;
+            b_j=0.3*exp(-0.0000002535*volt_quad)/(1.0+exp(-0.1*(volt_quad+32.0)));
+            }
+          else {
+            a_h=0.135*exp((80.0+volt_quad)/-6.8);
+            b_h=3.56*exp(0.079*volt_quad)+310000.0*exp(0.35*volt_quad);
+            a_j=(-127140.0*exp(0.2444*volt_quad)-0.00003474*exp(-0.04391*volt_quad))*(volt_quad+37.78)/(1+exp(0.311*(volt_quad+79.23)));
+            b_j=0.1212*exp(-0.01052*volt_quad)/(1.0+exp(-0.1378*(volt_quad+40.14)));
+          }  
+
+          double h_tau=(a_h+b_h);
+          double h_inf=a_h/h_tau;
+          double j_tau=(a_j+b_j);
+          double j_inf=a_j/j_tau;
+          h=h_inf-(h_inf-h)*exp(-dt*h_tau);
+          j=j_inf-(j_inf-j)*exp(-dt*j_tau);
+
+          double a_oa=0.65/(exp(-(volt_quad+10.0)/8.5)+exp(-(volt_quad-30.0)/59.0));
+          double b_oa=0.65/(2.5+exp((volt_quad+82.)/17.0));
+          double oa_inf=1.0/(1.0+exp(-(volt_quad+20.47)/17.54));
+          double oa_tau=(a_oa+b_oa)*3.0;
+          oa=oa_inf-(oa_inf-oa)*exp(-dt*oa_tau);
+
+          double a_oi=1./(18.53+exp((volt_quad+113.7)/10.95));
+          double b_oi=1./(35.56+exp(-(volt_quad+1.26)/7.44));
+          double oi_inf=1./(1.+exp((volt_quad+43.1)/5.3));
+          double oi_tau=(a_oi+b_oi)*3.0;
+          oi=oi_inf-(oi_inf-oi)*exp(-dt*oi_tau);
+
+          double a_ua=0.65/(exp(-(volt_quad+10.)/8.5)+exp(-(volt_quad-30.)/59.0));
+          double b_ua=0.65/(2.5+exp((volt_quad+82.)/17.0));
+          double ua_inf=1./(1+exp(-(volt_quad+30.3)/9.6));
+          double ua_tau=(a_ua+b_ua)*3.0;
+         
+          double a_ui=1./(21.+exp(-(volt_quad-185.)/28.));
+          double b_ui=exp((volt_quad-158.)/16.); 
+          double ui_inf=1./(1.+exp((volt_quad-99.45)/27.48));
+          double ui_tau=(a_ui+b_ui)*3.0;
+          ua=ua_inf-(ua_inf-ua)*exp(-dt*ua_tau);
+
+          ui=ui_inf-(ui_inf-ui)*exp(-dt*ui_tau);
+
+          double a_xr;
+          if (fabs(volt_quad+14.1)<=0.0001)
+             a_xr=0.0015;
+          else
+             a_xr=3.e-4*(volt_quad+14.1)/(1.-exp(-(volt_quad+14.1)*.2));
+          double b_xr;
+          if (fabs(volt_quad-3.3328)<=0.0001)
+             b_xr=7.3898e-5*5.1237;
+          else
+             b_xr=7.3898e-5*(volt_quad-3.3328)/(exp((volt_quad-3.3328)/5.1237)-1.);
+          double xr_inf=1./(1.+exp(-(volt_quad+14.1)/6.5));
+          double xr_tau=(a_xr+b_xr);
+
+          double a_xs,b_xs;         
+          if (fabs(volt_quad-19.9)<=1.e-4) {
+             a_xs=6.8e-4;
+             b_xs=3.15e-4;
+             }
+          else {
+             a_xs=4.e-5*(volt_quad-19.9)/(1.-exp(-(volt_quad-19.9)/17.));
+             b_xs=3.5e-5*(volt_quad-19.9)/(exp((volt_quad-19.9)/9.)-1.);
+             } 
+          double xs_inf=1./sqrt(1.+exp(-(volt_quad-19.9)/12.7));
+          double xs_tau=2.*(a_xs+b_xs);
+
+          xr=xr_inf-(xr_inf-xr)*exp(-dt*xr_tau);
+          xs=xs_inf-(xs_inf-xs)*exp(-dt*xs_tau);
+
+          double d_tau;
+          if (fabs(volt_quad+10.0)<=.0001) d_tau=0.4368;
+          else d_tau=(0.035*(volt_quad+10)*(1.0+exp(-(volt_quad+10.0)/6.24)))/(1.0-exp(-(volt_quad+10.0)/6.24));
+          double d_inf=1.0/(1.0+exp(-(volt_quad+10.0)/8.0));
+
+          double f_tau=(0.0197*exp(-(0.0337*0.0337*(volt_quad+10.0)*(volt_quad+10.0)))+0.02)/9;
+          double f_inf=1/(1+exp((volt_quad+28.0)/6.9));
+
+          double w_tau;
+          if (fabs(volt_quad-7.9)<=1.e-4)
+             w_tau=6.5/6.;
+          else {
+             w_tau=(volt_quad-7.9)*(1.+0.3*exp(-(volt_quad-7.9)*.2));
+             w_tau/=(6.*(1.-exp(-(volt_quad-7.9)*.2)));}
+          double w_inf=1.-1./(1.+exp(-(volt_quad-40.)/17.));
+          d=d_inf-(d_inf-d)*exp(-dt*d_tau);
+          f=f_inf-(f_inf-f)*exp(-dt*f_tau);
+          w=w_inf-(w_inf-w)*exp(-dt*w_tau);
+
+
+*/
+
+          float fCa_inf=0.00035/(cai+0.00035);
+          fCa=fCa_inf-(fCa_inf-fCa)*expf(-dt*0.5);
+          float u_inf=1.0/(1.0+expf(-(Fn*1.e3-341.75)/1.367));
+          u=u_inf-(u_inf-u)*expf(-dt*0.125); 
+      
+          
+          float v_inf=1.-1./(1.+expf(-(Fn*1.e3-68.35)/1.367));
+          float v_tau=1.91+2.09/(1.+expf(-(Fn*1.e3-341.75)/1.367));
+          v=v_inf-(v_inf-v)*expf(-dt/v_tau); 
+          float ECa=RT_F*log(1.8/cai)/2.;
+      
+          float INa=Gna*m*m*m*h*j*(volt_quad-ENa);
+          float IK1=GK1*(volt_quad-EK)/(1.+expf(0.07*(volt_quad+80.)));
+          float Ito=Gto*oa*oa*oa*oi*(volt_quad-EK);
+          float IKur=Gkur*ua*ua*ua*ui*(volt_quad-EK)*(5.e-3+
+                      5.e-2/(1.+expf(-(volt_quad-15.)/13.)));
+          float IKr=GKr*xr*(volt_quad-EK)/(1.+expf((volt_quad+15.)/22.4));
+          float IKs=GKs*xs*xs*(volt_quad-EK);
+          float ICaL=GCaL*d*f*fCa*(volt_quad-65.);
+      
+
+          float temp=(expf(140./67.3)-1.)/7.;
+          float temp1=1+0.1245*expf(-0.1*volt_quad/RT_F)+0.0365*temp*expf(-volt_quad/RT_F);
+          temp1=1./temp1;
+          float INaK=0.6*temp1*5.4/6.9/(1.+powf(10./11.2,1.5));
+      
+          temp=expf(0.35*volt_quad/RT_F)*11.2*11.2*11.2*1.8-
+               expf(-0.65*volt_quad/RT_F)*140*140*140*cai; 
+          temp1=3.18*(87.5*87.5*87.5+140.*140*140)*(1.+0.1*expf(-0.65*volt_quad/RT_F));
+          float INaCa=1600.*temp/temp1;
+      
+          float IbCa=0.00113*(volt_quad-ECa);
+          float IbNa=0.000674*(volt_quad-ENa);
+          float IpCa=0.275*cai/(cai+0.0005);
+      
+          float Irel=30.*u*u*v*w*(carel-cai);
+          float Itr=(caup-carel)/180.;
+          float Iup=0.005/(1.0+9.2e-4/cai);
+          float Ileak=0.005*caup/15.;
+          Fn=96.48*Irel-100.*(0.25*ICaL+0.1*INaCa)/96.4867;
+      
+          float IKACh=(volt_quad-EK)*(10.0/(1.0+(9.13652/(powf(ACh,0.477811)))))*
+                      (0.0517+(0.4516/(1.0+expf((volt_quad+59.53)/17.18))));
+
+      
+          i_ion=-(INa+IK1+Ito+IKur+IKr+IKs+ICaL+INaK+INaCa+IKACh+
+                 IpCa+IbNa+IbCa-i_stim);
+
+          if (volt_quad>=105.0) {cout<<"voltquad:"<<volt_quad<<endl;
+          cout<<"INa:"<<INa<<" "<<volt_quad<<" "<<m<<" "<<h<<" "<<j<<endl;
+          cout<<"IK1:"<<IK1<<endl;
+          cout<<"Ito:"<<Ito<<" "<<oa<<" "<<oi<<endl;
+          cout<<"IKur:"<<IKur<<endl;
+          cout<<"IKr:"<<IKr<<endl;
+          cout<<"IKs:"<<IKs<<endl;
+          cout<<"ICaL:"<<ICaL<<endl;
+          cout<<"INaK:"<<INaK<<endl;
+          cout<<"INaCa:"<<INaCa<<endl;
+          cout<<"IpCa:"<<IpCa<<endl;
+          cout<<"IbNa:"<<IbNa<<endl;
+          cout<<"IbCa:"<<IbCa<<endl;
+          cout<<"cai:"<<cai<<" caup:"<<caup<<" carel:"<<carel<<endl;}
+
+          if ((INa>=1e3)||(INa<=-1e3)) {cout<<"INa:"<<INa<<" "<<volt_quad<<" "<<m<<" "<<h<<" "<<j<<endl;}
+          if ((IK1>=1e3)||(IK1<=-1e3)) {cout<<"IK1:"<<IK1<<endl;}
+          if ((Ito>=1e3)||(Ito<=-1e3)) {cout<<"Ito:"<<Ito<<" "<<oa<<" "<<oi<<endl;}
+          if ((IKur>=1e3)||(IKur<=-1e3)) {cout<<"IKur:"<<IKur<<endl;}
+          if ((IKr>=1e3)||(IKr<=-1e3)) {cout<<"IKr:"<<IKr<<endl;}
+          if ((IKs>=1e3)||(IKs<=-1e3)) {cout<<"IKs:"<<IKs<<endl;}
+          if ((ICaL>=1e3)||(ICaL<=-1e3)) {cout<<"ICaL:"<<ICaL<<endl;}
+          if ((INaK>=1e3)||(INaK<=-1e3)) {cout<<"INaK:"<<INaK<<endl;}
+          if ((INaCa>=1e3)||(INaCa<=-1e3)) {cout<<"INaCa:"<<INaCa<<endl;}
+          if ((IpCa>=1e3)||(IpCa<=-1e3)) {cout<<"IpCa:"<<IpCa<<endl;}
+          if ((IbNa>=1e3)||(IbNa<=-1e3)) {cout<<"IbNa:"<<IbNa<<endl;}
+          if ((IbCa>=1e3)||(IbCa<=-1e3)) {cout<<"IbCa:"<<IbCa<<endl;}
+          
+          temp=100.*(2*INaCa-IpCa-ICaL-IbCa)/(2.*FVi)+
+               (Ileak-Iup)*VuVi+Irel*VrVi;
+          temp1=1+0.0005*Trpn/((cai+0.0005)*(cai+0.0005))+
+            0.00238*Cmdn/((cai+0.00238)*(cai+0.00238));
+          cai+=dt*(temp/temp1);
+          caup+=dt*(Iup-Ileak-Itr*VrVu);
+          carel+=dt*((Itr-Irel)/(1.+0.8*Csqn/((carel+0.8)*(carel+0.8))));
+          
+
+
+//          volt_quad+=dt*i_ion;
+
+//          }  // end time stepping loop
+
+        // Compute f_a^{ion}
+        float f_ion;
+        for(int a=0; a<_vNodes.size(); a++) {
+           f_ion = N[a]*i_ion*(p->weight);
+           _vNodes[a]->addForce(0,f_ion);
+          
+           }
+//           cout<<volt_quad<<" "<<f_ion<<endl;    
+           
+
+        if (rk2_flag) {
+          in->setPoint(0,m);
+          in->setPoint(1,h);
+          in->setPoint(2,j);
+          in->setPoint(3,oa);
+          in->setPoint(4,oi);
+          in->setPoint(5,ua);
+          in->setPoint(6,ui);
+          in->setPoint(7,xr);
+          in->setPoint(8,xs);
+          in->setPoint(9,d);
+          in->setPoint(10,f);
+          in->setPoint(11,w);
+          in->setPoint(12,fCa);
+          in->setPoint(13,u);
+          in->setPoint(14,v);
+          in->setPoint(15,Fn);
+          in->setPoint(16,cai);
+          in->setPoint(17,caup);
+          in->setPoint(18,carel);     
+        }
+        }
+        if (_cell_type==1) {
+        float v_f=volt_quad;
+        float r_kv=in->getPoint(0);
+        float s_kv=in->getPoint(1);
+        float r_bar=1.0/(1+expf(-((v_f+20.0)/11.0)));
+        float s_bar=1.0/(1+expf((v_f+23.0)/7.0));
+        float r_tau=20.3+138*expf(-powf((v_f+20.0)/25.9,2));
+        float s_tau=1574.0+5268.0*expf(-powf((v_f+23.)/22.7,2));
+        r_kv=r_bar-(r_bar-r_kv)*expf(-dt/r_tau);
+        s_kv=s_bar-(s_bar-s_kv)*expf(-dt/s_tau);
+        float i_kv=g_kv*r_kv*s_kv*(v_f-E_kf);
+
+        float a_k1f=0.1/(1+expf(0.06*(v_f-E_kf-200.0)));
+        float b_k1f=(3.0*expf(0.0002*(v_f-E_kf+100.0))+expf(0.1*(v_f-E_kf-10.0)))/(1.0+expf(-0.5*(v_f-E_kf)));
+        float i_k1f=g_k1f*a_k1f*(v_f-E_kf)/(a_k1f+b_k1f);
+    
+        float i_nakf=inakf_bar*(K_o/(K_o+K_mk))*(powf(Na_i,1.5)/(powf(Na_i,1.5)+powf(K_mna,1.5)))*(v_f-v_rev)/(v_f+200.0);
+        float i_bnak=g_bnaf*(v_f-E_na_f); 
+        float i_f=-(i_k1f+i_nakf+i_bnak+i_kv);
+        float f_f;
+        for(int a=0; a<_vNodes.size(); a++) {
+           f_f = N[a]*i_f*(p->weight);
+           _vNodes[a]->addForce(0,f_f);
+           }
+
+        in->setPoint(0,r_kv);
+        in->setPoint(1,s_kv);
+
+        }  
+      } //end loop of quad points
+     
+
+// Add diffusion
+      float stiff=0.0;
+      for(int a=0; a<_vNodes.size(); a++) {
+          for(int b=0;b<_vNodes.size();b++) {
+              stiff=-_stiffness(a,b)*(_vNodes[b]->getPoint(0));
+              _vNodes[a]->addForce(0,stiff);
+             }
+          
+         }
+ //       cout<<" diffusion"<<stiff<<endl;    
+
+
+    return;
+    }  //end compute
+
+  
+}; // namespace voom

@@ -1,0 +1,1 @@
+./configure CXX=mpicxx CXXFLAGS="-g -ggdb -O2 -funroll-loops -ffast-math -DTVMET_OPTIMIZE=1 -DWITH_MPI=1 -DMPICH_IGNORE_CXX_SEEK=1"

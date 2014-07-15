@@ -1,0 +1,369 @@
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                    HoHai Van and William S. Klug
+//                University of California Los Angeles
+//                    (C) 2006 All Rights Reserved
+//
+//----------------------------------------------------------------------
+
+#include "CardiacPotential.h"
+#include <tvmet/Vector.h>
+#include <tvmet/Matrix.h>
+
+
+namespace voom {
+
+  /*!  The QuadPointStruct constructor has to initialize the spatial
+    derivatives of the shape functions as well as the effective
+    quadrature weight (scaled by the scalar jacobian).  First we     
+    compute the Jacobian
+    \f[
+    J = \det(J_{i\alpha}), \qquad J_{i\alpha} = \sum_{a=1}^{\cal N} N_{a,\alpha} x_{ia} , \qquad N_{a,\alpha} = \frac{\partial N_a}{\partial s^\alpha}
+    \f]
+    and then compute the spatial derivatives of the shape functions
+    \f[
+    \frac{\partial N_a}{\partial x_i} = J^{-1}_{\alpha i} \frac{\partial N_a}{\partial s_\alpha}
+    \f]
+   */
+  CardiacPotential::QuadPointStruct::
+  QuadPointStruct(double w, const CardiacPotential::Shape_t & s, 
+		  const CardiacPotential::VoltageNodeContainer & nds)
+  {
+    weight = w;
+    shapeFunctions = s.functions();
+    
+    // Compute spatial derivatives of shape functions from
+    // parametric derivatives by transforming with matrix jacobian
+    // of isoparametric mapping.
+    
+    // parametric derivatives from shape object
+    const Shape_t::DerivativeContainer & dnds = s.derivatives();
+
+    // matrix jacobian dxds;
+    tvmet::Matrix<double,2,2> dxds(0.0);
+    for(int i=0; i<2; i++) {
+      for(int alpha=0; alpha<2; alpha++) {	   
+	for(int a=0; a<nds.size(); a++) {
+	  dxds(i,alpha) += dnds[a](alpha)*( nds[a]->position(i) );
+	}
+      }	      
+    }
+
+    // compute scalar jacobian and scale the quadrature weight with it
+    double J=dxds(0,0)*dxds(1,1) - dxds(0,1)*dxds(1,0);
+    weight *= J;
+	
+    // invert matrix jacobian
+    tvmet::Matrix<double,2,2> invJac(0.0);
+    invJac(0,0) = dxds(1,1);
+    invJac(1,1) = dxds(0,0);
+    invJac(0,1) = -dxds(0,1);
+    invJac(1,0) = -dxds(1,0);
+    invJac /= J;
+
+    // spatial derivatives dndx
+    shapeDerivatives.resize(dnds.size());
+    for(int a=0; a<nds.size(); a++) {	  
+      for(int i=0; i<2; i++) {
+	shapeDerivatives[a](i) = 0.0;
+	for(int alpha=0; alpha<2; alpha++) {	   
+	  shapeDerivatives[a](i) += dnds[a](alpha)*invJac(alpha,i);
+	}
+      }
+    }
+
+    internalNode.clear();
+    internalNode.push_back(new InternalNode (0,NodeBase::DofIndexMap(3),InternalNode::Point(0.0)));
+    
+    // Note: this will call the default constructor for the internal
+    // nodes.  Thus they will need to be initialized later (setting
+    // id and index members), when we want to use them with a
+    // solver.
+
+    // Each internal node will represent an ionic gating variable.  
+    // For the Noble model, the gating variables are m,n,h
+    return;
+  }
+
+
+  // Constructor
+  CardiacPotential::CardiacPotential( const Quadrature_t & quad,
+				      const VoltageNodeContainer & nodes )
+    {
+
+    //! initialize NodeContainer
+    unsigned nNodes = nodes.size();
+    _vNodes = nodes;
+  
+
+//    for(ConstVoltageNodeIterator n=_vNodes.begin(); n!=_vNodes.end(); n++) 
+//      _baseNodes.push_back(*n);
+        
+    //! initialize quad points
+    _quadPoints.clear();
+    for(Quadrature_t::ConstPointIterator p=quad.begin(); p!=quad.end(); p++) {
+      Shape_t shp( p->coords );
+      _quadPoints.push_back( QuadPointStruct(p->weight, shp, _vNodes) ); 
+	if( shp.functions().size() != nNodes ) {
+	  std::cout << "Number of nodes: " << nNodes << std::endl
+		    << "Number of functions: " << shp.functions().size()
+		    << std::endl
+		    << "These should be equal." << std::endl;
+	  exit(0);
+	}
+      
+    }
+
+//    for(ConstQuadPointIterator p=_quadPoints.begin(); p!=_quadPoints.end(); p++) 
+//      _baseNodes.push_back(p->internalNode);
+    
+    //! initialize the gating variables by default
+    Stiffness s(0.0);
+    _s=s;
+    compute( true,0.0, false, 0.0, false); 
+    return;
+  }
+
+  /*!  The compute method needs to compute the nodal ionic and
+    diffusive currents as well as the (diagonal) lumped conduction
+    matrix coefficients.  
+    The currents are written 
+    \f[
+    f^{ion}_{a} = \int_\Omega N_a \frac{I_{ion}}{C} dV
+    \f]
+    and 
+    \f[
+    f^{dif}_{a} = \int_\Omega \nabla N_a \cdot (D\nabla V) dV 
+    = \int_\Omega  N_{a,i} \cdot (D_{ij} V_{,j}) dV ,
+    \f]
+    and the row-summed conduction coefficients are 
+    \f[
+    C_a = \sum_{b=1}^{\cal N} C_{ab} = \sum_{b=1}^{\cal N} \int_\Omega N_a N_b dV .
+    \f]
+    Assuming the shape functions satisfy theaddDamping partition of unity property, 
+    the conduction coefficients simplify to 
+    \f[
+    C_a = \int_\Omega N_a dV .
+    \f]
+    
+    Approximating these nodal integrals by quadrature, we obtain
+    \f[
+    f^{ion}_{a} = \sum_{p=1}^Q (N_a \frac{I_{ion}}{C} J )|_{s^p} w_p
+    \f]
+    \f[
+    f^{dif}_{a} = \sum_{p=1}^Q ( N_{a,i} \cdot (D_{ij} V_{,j}) J )|_{s^p} w_p  
+    \f]
+    \f[
+    C_a = \sum_{p=1}^Q ( N_a J )|_{s^p} w_p 
+    \f]
+    where \f$s^p\f$ are the parametric coordinates of the Gauss points 
+    and \f$J\f$ is the jacobian of the isoparametric mapping.
+
+    We loop over the quad points, and at each quad point perform the 
+    following steps:
+    <ol>
+    <li> Compute the voltage and its gradient
+    \f[ 
+    V = \sum_{a} N_a V_a \qquad V_i = \sum_a N_{a,i} V_a
+    \f]
+    <li> Compute the ionic current \f$I^{ion}(V)\f$
+    <li> Compute quad point contributions to the sums for \f$f_a^{ion}\f$, 
+    \f$f_a^{dif}\f$, and \f$C_a\f$.  Add these to the $a^{th}$ node using
+    the methods updateForce, and addDamping.
+    </ol>      
+  */
+  // for now we won't worry about the boolean f1, etc.  Just compute
+  // forces and lumped conduction matrix
+  void CardiacPotential::compute( bool f0, double i_stim, bool f1, double dt, bool f2) 
+  {
+
+
+    // if true then just initialize the gating variables
+    if (f0) {
+
+    // Initialize the damping and force components
+    for(int a=0; a<_vNodes.size(); a++) {
+       _vNodes[a]->setDamping(0,0.0);
+       _vNodes[a]->setForce(0,0.0);
+
+       }
+
+    for(QuadPointIterator p=_quadPoints.begin(); 
+	p!=_quadPoints.end(); p++){
+    
+      const Shape_t::FunctionContainer &  N = p->shapeFunctions;
+      const Shape_t::DerivativeContainer &  DN = p->shapeDerivatives;
+      InternalNodeContainer & in = p->internalNode;
+
+      //Compute voltage, capacitance, and stiffness matrix
+      double volt_quad=0.0;
+      double c_m=12.0;
+      double Dx=0.00025;
+      double Dy=0.00025;
+
+      for(int a=0; a<_vNodes.size(); a++) {
+	 volt_quad += N[a]*_vNodes[a]->point();
+         double c = N[a]*c_m *(p->weight);
+         _vNodes[a]->addDamping(0,c);
+         for(int b=0;b<_vNodes.size();b++) {
+            _s(a,b)+=(p->weight)*(DN[a](0)*Dx*DN[b](0)
+                     +DN[a](1)*Dy*DN[b](1));
+            }
+
+         }
+
+      double a_m=(0.0*exp(-0.0*(volt_quad+47.0))-1.0*(volt_quad+47))/(exp(-0.1*(volt_quad+47.0))-1.0);
+      double b_m=(40.0*exp(-0.056*(volt_quad+72.0))+0.0*(volt_quad+0.0))/(exp(0.0*(volt_quad+72.0))+0.0);
+      double m=a_m/(a_m+b_m);
+      in[0]->setPoint(0,m);
+
+      double a_h=0.17*exp((-volt_quad-90.0)/20.0);
+      double b_h=1.0/(exp((-volt_quad-42.0)/10.0)+1.0);
+
+      double h=a_h/(a_h+b_h);
+      in[0]->setPoint(1,h);
+
+      double a_n=0.0001*(-volt_quad-50.0)/(exp((-volt_quad-50.0)/10.0)-1.0);
+      double b_n=0.002*exp((-volt_quad-90.0)/80.0);
+
+      double n=a_n/(a_n+b_n);
+      in[0]->setPoint(2,n);
+
+/*     
+      double dummy=in[0]->getPoint(0);
+      std::cout << volt_quad << " "<< dummy <<" ";
+      dummy=in[0]->getPoint(1); std::cout <<dummy<<" ";
+      dummy=in[0]->getPoint(2); std::cout <<dummy<<" "<<std::endl;
+*/
+      } //end loop of quad points
+    }  //end if statement
+    if (f1) {
+
+    //initialize the stiffness matrix and the f_ion or Force
+//    tvmet::Matrix< double, 4, 4 > s(0.0);
+    for(int a=0; a<_vNodes.size(); a++) {
+          _vNodes[a]->setForce(0.0);
+
+       }
+
+    for(QuadPointIterator p=_quadPoints.begin(); 
+	p!=_quadPoints.end(); p++){
+    
+        const Shape_t::FunctionContainer &  N = p->shapeFunctions;
+        const Shape_t::DerivativeContainer &  DN = p->shapeDerivatives;
+        InternalNodeContainer & in = p->internalNode;
+      
+        //Compute voltage
+        double volt_quad=0.0;
+        for(int a=0; a<_vNodes.size(); a++) {
+           volt_quad += N[a]*_vNodes[a]->point();
+           }
+      
+        // Compute I^{ion}
+        double i_ion = 0.0; 
+
+        // Quadrature of ionic current 
+        // Already have m,n,h at the quadrature points  
+        double i_na,i_k,i_leak;
+        double m,h,n;
+      
+        m= in[0]->getPoint(0);
+        h= in[0]->getPoint(1);
+        n= in[0]->getPoint(2);
+      
+//      std::cout<<m<<" M "<<h<<" H "<<n<<" N"<<std::endl;
+
+        i_na=(400.0*pow(m,3.0)*h+0.14)*(volt_quad-40.0);
+ 
+        double g_k1,g_k2;
+        g_k1=1.2*exp((-volt_quad-90.0)/50.0)+0.015*exp((volt_quad+90.0)/60.0);
+        g_k2=1.2*pow(n,4.0);
+
+        i_k=(g_k1+g_k2)*(volt_quad+100.0);
+
+        i_leak=0.0*(volt_quad-(-60.0));
+
+        i_ion=-(i_na+i_k+i_leak-i_stim);
+
+//      std::cout<<i_ion<<" ";
+
+
+        // Compute f_a^{ion}
+        double f;
+        for(int a=0; a<_vNodes.size(); a++) {
+    	   f = N[a]*i_ion*(p->weight);
+           _vNodes[a]->addForce(0,f);
+          
+           }
+  
+       } // end over quad points
+
+//      for(int a=0;a<_vNodes.size();a++) {
+//         double dummy2=_vNodes[a]->getForce(0);
+//         std::cout<<a<<" before stiffness "<<dummy2<<std::endl;
+//      }
+      
+      for(int a=0; a<_vNodes.size(); a++) {
+          for(int b=0;b<_vNodes.size();b++) {
+              double stiff=-_s(a,b)*_vNodes[b]->getPoint(0);
+              _vNodes[a]->addForce(0,stiff);
+          }
+          
+      }
+
+//    for(int a=0;a<_vNodes.size();a++) {
+//         double dummy2=_vNodes[a]->getForce(0);
+//         std::cout<<a<<" after stiffness "<<dummy2<<std::endl;
+//      }
+    } // end if statement
+
+
+    // this portion of compute advances the internal nodes (gating variables) by dt
+    if (f2) {
+    for(QuadPointIterator p=_quadPoints.begin(); 
+	p!=_quadPoints.end(); p++){
+    
+      const Shape_t::FunctionContainer &  N = p->shapeFunctions;
+      InternalNodeContainer & in = p->internalNode;
+
+      //Compute voltage
+      double volt_quad=0.0;
+
+      for(int a=0; a<_vNodes.size(); a++) {
+	volt_quad += N[a]*_vNodes[a]->point();
+      }
+      //Calculate gating variables
+      double m,h,n;
+      
+      m= in[0]->getPoint(0);
+      h= in[0]->getPoint(1);
+      n= in[0]->getPoint(2);
+
+      double a_m=0.1*(-volt_quad-48.0)/(exp((-volt_quad-48.0)/15.0)-1.0);
+      double b_m=0.12*(volt_quad+8.0)/(exp((volt_quad+8.0)/5.0)-1.0);
+
+      m+=dt*(a_m*(1.0-m)-b_m*m);
+      in[0]->setPoint(0,m);
+
+      double a_h=0.17*exp((-volt_quad-90.0)/20.0);
+      double b_h=1.0/(exp((-volt_quad-42.0)/10.0)+1.0);
+
+      h+=dt*(a_h*(1.0-h)-b_h*h);
+      in[0]->setPoint(1,h);
+
+      double a_n=0.0001*(-volt_quad-50.0)/(exp((-volt_quad-50.0)/10.0)-1.0);
+      double b_n=0.002*exp((-volt_quad-90.0)/80.0);
+
+      n+=dt*(a_n*(1.0-n)-b_n*n);
+      in[0]->setPoint(2,n);
+     
+      } //end loop of quad points
+       
+
+
+    }
+
+    return;
+  }
+}; // namespace voom
