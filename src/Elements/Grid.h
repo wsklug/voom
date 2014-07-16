@@ -494,6 +494,14 @@ namespace voom
 
     VectorNI & nBoxesDim() { return _nBoxes; }
 
+    double boxVol() {
+      double vol = 1.0;
+      for(int i=0; i<N; i++) {
+	vol *= _gridSpace[i];
+      }
+
+    }
+
   private:
     VectorND _gridSpace;
     VectorNI _nBoxes;

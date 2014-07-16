@@ -59,17 +59,19 @@ public:
   virtual double & gradient(int i) = 0;
   virtual double & hessian(int i, int j) = 0;
 
-  virtual double field(int i) const = 0;
-  virtual double function() const = 0;
-  virtual double gradient(int i) const = 0;
-  virtual double hessian(int i, int j) const = 0;
+  virtual const double field(int i) const = 0;
+  virtual const double function() const = 0;
+  virtual const double gradient(int i) const = 0;
+  virtual const double hessian(int i, int j) const = 0;
 
   virtual double & hessian(int i) { return hessian(i,i);}
-  virtual double hessian(int i) const { return hessian(i,i);}
+  virtual const double hessian(int i) const { return hessian(i,i);}
 
   virtual void zeroOutData(bool f0, bool f1, bool f2) = 0;
 
   virtual void resize(size_t sz) = 0;
+
+  virtual int iterationNo() { return 0; }
 
 };
 
@@ -87,11 +89,11 @@ struct Storage : public Solver {
   double & hessian(int i, int j) {return _DDE(i,j);}
   double & hessian(int i) {return _DDE(i,i);}
 
-  double field(int i) const {return _x(i);}
-  double function() const {return _E;}
-  double gradient(int i) const {return _DE(i);}
-  double hessian(int i, int j) const {return _DDE(i,j);}
-  double hessian(int i) const {return _DDE(i,i);}
+  double const field(int i) const {return _x(i);}
+  double const function() const {return _E;}
+  double const gradient(int i) const {return _DE(i);}
+  double const hessian(int i, int j) const {return _DDE(i,j);}
+  double const hessian(int i) const {return _DDE(i,i);}
 
   double * field() {return _x.data();}
   double * gradient() {return _DE.data();}
@@ -99,16 +101,17 @@ struct Storage : public Solver {
   void zeroOutData(bool f0, bool f1, bool f2) {
     if(f0) _E=0.0;
     if(f1) _DE=0.0;
-    if(f2) _DDE=0.0;
+    //if(f2) _DDE=0.0;
   }
   
   void resize(size_t sz) { 
     _x.resize(sz); 
     _DE.resize(sz); 
-    _DDE.resize(sz,sz);
+    //_DDE.resize(sz,sz);
+    _DDE.resize(0,0);
     _x = 0.0;
     _DE = 0.0;
-    _DDE = 0.0;
+    //_DDE = 0.0;
   }
 
   int size() const {return _x.size();}

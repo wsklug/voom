@@ -47,9 +47,7 @@ namespace voom
 	std::cout << "RigidHemisphereContact(): Friction coefficient should be non-negative.  Taking absolute value: " 
 		  << _friction 
 		  << std::endl;
-      }
-      if( _friction > 1.0 )	std::cout << "RigidHemisphereContact(): Friction coefficient greater than 1, rough contact will be used." <<std::endl; 
-
+      }   
       _forceTol = forceTol;
     }
 
@@ -86,23 +84,17 @@ namespace voom
 	  n /=  norm2(n);
 	  _forces(a) = _nodes[a]->force();
 	  double fn =  dot(_forces(a),n);
-
-	  if( fn > _forceTol) { 
-            if(_friction<=1){
-            // frictional contact;
+	  if( fn > _forceTol) { // non-stick contact;
 	    // tangent force 
-	      double ft = norm2( _forces(a) - fn*n );
+	    double ft = norm2( _forces(a) - fn*n );
 	    // check for slip
 	    if( ft < _friction*fn ) { 
 	      // stick case
 	      _forces(a) = -_forces(a); 
 	    } else { 
 	      // slip case
-	      _forces(a) = -fn*n-_friction*fn*( _forces(a) - fn*n )/norm2( _forces(a) - fn*n );
-	      }
-           }
-           else _forces(a) = -_forces(a); //rough contact
-
+	      _forces(a) = -fn*n;
+	    }
 	    _nodes[a]->updateForce( _forces(a) );
 	    _FZ += _forces(a)(2);
 	  } else { // node pulling away from surface
@@ -121,10 +113,9 @@ namespace voom
     double energy() const {return -_FZ*(_R-_R0);}
 
     double getForce(int a, int i) const {
-      if( a >= 0 && a < _forces.size() && i >= 0 && i < 3 ) {
-	return _forces(a)(i);
-      }
-      return 0.0;
+      assert( a >= 0 && a < _forces.size() );
+      assert( i >= 0 && i < 3 );
+      return _forces(a)(i);
     }
 
     int active() const { 
@@ -179,7 +170,6 @@ namespace voom
 		  << _friction 
 		  << std::endl;
       }
-      if( _friction > 1.0 )	std::cout << "RigidPlateContact(): Friction coefficient greater than 1, rough contact will be used." <<std::endl; 
       _forceTol = forceTol;
     }
 
@@ -213,9 +203,7 @@ namespace voom
 	  else    n = 0.0, 0.0, -1.0;
 	  double fn =  dot(_forces(a),n);
 	  
-	  if( fn > _forceTol) { 
-            if(_friction<=1){
-            // frictional contact;
+	  if( fn > _forceTol ) { // node pushing towards surface
 	    // tangent force 
 	    double ft = norm2( _forces(a) - fn*n );
 	    // check for slip
@@ -224,21 +212,16 @@ namespace voom
 	      _forces(a) = -_forces(a); 
 	    } else { 
 	      // slip case
-	      _forces(a) = -fn*n-_friction*fn*( _forces(a) - fn*n )/norm2( _forces(a) - fn*n );
-	      }
-           }
-           else _forces(a) = -_forces(a); //rough contact
-
+	      _forces(a) = -fn*n;
+	    }
 	    _nodes[a]->updateForce( _forces(a) );
 	    _FZ += _forces(a)(2);
 	  } else { // node pulling away from surface
 	    _forces(a) = 0.0, 0.0, 0.0;
-	    _nodes[a]->updateForce( _forces(a) );
 	  }
 	} else {
 	  // Node is not in contact; contact force is zero
 	  _forces(a) = 0.0, 0.0, 0.0;
-	  _nodes[a]->updateForce( _forces(a) );
 	}
       }
       return;
@@ -251,10 +234,9 @@ namespace voom
     void setZ(double Z) {_Z=Z;}
 
     double getForce(int a, int i) const {
-      if( a >= 0 && a < _forces.size() && i >= 0 && i < 3 ) {
-	return _forces(a)(i);
-      }
-      return 0.0;
+      assert( a >= 0 && a < _forces.size() );
+      assert( i >= 0 && i < 3 );
+      return _forces(a)(i);
     }
 
     int active() const { 

@@ -1,0 +1,997 @@
+
+
+*******************************************************************************
+Thu Sep 16 14:35:17 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.001000.dat"
+        #datapoints = 21
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 2.81482           delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 0.318457
+
+initial set of free parameter values
+
+a               = 1
+b               = 1
+
+After 6 iterations the fit converged.
+final sum of squares of residuals : 0.00010795
+rel. change during last iteration : -1.47373e-06
+
+degrees of freedom    (FIT_NDF)                        : 19
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 0.00238361
+variance of residuals (reduced chisquare) = WSSR/ndf   : 5.68158e-06
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = 0.0734334        +/- 0.002368     (3.225%)
+b               = 0.184684         +/- 0.01364      (7.384%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.320  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:36:11 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.000200.dat"
+        #datapoints = 21
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 0.00111097        delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 0.166395
+
+initial set of free parameter values
+
+a               = 0.0734334
+b               = 0.184684
+
+After 4 iterations the fit converged.
+final sum of squares of residuals : 5.55962e-06
+rel. change during last iteration : -4.84596e-06
+
+degrees of freedom    (FIT_NDF)                        : 19
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 0.000540936
+variance of residuals (reduced chisquare) = WSSR/ndf   : 2.92612e-07
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = 0.0442805        +/- 0.0005402    (1.22%)
+b               = 0.136019         +/- 0.00454      (3.338%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.223  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:36:22 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.000400.dat"
+        #datapoints = 21
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 3.01336e-05       delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 0.159638
+
+initial set of free parameter values
+
+a               = 0.0442805
+b               = 0.136019
+
+After 4 iterations the fit converged.
+final sum of squares of residuals : 1.24377e-05
+rel. change during last iteration : -1.70857e-08
+
+degrees of freedom    (FIT_NDF)                        : 19
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 0.000809084
+variance of residuals (reduced chisquare) = WSSR/ndf   : 6.54617e-07
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = 0.0482754        +/- 0.0008078    (1.673%)
+b               = 0.138935         +/- 0.006267     (4.511%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.230  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:36:25 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.000600.dat"
+        #datapoints = 21
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 2.18444e-05       delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 0.160115
+
+initial set of free parameter values
+
+a               = 0.0482754
+b               = 0.138935
+
+After 4 iterations the fit converged.
+final sum of squares of residuals : 1.98988e-05
+rel. change during last iteration : -3.43502e-06
+
+degrees of freedom    (FIT_NDF)                        : 19
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 0.00102338
+variance of residuals (reduced chisquare) = WSSR/ndf   : 1.04731e-06
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = 0.0480551        +/- 0.001021     (2.124%)
+b               = 0.150371         +/- 0.008178     (5.438%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.255  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:36:27 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.000800.dat"
+        #datapoints = 21
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 1321.74           delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 0.161208
+
+initial set of free parameter values
+
+a               = 0.0480551
+b               = 0.150371
+
+After 4 iterations the fit converged.
+final sum of squares of residuals : 0.00432686
+rel. change during last iteration : -7.00702e-06
+
+degrees of freedom    (FIT_NDF)                        : 19
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 0.0150907
+variance of residuals (reduced chisquare) = WSSR/ndf   : 0.00022773
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = 36.4038          +/- 0.01509      (0.04145%)
+b               = 0.0067256        +/- 8.08e+05     (1.201e+10%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.000  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:38:51 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.001000.dat"
+        #datapoints = 21
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 1319.85           delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 0.154303
+
+initial set of free parameter values
+
+a               = 36.4038
+b               = 0.0067256
+
+After 4 iterations the fit converged.
+final sum of squares of residuals : 0.000700741
+rel. change during last iteration : -8.78822e-14
+
+degrees of freedom    (FIT_NDF)                        : 19
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 0.00607298
+variance of residuals (reduced chisquare) = WSSR/ndf   : 3.68811e-05
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = 0.0741238        +/- 0.006073     (8.193%)
+b               = 0.00676085       +/- 1.382e+08    (2.043e+12%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.000  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:39:29 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.001000.dat"
+        #datapoints = 21
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 0.000700563       delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 0.166944
+
+initial set of free parameter values
+
+a               = 0.05
+b               = 0.2
+
+After 5 iterations the fit converged.
+final sum of squares of residuals : 0.00010795
+rel. change during last iteration : -2.11516e-06
+
+degrees of freedom    (FIT_NDF)                        : 19
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 0.00238361
+variance of residuals (reduced chisquare) = WSSR/ndf   : 5.68158e-06
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = 0.0734313        +/- 0.002368     (3.225%)
+b               = 0.184722         +/- 0.01364      (7.383%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.320  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:41:32 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.001000.dat" using 1:log(2)
+        #datapoints = 21
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 2869.89           delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 0.166399
+
+initial set of free parameter values
+
+a               = 0.0734313
+b               = 0.184722
+
+After 8 iterations the fit converged.
+final sum of squares of residuals : 770.001
+rel. change during last iteration : -5.62907e-07
+
+degrees of freedom    (FIT_NDF)                        : 19
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 6.36603
+variance of residuals (reduced chisquare) = WSSR/ndf   : 40.5264
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = 10               +/- 2.682        (26.82%)
+b               = 3.36595e+06      +/- 1.298e+12    (3.857e+07%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.855  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:41:59 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.001000.dat" using 1:log(2)
+        #datapoints = 21
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 11420.7           delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 41.3852
+
+initial set of free parameter values
+
+a               = 0.1
+b               = 0.2
+
+After 8 iterations the fit converged.
+final sum of squares of residuals : 770.008
+rel. change during last iteration : -9.64731e-06
+
+degrees of freedom    (FIT_NDF)                        : 19
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 6.36606
+variance of residuals (reduced chisquare) = WSSR/ndf   : 40.5267
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = 10               +/- 2.682        (26.82%)
+b               = 40120.2          +/- 1.844e+09    (4.597e+06%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.855  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:45:02 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.001000.dat" using ($1):(log(fabs($2)))
+
+
+*******************************************************************************
+Thu Sep 16 14:45:05 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.001000.dat" using ($1):(log(abs($2)))
+        #datapoints = 21
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 5904.05           delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 0.707107
+
+initial set of free parameter values
+
+a               = 10
+b               = 40120.2
+
+After 3 iterations the fit converged.
+final sum of squares of residuals : 89.567
+rel. change during last iteration : -1.98975e-09
+
+degrees of freedom    (FIT_NDF)                        : 19
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 2.17119
+variance of residuals (reduced chisquare) = WSSR/ndf   : 4.71405
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = -6.6397          +/- 0.9147       (13.78%)
+b               = 40120.2          +/- 6.29e+08     (1.568e+06%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.855  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:46:09 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.001000.dat" using ($1):(log(abs($2)))
+        #datapoints = 21
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 34.6836           delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 6.65832
+
+initial set of free parameter values
+
+a               = -3
+b               = 0.5
+
+After 5 iterations the fit converged.
+final sum of squares of residuals : 23.0292
+rel. change during last iteration : -5.33775e-14
+
+degrees of freedom    (FIT_NDF)                        : 19
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 1.10094
+variance of residuals (reduced chisquare) = WSSR/ndf   : 1.21206
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = -3.7001          +/- 0.4638       (12.54%)
+b               = 0.68181          +/- 0.09211      (13.51%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.855  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:48:58 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.000400.dat" using ($1):(log(abs($2)))
+        #datapoints = 21
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 21.2496           delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 3.63007
+
+initial set of free parameter values
+
+a               = -3.7001
+b               = 0.68181
+
+After 5 iterations the fit converged.
+final sum of squares of residuals : 9.36188
+rel. change during last iteration : -2.46209e-08
+
+degrees of freedom    (FIT_NDF)                        : 19
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 0.701948
+variance of residuals (reduced chisquare) = WSSR/ndf   : 0.492731
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = -5.14743         +/- 0.2957       (5.745%)
+b               = 1.0357           +/- 0.1355       (13.08%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.855  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:49:15 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.000400.dat" using ($1):(log(abs($2)))
+        #datapoints = 21
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 9.36188           delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 1.69733
+
+initial set of free parameter values
+
+a               = -5.14743
+b               = 1.0357
+
+After 1 iterations the fit converged.
+final sum of squares of residuals : 9.36188
+rel. change during last iteration : -2.20103e-14
+
+degrees of freedom    (FIT_NDF)                        : 19
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 0.701948
+variance of residuals (reduced chisquare) = WSSR/ndf   : 0.492731
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = -5.14743         +/- 0.2957       (5.745%)
+b               = 1.0357           +/- 0.1355       (13.08%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.855  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:49:21 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.000200.dat" using ($1):(log(abs($2)))
+        #datapoints = 21
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 31.5222           delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 1.69733
+
+initial set of free parameter values
+
+a               = -5.14743
+b               = 1.0357
+
+After 4 iterations the fit converged.
+final sum of squares of residuals : 21.0536
+rel. change during last iteration : -1.38448e-09
+
+degrees of freedom    (FIT_NDF)                        : 19
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 1.05266
+variance of residuals (reduced chisquare) = WSSR/ndf   : 1.10808
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = -5.23012         +/- 0.4435       (8.479%)
+b               = 0.808984         +/- 0.124        (15.33%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.855  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:49:25 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.000600.dat" using ($1):(log(abs($2)))
+        #datapoints = 21
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 18.9948           delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 2.62607
+
+initial set of free parameter values
+
+a               = -5.23012
+b               = 0.808984
+
+After 4 iterations the fit converged.
+final sum of squares of residuals : 7.29019
+rel. change during last iteration : -1.10818e-12
+
+degrees of freedom    (FIT_NDF)                        : 19
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 0.619431
+variance of residuals (reduced chisquare) = WSSR/ndf   : 0.383694
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = -4.79364         +/- 0.261        (5.444%)
+b               = 0.915914         +/- 0.09353      (10.21%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.855  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:52:06 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.000400.dat" using ($1):(log(abs($2)))
+        #datapoints = 20
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 6.95655           delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 2.14184
+
+initial set of free parameter values
+
+a               = -4.79364
+b               = 0.915914
+
+After 5 iterations the fit converged.
+final sum of squares of residuals : 3.90926
+rel. change during last iteration : -5.82764e-14
+
+degrees of freedom    (FIT_NDF)                        : 18
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 0.466027
+variance of residuals (reduced chisquare) = WSSR/ndf   : 0.217181
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = -5.60442         +/- 0.2165       (3.863%)
+b               = 1.25204          +/- 0.1415       (11.3%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.877  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:52:12 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.000400.dat" using ($1):(log(abs($2)))
+        #datapoints = 20
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 3.90926           delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 1.29251
+
+initial set of free parameter values
+
+a               = -5.60442
+b               = 1.25204
+
+After 1 iterations the fit converged.
+final sum of squares of residuals : 3.90926
+rel. change during last iteration : -1.13599e-16
+
+degrees of freedom    (FIT_NDF)                        : 18
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 0.466027
+variance of residuals (reduced chisquare) = WSSR/ndf   : 0.217181
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = -5.60442         +/- 0.2165       (3.863%)
+b               = 1.25204          +/- 0.1415       (11.3%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.877  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:52:17 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.001000.dat" using ($1):(log(abs($2)))
+        #datapoints = 20
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 34.5321           delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 1.29251
+
+initial set of free parameter values
+
+a               = -5.60442
+b               = 1.25204
+
+After 13 iterations the fit converged.
+final sum of squares of residuals : 21.5632
+rel. change during last iteration : -1.18329e-09
+
+degrees of freedom    (FIT_NDF)                        : 18
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 1.09451
+variance of residuals (reduced chisquare) = WSSR/ndf   : 1.19796
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = -3.93705         +/- 0.5084       (12.91%)
+b               = 0.724543         +/- 0.1113       (15.36%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.877  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:53:04 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.000200.dat" using ($1):(log(abs($2)))
+        #datapoints = 20
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 42.205            delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 3.30726
+
+initial set of free parameter values
+
+a               = -3.93705
+b               = 0.724543
+
+After 5 iterations the fit converged.
+final sum of squares of residuals : 15.6233
+rel. change during last iteration : -3.86607e-08
+
+degrees of freedom    (FIT_NDF)                        : 18
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 0.931644
+variance of residuals (reduced chisquare) = WSSR/ndf   : 0.867961
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = -5.68617         +/- 0.4328       (7.611%)
+b               = 0.934905         +/- 0.1577       (16.87%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.877  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:53:17 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.000400.dat" using ($1):(log(abs($2)))
+        #datapoints = 20
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 14.3703           delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 2.06527
+
+initial set of free parameter values
+
+a               = -5.68617
+b               = 0.934905
+
+After 4 iterations the fit converged.
+final sum of squares of residuals : 3.90926
+rel. change during last iteration : -6.12247e-09
+
+degrees of freedom    (FIT_NDF)                        : 18
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 0.466027
+variance of residuals (reduced chisquare) = WSSR/ndf   : 0.217181
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = -5.60442         +/- 0.2165       (3.863%)
+b               = 1.25204          +/- 0.1415       (11.3%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.877  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:53:33 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.000600.dat" using ($1):(log(abs($2)))
+        #datapoints = 20
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 4.38367           delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 1.29251
+
+initial set of free parameter values
+
+a               = -5.60442
+b               = 1.25204
+
+After 4 iterations the fit converged.
+final sum of squares of residuals : 3.52228
+rel. change during last iteration : -3.59972e-11
+
+degrees of freedom    (FIT_NDF)                        : 18
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 0.44236
+variance of residuals (reduced chisquare) = WSSR/ndf   : 0.195682
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = -5.17352         +/- 0.2055       (3.972%)
+b               = 1.04919          +/- 0.09431      (8.989%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.877  1.000 
+
+
+*******************************************************************************
+Thu Sep 16 14:53:39 2010
+
+
+FIT:    data read from "./Run7920/buckleOPcorr-shear=0.001000.dat" using ($1):(log(abs($2)))
+        #datapoints = 20
+        residuals are weighted equally (unit weight)
+
+function used for fitting: f(x)
+fitted parameters initialized with current variable values
+
+
+
+ Iteration 0
+ WSSR        : 28.7165           delta(WSSR)/WSSR   : 0
+ delta(WSSR) : 0                 limit for stopping : 1e-05
+ lambda	  : 1.69526
+
+initial set of free parameter values
+
+a               = -5.17352
+b               = 1.04919
+
+After 4 iterations the fit converged.
+final sum of squares of residuals : 21.5632
+rel. change during last iteration : -3.0274e-08
+
+degrees of freedom    (FIT_NDF)                        : 18
+rms of residuals      (FIT_STDFIT) = sqrt(WSSR/ndf)    : 1.09451
+variance of residuals (reduced chisquare) = WSSR/ndf   : 1.19796
+
+Final set of parameters            Asymptotic Standard Error
+=======================            ==========================
+
+a               = -3.93705         +/- 0.5084       (12.91%)
+b               = 0.724543         +/- 0.1113       (15.36%)
+
+
+correlation matrix of the fit parameters:
+
+               a      b      
+a               1.000 
+b              -0.877  1.000 

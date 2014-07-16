@@ -32,22 +32,20 @@ namespace voom
     const Tensor2D& refMetric = _referenceGeometry.metricTensor();
     const Tensor2D& refMetricInv = _referenceGeometry.metricTensorInverse();
 
-    _strain = 0.5*(metric-refMetric);
+    Tensor2D strain;
+    strain = 0.5*(metric-refMetric);
 
     Tensor2D strainDual(0.0);
-    strainDual = refMetricInv*_strain*tvmet::trans(refMetricInv);
+    strainDual = refMetricInv*strain*tvmet::trans(refMetricInv);
 
     double traceStrain = 0.0;
     double strainSquared = 0.0;
     for(int alpha=0; alpha<2; alpha++) {
       for(int beta=0; beta<2; beta++) {
-	traceStrain   += refMetricInv(alpha,beta)*_strain(alpha,beta);
-	strainSquared += strainDual(alpha,beta)*_strain(alpha,beta);
+	traceStrain   += refMetricInv(alpha,beta)*strain(alpha,beta);
+	strainSquared += strainDual(alpha,beta)*strain(alpha,beta);
       }
     }
-
-    // contravariant components of 2nd P-K stress
-    _stress = _lambda*traceStrain*refMetricInv + 2.0*_mu*strainDual;
 
     double jacobian = _referenceGeometry.metric()/_deformedGeometry.metric();
 

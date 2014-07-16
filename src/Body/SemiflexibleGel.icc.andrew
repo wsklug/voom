@@ -1,0 +1,3067 @@
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                         William S. Klug
+//                University of California Los Angeles
+//                 (C) 2004-2008 All Rights Reserved
+//
+//----------------------------------------------------------------------
+
+/*! 
+  \file SemiflexibleGel.cc
+
+  \brief SemiflexibleGel is a concrete class derived from Body, implementing
+  the concept of a collection of cross-linked semiflexible polymers (i.e., beams)
+
+*/
+
+#if defined(_OPENMP)
+#include <omp.h>
+#endif
+
+namespace voom {
+
+      
+  template<int N>
+  SemiflexibleGel<N>::SemiflexibleGel(DefNodeContainer & dNodes, PeriodicBox * box, double filDens, int nodesPerFil, double nodeLen, const string & bondType, bool cutOffEnds, const PropertyList & properties) {
+  //double kBond, double kAngle, double visc, double kT, double dt, double kcl, bool prestress, double nematic, bool computeCD)
+ 
+    // check for the necessary parameters in the property list and
+    // extract generic parameters
+
+    ConstPropertyIterator p = properties.find("kT");
+    assert( p != properties.end() );
+    double kT = atof(p->second.data());
+
+    p = properties.find("angle stiffness");
+    assert( p != properties.end() );
+    double kAngle = atof(p->second.data());
+
+    p = properties.find("bond stiffness");
+    assert(p != properties.end());
+    double kBond = atof(p->second.data());
+
+    p = properties.find("viscosity");
+    assert( p != properties.end() );
+    double visc = atof(p->second.data());
+
+    p = properties.find("time step");
+    assert( p != properties.end() );
+    double dt = atof(p->second.data()); 
+
+    p = properties.find("crosslink stiffness");
+    assert( p != properties.end() );
+    double kcl = atof(p->second.data());
+
+    double maxPrestress = -1.0;
+    p = properties.find("maximum prestress");
+    if(p != properties.end()) {
+      maxPrestress = kT*atof(p->second.data());
+    }
+
+    bool prestress;
+    std::string prestressStr;
+    p = properties.find("prestress");
+    assert(p != properties.end());
+    prestressStr.assign(p->second);
+    if(prestressStr.find("true") != string::npos) prestress = true;
+    else prestress = false;
+
+    std::map< int, int > filLens;
+    std::string polydispStr;
+    bool longshort = false;
+    bool exponential = false;
+    double lsratio = 1.0; 
+    double lsfrac = 0.0;
+    int nLongNodes;
+    double expmnl = 0.0;
+    double expmin = 0.0;
+    p = properties.find("polydispersity");
+    if(p != properties.end()) {
+      polydispStr.assign(p->second);
+      if(polydispStr.find("LongShort") != string::npos) {
+	//insert here for long and short network
+	longshort = true;
+	p = properties.find("longshortratio");
+	assert(p != properties.end());
+	lsratio = atof(p->second.data());
+	nLongNodes = (int)(lsratio*(nodesPerFil-1)) + 1;
+	p = properties.find("longfraction");
+	assert(p != properties.end());
+	lsfrac = atof(p->second.data());
+	assert(lsfrac <= 1.0);
+      }
+      else if(polydispStr.find("Exponential") != string::npos){
+	//insert here for exponential distributed length network
+	exponential = true;
+	expmnl = nodeLen*(nodesPerFil-1);
+	p = properties.find("minlength");
+	assert(p != properties.end());
+	expmin = atof(p->second.data());
+      }
+    }
+
+    NematicProbTable npt;
+    bool donem = false;
+    double nematic = 0.0;
+    std::string orientationPDF;
+    p = properties.find("nematic PDF param");
+    if(p != properties.end()) {
+      nematic = atof(p->second.data());
+      donem = true;
+      p = properties.find("orientational PDF");
+      if(p != properties.end()) {
+	if(p->second.find("Lorentzian") != string::npos) {
+	  orientationPDF = "Lorentzian";
+	  npt.setPDF(1);
+	  npt.setTable(nematic);
+	}
+	else {
+	  orientationPDF = "Gaussian";
+	  npt.setPDF(0);
+	  npt.setTable(nematic);
+	}
+      }
+      else {
+	orientationPDF = "Gaussian";
+	npt.setPDF(0);
+	npt.setTable(nematic);
+      }
+    }
+    _nematicOP = 0.0;
+
+    ranlib::Normal<double> rngps(0,sqrt(kT/kAngle));
+    rngps.seed((unsigned int)time(0));
+    ranlib::Uniform<double> rnguni;
+    rnguni.seed((unsigned int)time(0));
+    ranlib::Exponential<double> rngexp(expmnl-expmin);
+    rngexp.seed((unsigned int)time(0));
+
+    _box = box;
+    VectorND size( _box->size() );
+    double vol=1.0;
+    for(int i=0; i<N; i++) {
+      vol *= size[i];
+    }
+    int nFils = (int)(filDens*vol);
+    int id = 0;
+    NodeBase::DofIndexMap idx(N);
+    DefNode * newDN;
+    VectorND startPos;
+    VectorND oldVec;
+    VectorND newVec;
+    double newAng;
+
+    int failedCLAttempts = 0;	
+
+    std::cout << "Starting gel creation." << std::endl << "0 filaments created." << std::endl;
+    for(int i=0; i<nFils; i++) {
+      rngps.seed((unsigned int)time(0)+i);
+      rnguni.seed((unsigned int)time(0)+i);
+      rngexp.seed((unsigned int)time(0)+i);
+      int nNodesthisFil;
+      if(exponential) {
+	nNodesthisFil = (int)((rngexp.random()+expmin)/nodeLen) + 1;
+	if(filLens.find(nNodesthisFil-1) != filLens.end()) (filLens.find(nNodesthisFil-1))->second++;
+	else filLens[nNodesthisFil-1] = 1;
+      }
+      else if(longshort) {
+	if(rnguni.random() < lsfrac) nNodesthisFil = nLongNodes;
+	else nNodesthisFil = nodesPerFil;
+	if(filLens.find(nNodesthisFil-1) != filLens.end()) (filLens.find(nNodesthisFil-1))->second++;
+	else filLens[nNodesthisFil-1] = 1;
+      }
+      else nNodesthisFil = nodesPerFil;
+      DefNodeContainer tmpDNC(nNodesthisFil);
+      // place the first node in the filament //
+      for(int k=0; k<N; k++) {
+	idx[k] = N*id + k;
+	startPos[k] = size[k]*(rnguni.random());
+      }
+      newDN = new BrownianNode<N>(id,idx,startPos,startPos);
+      newDN->setId(id);
+      tmpDNC[0] = newDN;
+      dNodes.push_back(newDN);
+      // place the second node at some random angle //
+      id++;
+      for(int k=0; k<N; k++) {
+	idx[k] = N*id + k;
+      }
+      if(!donem) {
+	newAng = 2.0*M_PI*(rnguni.random());
+      }
+      else {
+	newAng = npt.findAngle(rnguni.random());
+	if(rnguni.random() < .5) {
+	  newAng = -newAng;
+	}
+	if(rnguni.random() < .5) {
+	  newAng += M_PI;
+	}
+      }
+      startPos[0] = nodeLen*cos(newAng) + (tmpDNC[0]->point())[0];
+      startPos[1] = nodeLen*sin(newAng) + (tmpDNC[0]->point())[1];
+      newDN = new BrownianNode<N>(id,idx,startPos,startPos);
+      newDN->setId(id);
+      tmpDNC[1] = newDN;
+      dNodes.push_back(newDN);
+      id++;
+      // now place the rest of the nodes, choosing the angles from a Boltzmann distribution //
+      for(int j=2; j<nNodesthisFil; j++) {
+	rnguni.seed((unsigned int)time(0)+i*nodesPerFil+j);
+	rngps.seed((unsigned int)time(0)+i*nodesPerFil+j);
+	for(int k=0; k<N; k++) {
+	  idx[k] = N*id + k;
+	}
+	oldVec = tmpDNC[j-1]->point() - tmpDNC[j-2]->point();
+	if(prestress) {
+	  newAng = rngps.random();
+	  newVec[0] = oldVec[0]*cos(newAng) + oldVec[1]*sin(newAng);
+	  newVec[1] = oldVec[1]*cos(newAng) - oldVec[0]*sin(newAng);
+	}
+	else {
+	  newVec = oldVec;
+	}
+	startPos = tmpDNC[j-1]->point() + newVec;
+	newDN = new BrownianNode<N>(id,idx,startPos,startPos);
+	newDN->setId(id);
+	tmpDNC[j] = newDN;
+	dNodes.push_back(newDN);
+	id++;
+      }
+      // recalculate nematic OP //
+      VectorND e2e;
+      e2e = tmpDNC[tmpDNC.size()-1]->point() - tmpDNC[0]->point();
+      _nematicOP += (2.0*sqr(e2e[0]/norm2(e2e)) - 1.0)/nFils;
+
+      // add the filament to the gel //
+      if(bondType == "Spring") {
+	addFilament(tmpDNC,kBond,kAngle,visc,kT,dt);
+      }
+      else {
+	double kC = kAngle*nodeLen;
+	
+	p = properties.find("fit order");
+	assert(p != properties.end());
+	int fitOrder = atoi(p->second.data());
+	
+	p = properties.find("F_max");
+	assert(p != properties.end());
+	double F_max = atof(p->second.data());
+
+	addFilament(tmpDNC,kAngle,visc,kT,dt,kC,fitOrder,F_max);
+      }
+      // now go through the existing filaments and add crosslinks //
+      Filament * fnew = filament(i);
+      for(int l=0; l<i; l++) {
+	Filament * fold = filament(l);
+	VectorND sep;
+	sep = ((fold->nodes)[0])->point() - tmpDNC[0]->point();
+	_box->mapDistance(sep);
+	VectorND e2e2;
+	e2e2 = (fold->nodes[0])->point() - (fold->nodes[fold->nodes.size()-1])->point();
+	if(norm2(sep) <= norm2(e2e2)+norm2(e2e)) {
+	  bool didAttach = attachCrosslink(fnew,fold,kcl,maxPrestress);
+	  if(!didAttach) failedCLAttempts++;
+	}
+      }
+      if((i+1)%100 == 0) {
+	std::cout << i+1 << " filaments created." << std::endl;
+      }
+    }
+    std::cout << std::endl;
+    
+    int nCrosslinks = _crosslinks.size();
+    int nConstraints = _constraints.size();
+
+    if(cutOffEnds) cutOffEndsandCCD(kcl,dNodes);
+    else computeCrossDistro(kcl);
+    
+    _output = paraview;
+    std::cout << "Set up gel with " << nFils << " filaments, " << nodesPerFil << " nodes per filament for a total of " << nFils*nodesPerFil << " nodes (self-consistency check: # of nodes in container = " << dNodes.size() << ")" << std::endl;
+    std::cout << "Total # of motors = " << _motors.size() << ", total # of crosslinks = " << nCrosslinks << ", total # of constraints = " << nConstraints << "." << std::endl; 
+    std::cout << "Failed to crosslink filaments " << failedCLAttempts << " times." << std::endl;
+  }
+  
+  template<int N>
+  SemiflexibleGel<N>::SemiflexibleGel(std::string fileName, DefNodeContainer & nodes, std::string bondType, bool cutOffEnds, const PropertyList & properties) {
+    
+    // first, read in necessary parameters from property list //
+    ConstPropertyIterator p = properties.find("kT");
+    assert( p != properties.end() );
+    double kT = atof(p->second.data());
+
+    p = properties.find("bending modulus");
+    assert( p != properties.end() );
+    double kC = atof(p->second.data());
+
+    p = properties.find("l_B");
+    assert(p != properties.end());
+    double l_B = atof(p->second.data());
+
+    p = properties.find("viscosity");
+    assert( p != properties.end() );
+    double visc = atof(p->second.data());
+
+    p = properties.find("time step");
+    assert( p != properties.end() );
+    double dt = atof(p->second.data()); 
+
+    p = properties.find("crosslink stiffness");
+    assert( p != properties.end() );
+    double kcl = atof(p->second.data());
+
+    double maxPrestress = -1.0;
+    p = properties.find("maximum prestress");
+    if(p != properties.end()) {
+      maxPrestress = kT*atof(p->second.data());
+    }
+
+    double kAngle;
+    double kBond;
+    double dL;
+
+//     bool computeCD;
+//     std::string computeCDStr;
+//     p = properties.find("calculate crosslink distribution");
+//     assert(p != properties.end());
+//     computeCDStr.assign(p->second);
+//     if(computeCDStr.find("true") != string::npos) computeCD = true;
+//     else computeCD = false;
+    
+    // get size (in bytes) of ints and doubles on this machine //
+    int intSize = sizeof(int);
+    int doubleSize = sizeof(double);
+    
+    // open the file at the end to get size //
+    std::ifstream inFile(fileName.data(), ios::in | ios::binary | ios::ate);
+    std::cout << "Read in gel file." << std::endl;
+    ifstream::pos_type fsize = inFile.tellg();
+    
+    // reset file to beginning //
+    inFile.seekg(0,ios::beg);
+    
+    // read in system size and set up PeriodicBox //
+    VectorND sysSize;
+    for(int i=0; i<N; i++) {
+      double curSS;
+      inFile.read((char *)(&curSS),doubleSize);
+      sysSize[i] = curSS;
+    }
+    PeriodicBox * box = new LeesEdwards(sysSize[0],sysSize[1],0.0);
+    //box->setShear(0.0);
+    setBox(box);
+    
+    // read in # of filaments
+    int nFils;
+    inFile.read((char *)(&nFils),intSize);
+    
+    _nematicOP = 0.0;
+
+    NodeBase::DofIndexMap idx(N);
+    int id = 0;
+    DefNode * newDN;
+
+    // read in nodal data and create gel elements //
+    for(int j=0; j<nFils; j++) {
+      int nNodesHere;
+      inFile.read((char *)(&nNodesHere),intSize);
+      DefNodeContainer tmpDNC(nNodesHere);
+      for(int k=0; k<nNodesHere; k++) {
+	VectorND curPos;
+	VectorND refPos;
+	for(int kdof=0; kdof<N; kdof++) {
+	  idx[kdof] = N*id + kdof;
+	  double cpdof;
+	  inFile.read((char *)(&cpdof),doubleSize);
+	  curPos[kdof] = cpdof;
+	}
+	for(int kdof=0; kdof<N; kdof++) {
+	  double rpdof;
+	  inFile.read((char *)(&rpdof),doubleSize);
+	  refPos[kdof] = rpdof;
+	}
+	newDN = new BrownianNode<N>(id,idx,refPos,curPos);
+	newDN->setId(id);
+	tmpDNC[k] = newDN;
+	nodes.push_back(newDN);
+	id++;
+      }
+
+      //recalculate nematic order parameter //
+      VectorND e2e;
+      e2e = tmpDNC[tmpDNC.size()-1]->point() - tmpDNC[0]->point();
+      _nematicOP += (2.0*sqr(e2e[0]/norm2(e2e)) - 1.0)/nFils;
+
+      //add the filament to the gel //
+      dL = norm2(tmpDNC[0]->position()-tmpDNC[1]->position());
+      kAngle = kC/dL;
+      if(bondType == "Spring") {
+	kBond = kAngle/sqr(l_B);
+	this->addFilament(tmpDNC,kBond,kAngle,visc,kT,dt);
+      }
+      else {
+	p = properties.find("fit order");
+	assert(p != properties.end());
+	int fitOrder = atoi(p->second.data());
+	
+	p = properties.find("F_max");
+	assert(p != properties.end());
+	double F_max = atof(p->second.data());
+
+	addFilament(tmpDNC,kAngle,visc,kT,dt,kC,fitOrder,F_max);
+      }
+    }
+
+    // now read in data on crosslinks //
+    if(kcl < 0.0) {
+      bool doRelax = false;
+      if(maxPrestress > 0.0) {
+	doRelax = true;
+      }
+      int nCL;
+      inFile.read((char *)(&nCL),intSize);
+      for(int cln=0; cln<nCL; cln++) {
+	int slaveFil;
+	int slaveNode;
+	int mastFil;
+	int mastNode;
+	inFile.read((char *)(&slaveFil),intSize);
+	inFile.read((char *)(&slaveNode),intSize);
+	inFile.read((char *)(&mastFil),intSize);
+	inFile.read((char *)(&mastNode),intSize);
+	DefNode * mast = filament(mastFil)->nodes[mastNode];
+	DefNode * slave = filament(slaveFil)->nodes[slaveNode];
+	PeriodicTie<N> * pt = new PeriodicTie<N>(mast,slave,_box,doRelax);
+	addConstraint(pt);
+	_crossNodeMap.insert(pair< DefNode*, DefNode* >(slave,mast));
+	_crossNodeMap.insert(pair< DefNode*, DefNode* >(mast,mast));
+      }
+    }
+    
+    else {
+      // code in later //
+    }
+    
+    if(cutOffEnds) cutOffEndsandCCD(kcl,nodes);
+    else computeCrossDistro(kcl);
+
+    _output = paraview;
+    std::cout << "Finished retrieving gel from file " << fileName << "." << std::endl;
+    std::cout << "Total # of motors = " << _motors.size() << ", total # of crosslinks = " << _crosslinks.size() << ", total # of constraints = " << _constraints.size() << "." << std::endl;
+    std::cout << "Elastic element properties: kAngle = " << kAngle <<", kBond = " << kBond << ", dL = " << dL << std::endl;
+    inFile.close();
+  }
+ 
+  template<int N>
+  SemiflexibleGel<N>::SemiflexibleGel(DefNodeContainer & dNodes, PeriodicBox * box, double filDens, double filLength, const string & bondType, bool cutOffEnds, double minLength, const PropertyList & properties) {
+    // Adaptively mesh the gel. //
+    ConstPropertyIterator p = properties.find("kT");
+    assert( p != properties.end() );
+    double kT = atof(p->second.data());
+
+    p = properties.find("angle stiffness");
+    assert( p != properties.end() );
+    double kappa = atof(p->second.data());
+
+    p = properties.find("bond stiffness");
+    assert(p != properties.end());
+    double mu = atof(p->second.data());
+
+    p = properties.find("viscosity");
+    assert( p != properties.end() );
+    double visc = atof(p->second.data());
+
+    p = properties.find("time step");
+    assert( p != properties.end() );
+    double dt = atof(p->second.data());
+
+    p = properties.find("storage file name");
+    assert(p != properties.end());
+    std::string storageFileName = p->second.data();
+
+    // removalMethod key: 0 = stretch short segments; 1 = delete one in each pair; 2 = collapse nodes //
+    int removalMethod = 0;	
+    p = properties.find("nearby pair removal method");
+    if(p != properties.end()) {
+      std::string removeMeth = p->second.data();
+      if(removeMeth.find("Delete")!=string::npos) removalMethod = 1;
+      else if(removeMeth.find("Collapse")!=string::npos) removalMethod = 2;
+    }
+
+    double targetSegLength;
+    p = properties.find("target segment length");
+    if(p != properties.end()) {
+      targetSegLength = atof(p->second.data());
+    }
+    else targetSegLength = 2.0*minLength;
+    assert(targetSegLength > 0.0);
+    assert(targetSegLength > minLength);
+
+    double maxPrestress = -1.0;
+    p = properties.find("maximum prestress");
+    if(p != properties.end()) {
+      maxPrestress = kT*atof(p->second.data());
+    }
+
+    //bool prestress;
+    //std::string prestressStr;
+    //p = properties.find("prestress");
+    //assert(p != properties.end());
+    //prestressStr.assign(p->second);
+    //if(prestressStr.find("true") != string::npos) prestress = true;
+    //else prestress = false;
+
+    std::map< int, int > filLens;
+    std::string polydispStr;
+    bool longshort = false;
+    bool exponential = false;
+    double lsratio = 1.0; 
+    double lsfrac = 0.0;
+    double expmnl = 0.0;
+    double expmin = 0.0;
+    p = properties.find("polydispersity");
+    if(p != properties.end()) {
+      polydispStr.assign(p->second);
+      if(polydispStr.find("LongShort") != string::npos) {
+	//insert here for long and short network
+	longshort = true;
+	p = properties.find("longshortratio");
+	assert(p != properties.end());
+	lsratio = atof(p->second.data());
+	p = properties.find("longfraction");
+	assert(p != properties.end());
+	lsfrac = atof(p->second.data());
+	assert(lsfrac <= 1.0);
+      }
+      else if(polydispStr.find("Exponential") != string::npos){
+	//insert here for exponential distributed length network
+	exponential = true;
+	expmnl = filLength;
+	p = properties.find("minlength");
+	assert(p != properties.end());
+	expmin = atof(p->second.data());
+      }
+    }
+
+    NematicProbTable npt;
+    bool donem = false;
+    double nematic = 0.0;
+    std::string orientationPDF;
+    p = properties.find("nematic PDF param");
+    if(p != properties.end()) {
+      nematic = atof(p->second.data());
+      donem = true;
+      p = properties.find("orientational PDF");
+      if(p != properties.end()) {
+	if(p->second.find("Lorentzian") != string::npos) {
+	  orientationPDF = "Lorentzian";
+	  npt.setPDF(1);
+	  npt.setTable(nematic);
+	}
+	else {
+	  orientationPDF = "Gaussian";
+	  npt.setPDF(0);
+	  npt.setTable(nematic);
+	}
+      }
+      else {
+	orientationPDF = "Gaussian";
+	npt.setPDF(0);
+	npt.setTable(nematic);
+      }
+    }
+
+    //ranlib::Normal<double> rngps(0,sqrt(kT/kAngle));
+    //rngps.seed((unsigned int)time(0));
+    ranlib::Uniform<double> rnguni;
+    rnguni.seed((unsigned int)time(0));
+    ranlib::Exponential<double> rngexp(expmnl-expmin);
+    rngexp.seed((unsigned int)time(0));
+
+    _box = box;
+    VectorND size( _box->size() );
+    double vol=1.0;
+    for(int i=0; i<N; i++) {
+      vol *= size[i];
+    }
+    int nFils = (int)(filDens*vol);
+    VectorND startPos;
+    VectorND oldVec;
+    VectorND newVec;
+    double newAng;
+
+    TempFilamentContainer tmpFils(nFils); 
+    // create first and last points for each filament //
+
+    std::cout << "Starting gel creation." << std::endl;
+    for(int i=0; i<nFils; i++) {
+      //rngps.seed((unsigned int)time(0)+i);
+      rnguni.seed((unsigned int)time(0)+i);
+      rngexp.seed((unsigned int)time(0)+i);
+      double curFilLen;
+      if(exponential) {
+	curFilLen = rngexp.random() + expmin;
+      }
+      else if(longshort) {
+	if(i < lsfrac*nFils) {
+	  curFilLen = lsratio*filLength;
+	}
+	else curFilLen = filLength;
+      }
+      else curFilLen = filLength;
+ 
+      TempFilament * newFil = new TempFilament();
+      
+      // randomly choose a starting position for the filament //	
+      for(int k=0;k<N;k++) {
+	newFil->start(k) = size[k]*(rnguni.random());
+      }
+      
+      // now randomly choose an angle and an ending position //
+      if(!donem) {
+        newAng = 2.0*M_PI*(rnguni.random());
+      }
+      else {
+        newAng = npt.findAngle(rnguni.random());
+	if(rnguni.random() < .5) {
+	  newAng = -newAng;
+	}
+	if(rnguni.random() < .5) {
+	  newAng += M_PI;
+	}
+      }
+      newFil->end(0) = curFilLen*cos(newAng) + newFil->start(0);
+      newFil->end(1) = curFilLen*sin(newAng) + newFil->start(1);
+
+      // determine whether filament is completely in box, crosses through two zones, or crosses through three zones //
+      newFil->filSegs.push_back(pair<VectorND,VectorND>(newFil->start,newFil->end));
+      if(!(_box->inside(newFil->end))) {
+	VectorND newend(newFil->end);
+	_box->mapPoint(newend);
+	VectorND newstart;
+        newstart = newend - (newFil->end - newFil->start);
+	newFil->filSegs.push_back(pair<VectorND,VectorND>(newstart,newend));
+	if(newend(0) != newFil->end(0) && newend(1) != newFil->end(1)) {
+	  newend = newFil->end;
+	  _box->mapPointX(newend);
+	  newstart = newend - (newFil->end - newFil->start);
+	  newFil->filSegs.push_back(pair<VectorND,VectorND>(newstart,newend));
+	  newend = newFil->end;
+	  _box->mapPointY(newend);
+	  newstart = newend - (newFil->end - newFil->start);
+	  newFil->filSegs.push_back(pair<VectorND,VectorND>(newstart,newend));
+	}
+      }
+
+      // now look at existing filaments and find crosslink points //
+      for(int j=0; j<i; j++) {
+        TempFilament * oldFil = tmpFils[j];
+	double oldFilLen = norm2((oldFil->end)-(oldFil->start));
+	VectorND diff;
+	diff = .5*((oldFil->end)+(oldFil->start)) - .5*(newFil->end+newFil->start);
+	_box->mapDistance(diff);
+	if(norm2(diff) <= .5*(oldFilLen+curFilLen)) {
+	  VectorND intersect;
+	  typename vector< pair< VectorND,VectorND > >::iterator oldFilImgs = oldFil->filSegs.begin();
+	  bool connected = false;
+          while(!connected && oldFilImgs!=oldFil->filSegs.end()) {
+	    typename vector< pair<VectorND,VectorND> >::iterator newFilImgs = newFil->filSegs.begin();
+	    while(!connected && newFilImgs!=newFil->filSegs.end()) {
+	      bool checkConnect = IntersectionFinder<N>::checkIntersection(newFilImgs->first,newFilImgs->second,oldFilImgs->first,oldFilImgs->second,intersect);
+	      if(checkConnect && _box->inside(intersect)) {
+	        connected = true;
+		VectorND cldist;
+		cldist = intersect - newFilImgs->first;
+		_box->mapDistance(cldist);
+	        double distFromStart = norm2(cldist);
+		TempCrosslink* tmpCL = new TempCrosslink();
+		tmpCL->baseFil = j;
+		tmpCL->active = true;
+		tmpCL->location = intersect;
+		tmpCL->otherFils.insert(i);
+		tmpCL->otherFils.insert(j);
+	        newFil->crossFils.insert(pair<double,TempCrosslink *>(distFromStart,tmpCL));
+		cldist = intersect - oldFilImgs->first;
+		_box->mapDistance(cldist);
+	        distFromStart = norm2(cldist);
+	        oldFil->crossFils.insert(pair<double,TempCrosslink *>(distFromStart,tmpCL));
+	      }
+	      newFilImgs++;
+	    }
+	    oldFilImgs++;
+          }
+        }
+      }
+      tmpFils[i] = newFil;
+    }
+
+
+    // now iterate along each filament and find (and remove) too-short segments //
+    if(removalMethod == 1) {
+      int deletedCrosslinks = 0;
+      for(int i=0; i<nFils; i++) {
+        deletedCrosslinks += removeCrosslinks(tmpFils[i],minLength);
+      }
+      std::cout << "Removed " << deletedCrosslinks << " crosslinks from gel to avoid excessively stiff segments." << std::endl;
+    }
+
+    else if(removalMethod ==2) {
+      int collapsedCrosslinks = collapseCrosslinks(tmpFils,minLength);
+      std::cout << "Collapsed " << collapsedCrosslinks << " crosslinks to avoid excessively stiff segments." << std::endl;
+    }
+
+    storeSparseGel(storageFileName,tmpFils);
+	
+    // we now have a list of crosslinks for each filament; we can now create the gel //
+    int id = 0;
+    NodeBase::DofIndexMap idx(N);
+    DefNode * newNode;	
+    for(int k=0; k<nFils; k++) {
+      DefNodeContainer tmpDNC;
+      TempFilament * curFil = tmpFils[k];
+      int nCLs = curFil->crossFils.size();
+      typename multimap<double,TempCrosslink*>::iterator clIter = curFil->crossFils.begin();
+      int i = 0;
+      VectorND segStart;
+      segStart = curFil->start;
+
+      // create first node //
+      for(int m=0; m<N; m++) {
+        idx[m] = N*id + m;
+      }
+      newNode = new BrownianNode<N>(id,idx,segStart,segStart);
+      newNode->setId(id);
+      tmpDNC.push_back(newNode);
+      dNodes.push_back(newNode);
+      id++;
+
+      // create nodes between start and first crosslink and between all crosslink pairs //
+      for(clIter; clIter!=curFil->crossFils.end(); clIter++) {
+	if(clIter->second->active) {
+	  VectorND sep;
+	  sep = clIter->second->location - segStart;
+	  _box->mapDistance(sep);
+	  double dist = norm2(sep);
+	  int nNodesBetween = (int)(std::floor((dist/targetSegLength)) -.5);
+      	  double segLength = dist/(nNodesBetween+1.0);
+          for(int nn=1; nn<=nNodesBetween; nn++) {
+            for(int m=0; m<N; m++) {
+	      idx[m] = N*id + m;
+            }
+	    VectorND nodePos;
+	    nodePos = segStart + nn*sep*(segLength/dist);
+            newNode = new BrownianNode<N>(id,idx,nodePos,nodePos);
+	    newNode->setId(id);
+	    tmpDNC.push_back(newNode);
+	    dNodes.push_back(newNode);
+	    id++;
+          }
+	  if(k == clIter->second->baseFil) {
+            for(int m=0; m<N; m++) {
+	      idx[m] = N*id + m;
+            }
+	    VectorND nodePos;
+	    nodePos = segStart + sep;
+	    newNode = new BrownianNode<N>(id,idx,nodePos,nodePos);
+	    newNode->setId(id);
+	    tmpDNC.push_back(newNode);
+	    dNodes.push_back(newNode);
+	    id++;
+	    clIter->second->clNode = newNode;
+	    //_crosslinkNodes.insert(newNode);
+	    _crossNodeMap.insert(pair<DefNode*,DefNode*>(newNode,newNode));
+            PeriodicTie<N> * newTie = new PeriodicTie<N>(newNode,_box);
+	    addConstraint(newTie);
+	    clIter->second->ptie = newTie;
+	    int nSlaves = clIter->second->otherFils.size() - 1;
+	    _nSlavesMap.insert(pair<DefNode*,int>(newNode,nSlaves));
+	  }
+	  else {
+	    //newNode = clIter->second->clNode;
+	    //tmpDNC.push_back(newNode);
+	    for(int m=0; m<N; m++) {
+	      idx[m] = N*id + m;
+            }
+	    VectorND nodePos;
+	    nodePos = segStart + sep;
+	    newNode = new BrownianNode<N>(id,idx,nodePos,nodePos);
+	    newNode->setId(id);
+	    tmpDNC.push_back(newNode);
+            dNodes.push_back(newNode);
+	    id++;
+	    DefNode* mastNode = clIter->second->clNode;
+	    //_crosslinkNodes.insert(newNode);
+	    _crossNodeMap.insert(pair<DefNode*,DefNode*>(newNode,mastNode));
+	    PeriodicTie<N> * pt = clIter->second->ptie;
+            pt->addSlave(newNode);
+
+	  }
+	  
+	  segStart += sep;
+	}
+      }
+
+      // create nodes between last crosslink and end //	
+      VectorND sep;
+      sep = curFil->end - segStart;
+      _box->mapDistance(sep);
+      double dist = norm2(sep);
+      int nNodesBetween = (int)(std::floor((dist/targetSegLength)) -.5);
+      double segLength = dist/(nNodesBetween+1.0);
+      for(int nn=1; nn<=nNodesBetween+1; nn++) {
+        for(int m=0; m<N; m++) {
+	  idx[m] = N*id + m;
+        }
+	VectorND nodePos;
+	nodePos = segStart + nn*sep*(segLength/dist);
+        newNode = new BrownianNode<N>(id,idx,nodePos,nodePos);
+	newNode->setId(id);
+	tmpDNC.push_back(newNode);
+	dNodes.push_back(newNode);
+	id++;
+      }
+      
+      if(bondType == "Spring") {
+	addFilament(tmpDNC,kappa,mu,visc,kT,dt,minLength);
+      }
+
+      else std::cout << "Adaptive meshing with nonlinear springs not implemented yet!" << std::endl;
+
+    }
+
+    // now that gel is set up, compute various quantities //
+    
+    computeCrossDistro(-1.0);
+
+    computeFilLenDistro();
+
+    computeNematicDistro();
+
+    if(cutOffEnds) cutOffEndsandCCD(-1.0,dNodes);
+
+    _output = paraview;
+
+    for(int fn=0; fn<nFils; fn++) {
+      for(typename multimap<double,TempCrosslink*>::iterator cli = tmpFils[fn]->crossFils.begin(); cli!=tmpFils[fn]->crossFils.end(); cli++) {
+        if(cli->second->baseFil == fn) {
+	  TempCrosslink* tmpcl = cli->second;
+	  delete tmpcl;
+        }  
+      }	
+      delete tmpFils[fn];
+    }
+
+    if(removalMethod!=2) {
+      for(typename map<DefNode*,int>::iterator sn=_nSlavesMap.begin(); sn!=_nSlavesMap.end(); sn++) {
+        if(sn->second != 1) std::cerr << "Error: nodes pinned incorrectly!" << std::endl;
+      }
+    }
+
+    //else printCLFilDist();
+
+    //printInitialBends();
+
+    std::cout << "Set up gel with " << nFils << " filaments." << std::endl;
+ 
+  }
+
+  template<int N>
+  SemiflexibleGel<N>::SemiflexibleGel(std::string fileName, DefNodeContainer & nodes, std::string bondType, bool cutOffEnds, double minLength, const PropertyList & properties) {
+    ConstPropertyIterator p = properties.find("kT");
+    assert( p != properties.end() );
+    double kT = atof(p->second.data());
+
+    p = properties.find("angle stiffness");
+    assert( p != properties.end() );
+    double kappa = atof(p->second.data());
+
+    p = properties.find("bond stiffness");
+    assert(p != properties.end());
+    double mu = atof(p->second.data());
+
+    p = properties.find("viscosity");
+    assert( p != properties.end() );
+    double visc = atof(p->second.data());
+
+    p = properties.find("time step");
+    assert( p != properties.end() );
+    double dt = atof(p->second.data());
+
+    // removalMethod key: 0 = stretch short segments; 1 = delete one in each pair; 2 = collapse nodes //
+    int removalMethod = 0;	
+
+    double targetSegLength;
+    p = properties.find("target segment length");
+    if(p != properties.end()) {
+      targetSegLength = atof(p->second.data());
+    }
+    else targetSegLength = 2.0*minLength;
+    assert(targetSegLength > 0.0);
+    assert(targetSegLength > minLength);
+
+    int intSize = sizeof(int);
+    int doubleSize = sizeof(double);
+
+    // open the file at the end to get size //
+    std::ifstream inFile(fileName.data(), ios::in | ios::binary | ios::ate);
+    ifstream::pos_type fsize = inFile.tellg();
+    
+    // reset file to beginning //
+    inFile.seekg(0,ios::beg);
+    
+    // read in system size and set up PeriodicBox //
+    VectorND sysSize;
+    for(int i=0; i<N; i++) {
+      double curSS;
+      inFile.read((char *)(&curSS),doubleSize);
+      sysSize[i] = curSS;
+    }
+    PeriodicBox * box = new LeesEdwards(sysSize[0],sysSize[1],0.0);
+    //box->setShear(0.0);
+    setBox(box);
+    
+    // read in # of filaments
+    int nFils;
+    inFile.read((char *)(&nFils),intSize);
+    TempFilamentContainer tmpFils(nFils);
+    for(int i=0; i<nFils; i++) {
+      VectorND start;
+      VectorND end;
+      for(int j=0; j<N; j++) {
+	double curp;
+	inFile.read((char *)(&curp),doubleSize);
+	start[j] = curp;
+      } 
+      for(int j=0; j<N; j++) {
+	double curp;
+	inFile.read((char *)(&curp),doubleSize);
+	end[j] = curp;
+      }
+      TempFilament* tf = new TempFilament();
+      tf->start = start;
+      tf->end = end;
+      tmpFils[i] = tf; 	
+    }
+    int nCLs;
+    inFile.read((char *)(&nCLs),intSize);
+    for(int i=0; i<nCLs; i++) {
+      TempCrosslink* cl = new TempCrosslink();
+      cl->active = true;
+      int nCLsHere;
+      inFile.read((char *)(&nCLsHere),intSize);
+      for(int nc=0; nc<nCLsHere; nc++) {
+        int filnum;
+        inFile.read((char *)(&filnum),intSize);
+	cl->otherFils.insert(filnum);
+      }
+      typename set<int>::iterator cfs = cl->otherFils.begin();
+      cl->baseFil = *cfs;
+      VectorND loc;
+      for(int j=0; j<N; j++) {
+	double curp;
+	inFile.read((char *)(&curp),doubleSize);
+	loc[j] = curp;
+      }
+      cl->location = loc;
+      for(cfs; cfs!=cl->otherFils.end(); cfs++) {
+        VectorND start1;
+	start1 = tmpFils[*cfs]->start;
+	VectorND sep1;
+	sep1 = loc - start1;
+	_box->mapDistance(sep1);
+	double dist1;
+	dist1 = norm2(sep1);
+	tmpFils[*cfs]->crossFils.insert(pair<double,TempCrosslink*>(dist1,cl));
+      }
+    }
+
+    inFile.close();
+    std::cout << "Finished reading data on " << nFils << " filaments and " << nCLs << " crosslinks from file " << fileName << "; creating gel." << std::endl;
+
+    // we now have a list of crosslinks for each filament; we can now create the gel //
+    int id = 0;
+    NodeBase::DofIndexMap idx(N);
+    DefNode * newNode;	
+    for(int k=0; k<nFils; k++) {
+      DefNodeContainer tmpDNC;
+      TempFilament * curFil = tmpFils[k];
+      int nCLs = curFil->crossFils.size();
+      typename multimap<double,TempCrosslink*>::iterator clIter = curFil->crossFils.begin();
+      int i = 0;
+      VectorND segStart;
+      segStart = curFil->start;
+
+      // create first node //
+      for(int m=0; m<N; m++) {
+        idx[m] = N*id + m;
+      }
+      newNode = new BrownianNode<N>(id,idx,segStart,segStart);
+      newNode->setId(id);
+      tmpDNC.push_back(newNode);
+      nodes.push_back(newNode);
+      id++;
+
+      // create nodes between start and first crosslink and between all crosslink pairs //
+      for(clIter; clIter!=curFil->crossFils.end(); clIter++) {
+	if(clIter->second->active) {
+	  VectorND sep;
+	  sep = clIter->second->location - segStart;
+	  _box->mapDistance(sep);
+	  double dist = norm2(sep);
+	  int nNodesBetween = (int)(std::floor((dist/targetSegLength)) -.5);
+      	  double segLength = dist/(nNodesBetween+1.0);
+          for(int nn=1; nn<=nNodesBetween; nn++) {
+            for(int m=0; m<N; m++) {
+	      idx[m] = N*id + m;
+            }
+	    VectorND nodePos;
+	    nodePos = segStart + nn*sep*(segLength/dist);
+            newNode = new BrownianNode<N>(id,idx,nodePos,nodePos);
+	    newNode->setId(id);
+	    tmpDNC.push_back(newNode);
+	    nodes.push_back(newNode);
+	    id++;
+          }
+	  if(k == clIter->second->baseFil) {
+            for(int m=0; m<N; m++) {
+	      idx[m] = N*id + m;
+            }
+	    VectorND nodePos;
+	    nodePos = segStart + sep;
+	    newNode = new BrownianNode<N>(id,idx,nodePos,nodePos);
+	    newNode->setId(id);
+	    tmpDNC.push_back(newNode);
+	    nodes.push_back(newNode);
+	    id++;
+	    clIter->second->clNode = newNode;
+	    //_crosslinkNodes.insert(newNode);
+	    _crossNodeMap.insert(pair<DefNode*,DefNode*>(newNode,newNode));
+            PeriodicTie<N> * newTie = new PeriodicTie<N>(newNode,_box);
+	    addConstraint(newTie);
+	    clIter->second->ptie = newTie;
+	    int nSlaves = clIter->second->otherFils.size() - 1;
+	    _nSlavesMap.insert(pair<DefNode*,int>(newNode,nSlaves));
+	  }
+	  else {
+	    //newNode = clIter->second->clNode;
+	    //tmpDNC.push_back(newNode);
+	    for(int m=0; m<N; m++) {
+	      idx[m] = N*id + m;
+            }
+	    VectorND nodePos;
+	    nodePos = segStart + sep;
+	    newNode = new BrownianNode<N>(id,idx,nodePos,nodePos);
+	    newNode->setId(id);
+	    tmpDNC.push_back(newNode);
+            nodes.push_back(newNode);
+	    id++;
+	    DefNode* mastNode = clIter->second->clNode;
+	    //_crosslinkNodes.insert(newNode);
+	    _crossNodeMap.insert(pair<DefNode*,DefNode*>(newNode,mastNode));
+	    PeriodicTie<N> * pt = clIter->second->ptie;
+            pt->addSlave(newNode);
+
+	  }
+	  
+	  segStart += sep;
+	}
+      }
+
+      // create nodes between last crosslink and end //	
+      VectorND sep;
+      sep = curFil->end - segStart;
+      _box->mapDistance(sep);
+      double dist = norm2(sep);
+      int nNodesBetween = (int)(std::floor((dist/targetSegLength)) -.5);
+      double segLength = dist/(nNodesBetween+1.0);
+      for(int nn=1; nn<=nNodesBetween+1; nn++) {
+        for(int m=0; m<N; m++) {
+	  idx[m] = N*id + m;
+        }
+	VectorND nodePos;
+	nodePos = segStart + nn*sep*(segLength/dist);
+        newNode = new BrownianNode<N>(id,idx,nodePos,nodePos);
+	newNode->setId(id);
+	tmpDNC.push_back(newNode);
+	nodes.push_back(newNode);
+	id++;
+      }
+      
+      if(bondType == "Spring") {
+	addFilament(tmpDNC,kappa,mu,visc,kT,dt,minLength);
+      }
+
+      else std::cout << "Adaptive meshing with nonlinear springs not implemented yet!" << std::endl;
+
+    }
+
+    // now that gel is set up, compute various quantities //
+    
+    computeCrossDistro(-1.0);
+
+    computeFilLenDistro();
+
+    computeNematicDistro();
+
+    if(cutOffEnds) cutOffEndsandCCD(-1.0,nodes);
+
+    _output = paraview;
+
+    for(int fn=0; fn<nFils; fn++) {
+      for(typename multimap<double,TempCrosslink*>::iterator cli = tmpFils[fn]->crossFils.begin(); cli!=tmpFils[fn]->crossFils.end(); cli++) {
+        if(cli->second->baseFil == fn) {
+	  TempCrosslink* tmpcl = cli->second;
+	  delete tmpcl;
+        }  
+      }	
+      delete tmpFils[fn];
+    }
+
+    if(removalMethod!=2) {
+      for(typename map<DefNode*,int>::iterator sn=_nSlavesMap.begin(); sn!=_nSlavesMap.end(); sn++) {
+        if(sn->second != 1) std::cerr << "Error: nodes pinned incorrectly!" << std::endl;
+      }
+    }
+
+    //else printCLFilDist();
+
+    //printInitialBends();
+
+    std::cout << "Set up gel with " << nFils << " filaments." << std::endl;
+  }
+ 
+  // Construct a filament with linear springs
+  template<int N>
+  SemiflexibleGel<N>::Filament::Filament( const DefNodeContainer & n, 
+					  double kBond, double kAngle,
+					  double viscosity, double kT, double dt) 
+    : nodes(n) {
+    
+    for( int i=0; i<nodes.size()-1; i++ ) {
+      // create Bonds and Rods
+      //
+      // i -- i+1 
+      //
+      Bond * b = new Bond( nodes[i], nodes[i+1], kBond ) ;
+      bonds.push_back(b);
+      Rod * r = new Rod( nodes[i], nodes[i+1], viscosity, kT, dt ) ;
+      rods.push_back(r);
+
+    }
+    
+    for( int i=0; i<nodes.size()-2; i++ ) {
+      // create Angles
+      //
+      // i         i+2 
+      //   \     /
+      //     i+1	  
+      Angle * a = new Angle( nodes[i], nodes[i+1], nodes[i+2], kAngle );
+      angles.push_back(a);
+    }	
+  }
+
+  // construct a filament with nonlinear (entropic) springs
+  template<int N>
+  SemiflexibleGel<N>::Filament::Filament( const DefNodeContainer & n, double kAngle, 
+					  double viscosity, double kT, double dt, 
+					  double kC, int fitOrder, double maxForce) 
+    : nodes(n) {
+    
+    double Lp = kC/kT;
+    double L0 = norm2(nodes[0]->point()-nodes[1]->point());
+    double Larc = (nodes.size()-1)*L0*(1.0+(L0/(6.0*Lp)));
+    for( int i=0; i<nodes.size()-1; i++ ) {
+      // create Bonds and Rods
+      //
+      // i -- i+1 
+      // 
+      Bond * b = new EntropicSpring<N>( nodes[i], nodes[i+1], kT, kC, fitOrder, nodes.size()-1, Larc, true, maxForce ) ;
+      bonds.push_back(b);
+      Rod * r = new Rod( nodes[i], nodes[i+1], viscosity, kT, dt ) ;
+      rods.push_back(r);
+
+    }
+    
+    for( int i=0; i<nodes.size()-2; i++ ) {
+      // create Angles
+      //
+      // i         i+2 
+      //   \     /
+      //     i+1	  
+      Angle * a = new Angle( nodes[i], nodes[i+1], nodes[i+2], kAngle );
+      angles.push_back(a);
+    }	
+  }
+
+  // construct a filament with different segment lengths //
+  template<int N>
+  SemiflexibleGel<N>::Filament::Filament(const DefNodeContainer & n, double kappa, double mu, double viscosity, double kT, double dt, double minLength) : nodes(n) {
+    int stretchedSegs = 0;
+    for( int i=0; i<nodes.size()-1; i++ ) {
+      // create Bonds and Rods
+      //
+      // i -- i+1 
+      //
+      VectorND bondSep;
+      bondSep = nodes[i+1]->position() - nodes[i]->position();
+      //box->mapDistance(bondSep);
+      double bondLength = norm2(bondSep);
+      if(bondLength < minLength) {
+        bondLength = minLength;
+	stretchedSegs++;
+      }
+      double kBond = mu/bondLength;
+      Bond * b = new Bond( nodes[i], nodes[i+1], kBond, bondLength ) ;
+      bonds.push_back(b);
+      Rod * r = new Rod( nodes[i], nodes[i+1], viscosity, kT, dt, bondLength ) ;
+      rods.push_back(r);
+
+      //std::cout << "Warning: stretched " << stretchedSegs << " filament segments to avoid excessive stiffness." << std::endl;
+
+    }
+    
+    for( int i=0; i<nodes.size()-2; i++ ) {
+      // create Angles
+      //
+      // i         i+2 
+      //   \     /
+      //     i+1	  
+      VectorND segSep1;
+      VectorND segSep2;
+      segSep1 = nodes[i+2]->position() - nodes[i+1]->position();
+      segSep2 = nodes[i+1]->position() - nodes[i]->position();
+      //box->mapDistance(segSep1);
+      //box->mapDistance(segSep2);
+      double segLength1 = norm2(segSep1);
+      double segLength2 = norm2(segSep2);
+      if(segLength1 < minLength) {
+        segLength1 = minLength;
+      }
+      if(segLength2 < minLength) {
+        segLength2 = minLength;
+      }
+      double avgLength = .5*(segLength1+segLength2);
+      double kAngle = kappa/avgLength;
+      Angle * a = new Angle( nodes[i], nodes[i+1], nodes[i+2], kAngle );
+      angles.push_back(a);
+    }	
+    
+  }
+
+ 
+  template<int N>
+  SemiflexibleGel<N>::Filament::~Filament() {
+    for(int i=0; i< bonds.size(); i++) delete( bonds[i]);
+    for(int i=0; i<  rods.size(); i++) delete(  rods[i]);
+    for(int i=0; i<angles.size(); i++) delete(angles[i]);
+  }
+
+  template<int N>
+  void SemiflexibleGel<N>::removePrestress() {
+    // first, set nodal positions so that crosslinked nodes lie on top of one another //
+    for(ConstraintIterator c=_constraints.begin(); c!=_constraints.end(); c++) {
+      (*c)->predict();
+    }
+    // now reset reference lengths and stiffnesses of springs and angle springs //
+    for(FilamentIterator fi=_filaments.begin(); fi!=_filaments.end(); fi++) {
+      for(BondIterator bi=(*fi)->bonds.begin(); bi!=(*fi)->bonds.end(); bi++) {
+	double oldd = (*bi)->getLength();
+	(*bi)->resetLength();
+	double newd = (*bi)->getLength();
+	// do not allow segments to get too short //
+	if(newd <= 5.0e-3) {
+	  (*bi)->resetLength(5.0e-3);
+	  newd = 5.0e-3;
+	  std::cout << "Found short segment!" << std::endl;
+	}
+	double ksp = (*bi)->stiffness();
+	(*bi)->setStiffness(ksp*oldd/newd);
+      }
+      for(AngleIterator ai=(*fi)->angles.begin(); ai!=(*fi)->angles.end(); ai++) {
+	double oldL = (*ai)->meanSegmentLength();
+	double newL = (*ai)->meanSegmentExtension();
+	double kang = (*ai)->stiffness();
+	if(newL <= 5.0e-3) {
+	  newL = 5.0e-3;
+	  std::cout << "Found short segments!" << std::endl;
+	}
+	(*ai)->setStiffness(kang*oldL/newL);
+      }
+    }
+  }
+
+  template<int N>
+  int SemiflexibleGel<N>::removeCrosslinks(TempFilament * fil, double minLength) {
+    int deletedCrosslinks = 0;
+    ranlib::Uniform<double> rnguni;
+    rnguni.seed((unsigned int)time(0));
+    typename multimap<double,TempCrosslink*>::iterator clIter = fil->crossFils.begin();
+    vector<TempCrosslink*> cls;
+    for(clIter; clIter!=fil->crossFils.end(); clIter++) {
+      if(clIter->second->active) {
+        cls.push_back(clIter->second);
+      }
+    }
+    int nCL = cls.size();
+    int i = 0;
+    while(i<nCL-1) {
+      int j=i+1;
+      while(j<nCL && cls[j]->active == false) j++;
+      if(j<nCL) {
+        rnguni.seed((unsigned int)(time(0)+j));
+        VectorND clSep;
+        clSep = cls[j]->location - cls[i]->location;
+	_box->mapDistance(clSep);
+	double clDist = norm2(clSep);
+	if(clDist < minLength) {
+	  // randomly select one of the crosslinks to remove //
+	  if(rnguni.random() < .5) {
+	    cls[i]->active = false;
+	    i = j;	    
+          }
+	  else {
+	    cls[j]->active = false;
+          }
+          deletedCrosslinks++;
+	}
+	else i = j;
+      }
+      else i = j;
+    }
+	
+    return deletedCrosslinks;  
+  }
+
+  template<int N>
+  int SemiflexibleGel<N>::collapseCrosslinks(TempFilamentContainer & tmpFils, double minLength) {
+    // collapse crosslinks to avoid short segments //
+    VectorND size;
+    size = _box->size();
+    int nIn = (int)(floor(size[0]/minLength)+.5);
+    bool fit = false;
+    double boxSize;
+    while(!fit) {
+      boxSize = size[0]/nIn;
+      fit = true;
+      for(int i=0; i<N; i++) {
+        if(fmod(size[0],boxSize) > 1.0e-6) fit = false;
+      }
+      nIn--;
+    }
+    for(int i=0; i<N; i++) assert(fmod(size[i],boxSize) < 1.0e-6);
+    int nx = (int)((size[0]/boxSize)+.5);
+    int ny = (int)((size[1]/boxSize)+.5);
+    
+    TempBox** boxes = new TempBox*[nx];
+    for(int xbox=0; xbox<nx; xbox++) {
+      TempBox* newBox = new TempBox[ny];
+      boxes[xbox] = newBox;
+    }
+    int nFils = tmpFils.size();
+    for(int i=0; i<nFils; i++) {
+      TempFilament* fi = tmpFils[i];
+      for(typename multimap<double,TempCrosslink*>::iterator cl=fi->crossFils.begin(); cl!=fi->crossFils.end(); cl++) {
+        if(cl->second->baseFil == i) {
+          VectorND & pos = cl->second->location;
+          int xpos = (int)(floor(pos[0]/boxSize)+.5);
+	  int ypos = (int)(floor(pos[1]/boxSize)+.5);
+	  boxes[xpos][ypos].boxCLs.push_back(cl->second);
+        }
+      }
+      fi->crossFils.clear();
+    }
+
+    // now look for clusters to collapse //
+    int nCollapsed = 0;
+    for(int i=0; i<nx; i++) {
+      for(int j=0; j<ny; j++) {
+        int nBoxCLs = boxes[i][j].boxCLs.size();
+	for(int m=0; m<nBoxCLs; m++) {
+	  TempCrosslink* cl = boxes[i][j].boxCLs[m];
+          if(cl->active) {
+            // look for in-box neighbors //
+	    int nCollapsedHere = 1;
+	    VectorND center(0.0);
+	    for(int n=m+1; n<nBoxCLs; n++) {
+              TempCrosslink* cl2 = boxes[i][j].boxCLs[n];
+	      if(cl2->active) {
+                VectorND diff;
+                diff = cl->location - cl2->location;
+		bool sameFil = false;
+		typename set<int>::iterator fs1 = cl->otherFils.begin();
+		while(!sameFil && fs1!=cl->otherFils.end()) {
+		  if(cl2->otherFils.find(*fs1) != cl2->otherFils.end()) sameFil = true;
+		  fs1++;
+		}
+                if(norm2(diff) < minLength && sameFil) {
+                  center += diff;
+		  nCollapsedHere++;
+		  nCollapsed++;
+		  cl2->active = false;
+		  typename set<int>::iterator fs2 = cl2->otherFils.begin();
+		  for(fs2; fs2!=cl2->otherFils.end(); fs2++) {
+		    cl->otherFils.insert(*fs2);
+                  }
+		  typename set<int>::iterator fb = cl->otherFils.begin();
+		  cl->baseFil = *fb;
+	 	}
+              }
+            }
+	    // look at other boxes //
+	    for(int di=-1; di<=1; di++) {
+              for(int dj=-1; dj<=1; dj++) {
+                int ip = (i+di+nx)%nx;
+		int jp = (j+dj+ny)%ny;
+		if(ip!=i || jp!=j) {
+                  int nBoxCLs2 = boxes[ip][jp].boxCLs.size();
+		  for(int p=0; p<nBoxCLs2; p++) {
+		    TempCrosslink* cl2 = boxes[ip][jp].boxCLs[p];
+		    if(cl2->active) {
+	              VectorND diff;
+		      diff = cl->location - cl2->location;
+		      _box->mapDistance(diff);
+                      bool sameFil = false;
+                      typename set<int>::iterator fs1 = cl->otherFils.begin();
+		      while(!sameFil && fs1!=cl->otherFils.end()) {
+		        if(cl2->otherFils.find(*fs1) != cl2->otherFils.end()) sameFil = true;
+		        fs1++;
+		      }
+                      if(norm2(diff) < minLength && sameFil) {
+                        center += diff;
+                        nCollapsedHere++;
+			nCollapsed++;
+			cl2->active = false;
+		        typename set<int>::iterator fs2 = cl2->otherFils.begin();
+		        for(fs2; fs2!=cl2->otherFils.end(); fs2++) {
+		          cl->otherFils.insert(*fs2);
+                        }
+		        typename set<int>::iterator fb = cl->otherFils.begin();
+		        cl->baseFil = *fb;
+			
+                      }
+                    }    
+                  }
+                }
+              }
+            }
+	    // having collapsed, reset position and baseFil //
+            center /= nCollapsedHere;
+	    center += cl->location;
+	    _box->mapPoint(center);
+	    cl->location = center; 
+          }
+        } 
+      }
+    }
+    
+    for(int i=0; i<nx; i++) {
+      for(int j=0; j<ny; j++) {
+        typename vector<TempCrosslink *>::iterator cls = boxes[i][j].boxCLs.begin();
+	for(cls; cls!=boxes[i][j].boxCLs.end(); cls++) {
+	  if((*cls)->active) {
+	    typename set<int>::iterator cl = (*cls)->otherFils.begin();
+	    for(cl; cl!=(*cls)->otherFils.end(); cl++) {
+              VectorND filStart;
+              filStart = tmpFils[*cl]->start;
+	      VectorND sep;
+	      sep = (*cls)->location - filStart;
+	      _box->mapDistance(sep);
+	      tmpFils[*cl]->crossFils.insert(pair<double,TempCrosslink*>(norm2(sep),*cls));
+            }
+          }
+	  else delete *cls;  
+        }
+      }
+    }
+
+    return nCollapsed;
+  }
+
+  template<int N>
+  void SemiflexibleGel<N>::moveCLNodes(Filament * f) {
+    int nNodes = f->nodes.size();
+    int dn = 0;
+    while(_crosslinkNodes.find(f->nodes[dn]) != _crosslinkNodes.end()) dn++;
+    assert(dn<nNodes);
+    VectorND ref;
+    ref = f->nodes[dn]->point();
+    for(dn = 0; dn<nNodes; dn++) {     
+      if(_crosslinkNodes.find(f->nodes[dn]) != _crosslinkNodes.end()) {
+        VectorND diff;
+        diff = f->nodes[dn]->point() - ref;
+	_box->mapDistance(diff);
+	diff += ref;
+	f->nodes[dn]->setPoint(diff);
+      } 
+    }
+  }
+
+  template<int N>
+  void SemiflexibleGel<N>::compute( bool f0, bool f1, bool f2 ) {
+
+    // Predictor/corrector approach for constraint
+    for(ConstraintIterator c=_constraints.begin(); c!=_constraints.end(); c++) {
+      (*c)->predict();
+    }
+
+    if( f0 ) _energy = 0.0;
+    
+    // compute energy and forces
+    int nFils = _filaments.size();
+
+#ifdef _OPENMP	
+#pragma omp parallel for 		\
+  schedule(static) default(shared) 
+#endif
+    for(int i=0; i<nFils; i++) {
+      Filament * f= filament(i);
+      //moveCLNodes(f);
+      for( BondIterator b = f->bonds.begin(); b!= f->bonds.end(); b++ ) {
+	(*b)->compute(f0,f1,f2);
+      }
+      //for( RodIterator r = f->rods.begin(); r!= f->rods.end(); r++ ) {
+	//(*r)->compute(f0,f1,f2);
+      //}
+      for( AngleIterator a = f->angles.begin(); a!= f->angles.end(); a++ ) {
+	(*a)->compute(f0,f1,f2);
+      }
+    }
+    
+
+    for( CrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++) {
+      (*c)->compute(f0,f1,f2);
+    }
+
+    for( MotorIterator m=_motors.begin(); m!=_motors.end(); m++) {
+      if((*m)->isAttached()) (*m)->compute(f0,f1,f2);
+    }
+
+    for(PinchIterator p=_pinches.begin(); p!=_pinches.end(); p++) {
+      (*p)->compute(f0,f1,f2);
+    }
+    
+    // sum energy
+    if( f0 ) {
+      double tmpenergy = 0.0;
+#ifdef _OPENMP	
+#pragma omp parallel for			\
+  schedule(static) default(shared) reduction(+: tmpenergy)
+#endif
+      for(int i=0; i<nFils; i++) {
+	Filament * f = filament(i);
+	for( BondIterator b = f->bonds.begin(); b!= f->bonds.end(); b++ ) {
+	  tmpenergy += (*b)->energy();
+	}
+	for( AngleIterator a = f->angles.begin(); a!= f->angles.end(); a++ ) {
+	  tmpenergy += (*a)->energy();
+	}
+      }
+      
+      for(CrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++) {
+        tmpenergy += (*c)->energy();
+      }
+      for(PinchIterator p=_pinches.begin(); p!=_pinches.end(); p++) {
+	tmpenergy += (*p)->energy();
+      }
+      _energy = tmpenergy;
+    } 
+
+    // Predictor/corrector approach for constraint
+    for(ConstraintIterator c=_constraints.begin(); c!=_constraints.end(); c++) {
+      (*c)->correct();
+    }
+
+  }
+
+  template<int N>
+  void SemiflexibleGel<N>::printParaview(const std::string name) const {
+
+//     std::cout << "SemiflexibleGel<N>::printParaview()." << std::endl;
+    //
+    // open file
+    //
+    std::string fileName = name + ".vtk";
+    std::ofstream ofs(fileName.c_str());
+    if (!ofs) {
+      std::cout << "Error: can not open paraview output file "
+		<< fileName
+		<< std::endl;
+      return;
+    }
+    
+    //
+    //    Node position data
+    //
+    
+    // count up all filament nodes
+    int nNodes = 0;
+    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+      nNodes += (*f)->nodes.size();
+    }
+    nNodes += _motors.size()*2;
+
+    //Mo
+    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+      const DefNodeContainer & crosslinknodes = (*c)-> getNodes();
+      nNodes += crosslinknodes.size();
+    }
+    
+    ofs << "# vtk DataFile Version 2.0\n"
+	<< "Test example" << std::endl
+	<< "ASCII" << std::endl
+	<< "DATASET POLYDATA" << std::endl
+	<< "POINTS  " << nNodes << "  double" << std::endl;
+    
+
+    // output nodal postions
+    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+      ConstDefNodeIterator pn = (*f)->nodes.begin();
+      for ( ; pn!= (*f)->nodes.end(); pn ++) {
+	const Vector2D & nodalPos = (*pn)->position();
+	ofs << std::setprecision(16) 
+	    << nodalPos(0) << "  "
+	    << 0.0 << "  "
+	    << nodalPos(1) << std::endl;
+      }
+    }
+
+    for (ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++) {
+      const Vector2D & nodalPos1 = (*m)->getStartPoint();
+      const Vector2D & nodalPos2 = (*m)->getStartPoint();
+      ofs << std::setprecision(16)
+	  << nodalPos1(0) << "  "
+	  << 0.0 << "  "
+          << nodalPos1(1) <<std::endl;
+      ofs << std::setprecision(16)
+	  << nodalPos2(0) << "  "
+	  << 0.0 << "  "
+          << nodalPos2(1) <<std::endl;
+    }
+
+    //Mo
+    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+      const DefNodeContainer & crosslinknodes = (*c)-> getNodes();
+      ConstDefNodeIterator pn = crosslinknodes.begin();
+      for ( ; pn!= crosslinknodes.end(); pn ++) {
+        const Vector2D & nodalPos = (*pn)->position();
+        ofs << std::setprecision(16) 
+	    << nodalPos(0) << "  "
+	    << 0.0 << "  "
+	    << nodalPos(1) << std::endl;
+      }
+    }
+
+    //
+    // segment connectivity data
+    //
+    int nSegments=0;
+    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+      nSegments+=(*f)->bonds.size();
+    }
+    nSegments += _motors.size();
+
+    //Mo
+    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+      nSegments++;
+    }
+
+    ofs << "LINES  " << nSegments << "  "
+	<< 3*nSegments << std::endl;
+    int nodeID=0;
+    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+      for(int a=0; a < (*f)->bonds.size(); a++) {
+
+	ofs << 2 << "  "
+	    << std::setw(10) << nodeID
+	    << std::setw(10) << nodeID+1
+	    << std::endl;
+	nodeID++;
+      }
+      nodeID++;
+    }
+    for( ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++ ) {
+      ofs << 2 << "  "
+	  << std::setw(10) << nodeID
+	  << std::setw(10) << nodeID+1
+	  << std::endl;
+      nodeID += 2;
+    }
+     	
+    //Mo
+    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+      ofs << 2 << "  "
+	  << std::setw(10) << nodeID
+	  << std::setw(10) << nodeID+1
+	  << std::endl;
+      nodeID+=2;
+    }
+
+    //
+    //  output energy for each segment
+    //
+    ofs << "CELL_DATA    " << nSegments << std::endl;
+
+    ofs << "SCALARS    Energy    double    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+      int firstAngle=0;
+      int lastAngle=(*f)->angles.size()-1;   //What happened to those two variables???  --Mo
+      for(int a=0; a < (*f)->bonds.size(); a++) {
+	double energy = (*f)->bonds[a]->energy();
+// 	energy += 0.5*(*f)->bonds[std::max(a-1,firstAngle)]->energy();
+// 	energy += 0.5*(*f)->bonds[std::min(a,lastAngle)]->energy();
+	ofs << energy << std::endl;
+      }
+    }
+    for( ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++ ) {
+      ofs << (*m)->energy() << std::endl;
+    }
+      ofs << std::endl;
+
+    //Mo
+    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+      double energy = (*c)->energy();
+      ofs << energy << std::endl;
+    }
+      
+    ofs << std::endl;
+
+    ofs << std::endl << "POINT_DATA " << nNodes << std::endl
+	<< "VECTORS displacements double" << std::endl;
+
+    // output nodal displacements
+    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+      ConstDefNodeIterator pn = (*f)->nodes.begin();
+      for ( ; pn!= (*f)->nodes.end(); pn ++) {
+	Vector2D nodalDisp;
+	nodalDisp = (*pn)->point() - (*pn)->position();
+	ofs << std::setprecision(16) 
+	    << nodalDisp(0) << '\t' 
+	    << 0.0 << '\t' 
+	    << nodalDisp(1)  << std::endl;
+      }
+    }
+    for (ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++) {
+      Vector2D nodalPos1; 
+      nodalPos1 = (*m)->getEndPoint1()-(*m)->getStartPoint();
+      Vector2D nodalPos2;
+      nodalPos2 = (*m)->getEndPoint2()-(*m)->getStartPoint();
+      ofs << std::setprecision(16)
+	  << nodalPos1(0) << "  "
+	  << 0.0 << "  "
+          << nodalPos1(1) <<std::endl;
+      ofs << std::setprecision(16)
+	  << nodalPos2(0) << "  "
+	  << 0.0 << "  "
+          << nodalPos2(1) <<std::endl;
+    }
+    
+    //Mo
+    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+      const DefNodeContainer & crosslinknodes = (*c)-> getNodes();
+      ConstDefNodeIterator pn = crosslinknodes.begin();
+      for ( ; pn!= crosslinknodes.end(); pn ++) {
+        Vector2D nodalDisp;
+        nodalDisp = (*pn)->point() - (*pn)->position();
+        ofs << std::setprecision(16) 
+	    << nodalDisp(0) << '\t'
+	    << 0.0 << '\t'
+	    << nodalDisp(1) << std::endl;
+	//cout << " semiflexible " << (*pn) <<' ' << (*pn)->point() <<endl;
+      }
+      
+    }
+
+    ofs << std::endl << "VECTORS forces double" << std::endl;
+    // output nodal forces
+    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+      ConstDefNodeIterator pn = (*f)->nodes.begin();
+      for ( ; pn!= (*f)->nodes.end(); pn ++) {
+	const Vector2D & nodalForce = (*pn)->force();
+	ofs << std::setprecision(16) 
+	    << nodalForce(0) << '\t' 
+	    << 0.0 << '\t' 
+	    << nodalForce(1) << std::endl;
+      }
+    }
+
+    for (ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++) {
+      ofs << std::setprecision(16)
+	  << 0.0 << '\t'
+	  << 0.0 << '\t'
+	  << 0.0 << std::endl;
+      ofs << std::setprecision(16)
+	  << 0.0 << '\t'
+	  << 0.0 << '\t'
+	  << 0.0 << std::endl;
+    }
+
+
+    //Mo
+    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+      const DefNodeContainer & crosslinknodes = (*c)-> getNodes();
+      ConstDefNodeIterator pn = crosslinknodes.begin();
+      for ( ; pn!= crosslinknodes.end(); pn ++) {
+        const Vector2D & nodalForce = (*pn)->force();
+        ofs << std::setprecision(16) 
+	    << nodalForce(0) << '\t'
+	    << 0.0 << '\t'
+	    << nodalForce(1) << std::endl;
+      }
+    }
+    
+    ofs.close();
+
+    return;
+
+  }
+  
+  template<int N>
+  void SemiflexibleGel<N>::storeGel(std::string fileName) {
+    int intSize = sizeof(int);
+    int doubleSize = sizeof(double);
+
+    std::ofstream outFile(fileName.data(), ios::out | ios::binary);
+    VectorND sysSize(_box->size());
+    for(int i=0; i<N; i++) {
+      double curSS = sysSize[i];
+      outFile.write((char *)(&curSS),doubleSize);
+    }
+    int nFils = _filaments.size();
+    outFile.write((char *)(&nFils),intSize);
+    
+    std::vector<intPair> slaveCLs(_constraints.size());
+    std::vector<intPair> tmpMastCLs(_constraints.size());
+    std::vector<intPair> mastCLs(_constraints.size());
+    std::multimap<DefNode*, int> slaveInds;
+    int sn = 0;
+    int mn = 0;
+    
+    for(int j=0; j<nFils; j++) {
+      Filament * f = filament(j);
+      int nNodesHere = f->nodes.size();
+      outFile.write((char *)(&nNodesHere),intSize);
+      for(int k=0; k<nNodesHere; k++) {
+	DefNode * curNode = f->nodes[k];
+	VectorND curPos(curNode->point());
+	VectorND refPos(curNode->position());
+	for(int kdof=0; kdof<N; kdof++) {
+	  double cpdof = curPos[kdof];
+	  outFile.write((char *)(&cpdof),doubleSize);
+	}
+	for(int kdof=0; kdof<N; kdof++) {
+	  double rpdof = refPos[kdof];
+	  outFile.write((char *)(&rpdof),doubleSize);
+	}
+	
+	CLNMiter cnmi = _crossNodeMap.find(curNode);
+	if(cnmi != _crossNodeMap.end()) {
+	  DefNode * mast = cnmi->second;
+	  
+	  if(mast != curNode) {
+	    slaveInds.insert(pair< DefNode*, int >(mast,sn));
+	    slaveCLs[sn] = pair< int, int >(j,k);
+	    sn++;
+	  }
+	  
+	  else if(mast == curNode) {
+	    tmpMastCLs[mn] = pair< int, int >(j,k);
+	    mn++;
+	  }
+	}
+      }
+    }
+
+    // write the number of crosslinks to the file //
+    int nCL = _constraints.size();
+    outFile.write((char *)(&nCL),intSize);
+    
+    // now go back and put master nodes in the right order //
+    std::vector<intPair>::iterator pairIter;
+    for(pairIter=tmpMastCLs.begin(); pairIter!=tmpMastCLs.end(); pairIter++) {
+      DefNode * curMast = filament(pairIter->first)->nodes[pairIter->second];
+      std::pair<SNiter, SNiter> sniter; 
+      // SNiter sniter;
+      sniter = slaveInds.equal_range(curMast);
+      // assert(sniter != slaveInds.end());
+      SNiter sni;
+      for(sni=sniter.first; sni!=sniter.second; sni++) {
+        int slaveInd = sni->second;
+	mastCLs[slaveInd] = *pairIter;
+      }
+      // int slaveInd = sniter->second; 
+      // mastCLs[slaveInd] = *pairIter;
+    }
+    
+    std::cout << "Gel storage consistency check: # of constraints in gel = " << nCL << ", # of slave nodes = " << slaveCLs.size() << ", # of master nodes = " << mastCLs.size() << "." << std::endl;
+    
+    for(int cl=0; cl<nCL; cl++) {
+      outFile.write((char *)(&(slaveCLs[cl].first)),intSize);
+      outFile.write((char *)(&(slaveCLs[cl].second)),intSize);
+      outFile.write((char *)(&(mastCLs[cl].first)),intSize);
+      outFile.write((char *)(&(mastCLs[cl].second)),intSize);
+    }
+    
+    std::cout << "Finished storing gel to file " << fileName << "; current file pointer position is " << outFile.tellp() << "." << std::endl;
+
+    outFile.close();
+  }
+
+  template<int N>
+  void SemiflexibleGel<N>::storeSparseGel(std::string fileName, TempFilamentContainer & tmpFils) {
+    int intSize = sizeof(int);
+    int doubleSize = sizeof(double);
+
+    std::ofstream outFile(fileName.data(), ios::out | ios::binary);
+    VectorND sysSize(_box->size());
+    for(int i=0; i<N; i++) {
+      double curSS = sysSize[i];
+      outFile.write((char *)(&curSS),doubleSize);
+    }
+    int nFils = tmpFils.size();
+    outFile.write((char *)(&nFils),intSize);
+    
+    int totalCrosslinks = 0;
+    for(int j=0; j<nFils; j++) {
+      for(int i=0; i<N; i++) {
+	double posi = tmpFils[j]->start[i];
+	outFile.write((char *)(&posi),doubleSize);
+      }
+      for(int i=0; i<N; i++) {
+	double posi = tmpFils[j]->end[i];
+	outFile.write((char *)(&posi),doubleSize);
+      }
+      typename multimap<double,TempCrosslink*>::iterator cls = tmpFils[j]->crossFils.begin();
+      for(cls; cls!=tmpFils[j]->crossFils.end(); cls++) {
+        if(cls->second->active && cls->second->baseFil == j) totalCrosslinks++;
+      }
+    }
+	
+    //assert(totalCrosslinks%2 == 0);
+    //totalCrosslinks /= 2;
+	
+    outFile.write((char *)(&totalCrosslinks),intSize);
+    int writtenCrosslinks = 0;
+    for(int j=0; j<nFils; j++) {
+      typename multimap<double,TempCrosslink*>::iterator cls = tmpFils[j]->crossFils.begin();
+      for(cls; cls!=tmpFils[j]->crossFils.end(); cls++) {
+	if(cls->second->active && cls->second->baseFil == j) {
+          int nCLFils = cls->second->otherFils.size();
+	  outFile.write((char *)(&nCLFils),intSize);
+	  typename set<int>::iterator ofs = cls->second->otherFils.begin();
+	  for(ofs; ofs!=cls->second->otherFils.end(); ofs++) {
+	    int filind = *ofs;
+            outFile.write((char *)(&filind),intSize);
+          }
+	  VectorND clpos = cls->second->location;
+	  for(int i=0; i<N; i++) {
+	    double clposi = clpos[i];
+	    outFile.write((char *)(&clposi),doubleSize);
+	  }
+	  writtenCrosslinks++;
+	}
+      }
+    }
+
+    assert(writtenCrosslinks == totalCrosslinks);
+    
+    std::cout << "Finished storing gel to file " << fileName << " with " << nFils << " filaments and " << writtenCrosslinks << " crosslinks; current file pointer position is " << outFile.tellp() << "." << std::endl;
+
+    outFile.close();
+  }
+
+  template<int N>
+  void SemiflexibleGel<N>::attachMotor(MolMot * mot, const Filament * f1, const Filament * f2) {
+      int nNodesFil1 = f1->nodes.size();
+      int nNodesFil2 = f2->nodes.size();
+      DefNodeIterator node1Iter = f1->nodes.begin();
+      DefNodeIterator node2Iter = f2->nodes.begin();
+      DefNode * node1A = *node1Iter;
+      DefNode * node2A = *node2Iter;
+      DefNode * node1B = *(f1->nodes.end()-1);
+      DefNode * node2B = *(f2->nodes.end()-1);
+      VectorND x1A = node1A->point();
+      VectorND x1B = node1B->point();
+      VectorND x2A = node2A->point();
+      VectorND x2B = node2B->point();
+      VectorND xintersect1;
+      VectorND xintersect2;
+      double end_to_end1 = norm2(x1B-x1A);
+      double end_to_end2 = norm2(x2B-x1A);
+      double tol = (end_to_end1+end_to_end2)/2.0;
+
+      double a1,a2;
+      if(abs(x1B[0]-x1A[0]) > 1.0e-6 && abs(x2B[0]-x2A[0]) > 1.0e-6) {
+	a1 = (x1B[1]-x1A[1])/(x1B[0]-x1A[0]);
+	a2 = (x2B[1]-x2A[1])/(x2B[0]-x2A[0]);
+	xintersect1[0] = (x1A[1]-x2A[1]+a2*x2A[0]-a1*x1A[0])/(a2-a1);
+	xintersect1[1] = (a2*(x1A[1]-a1*x1A[0])-a1*(x2A[1]-a2*x2A[0]))/(a2-a1);
+      }
+      else if(abs(x1B[0]-x1A[0]) <= 1.0e-6 && abs(x2B[0]-x2A[0]) > 1.0e-6){
+	xintersect1[0] = x1A[0];
+	a2 = (x2B[1]-x2A[1])/(x2B[0]-x2A[0]);
+	xintersect1[1] = a2*x1A[0] + x2A[1] - a2*x2A[0];
+      }
+      else if(abs(x2B[0]-x2A[0]) <= 1.0e-6 && abs(x1B[0]-x1A[0]) > 1.0e-6) {
+	xintersect1[0] = x2A[0];
+	a1 = (x1B[1]-x1A[1])/(x1B[0]-x1A[0]);
+	xintersect1[1] = x1A[1] - a1*(x1A[0] - x2A[0]);
+      }
+      else {
+	xintersect1[0] = (x1A[0]+x2A[0])/2.0;
+	xintersect1[1] = 1.0e30;
+      }
+
+      int node_jump1 = min((int)(nNodesFil1*norm2(xintersect1-x1A)/end_to_end1),nNodesFil1-2);
+      int node_jump2 = min((int)(nNodesFil2*norm2(xintersect1-x2A)/end_to_end2),nNodesFil2-2);
+
+      if(dot(x1B-x1A,xintersect1-x1A)<0.0) {
+	node_jump1 = 0;
+      }
+
+      if(dot(x2B-x2A,xintersect1-x2A)<0.0) {
+	node_jump2 = 0;
+      }
+      
+      bool intersected = false;
+      int rad = 1;
+      int curRadCounter = 0;
+      int totCounter = 0;
+      int node1_offset = node_jump1;
+      int node2_offset = node_jump2;
+      
+      while(intersected == false && totCounter < (nNodesFil1-1)*(nNodesFil2-1)) {
+	if(node1_offset >= 0 && node2_offset >= 0 && node1_offset < nNodesFil1 - 1 && node2_offset < nNodesFil2 - 1 && (abs(node1_offset-node_jump1) >= (rad-1)/2 || abs(node2_offset-node_jump2) >= (rad-1)/2)) {
+	  node1A = *(node1Iter + node1_offset);
+	  node1B = *(node1Iter + node1_offset + 1);
+	  node2A = *(node2Iter + node2_offset);
+	  node2B = *(node2Iter + node2_offset + 1);
+	  x1A = node1A->point();
+	  x1B = node1B->point();
+	  x2A = node2A->point();
+	  x2B = node2B->point();
+	  intersected = IntersectionFinder<N>::checkIntersection(x1A,x1B,x2A,x2B,xintersect1,xintersect2,tol,_box);
+	  if(intersected == true) {
+	    mot->setPosition(f1->nodes,node1_offset,f2->nodes,node2_offset,xintersect1,xintersect2);
+	    _motors.push_back(mot);
+	  }
+	  totCounter++;
+	}
+	curRadCounter++;
+	if(curRadCounter >= sqr(rad)) {
+	  rad += 2;
+	  curRadCounter = 0;
+	}
+	
+	node2_offset = node_jump2 - ((rad-1)/2) + curRadCounter%rad;
+	node1_offset = node_jump1 - ((rad-1)/2) + curRadCounter/rad;
+      }
+  }
+  
+//   template<int N>
+//   void SemiflexibleGel<N>::addPinch(DefNode * n1, DefNode * n2, double f0, bool springy) {
+//     Pinch * newPinch = new PinchForce<N>(n1,n2,f0,_box,springy);
+//     _pinches.push_back(newPinch);
+//   }
+  
+//   template<int N>
+//   void SemiflexibleGel<N>::addPinch(double a, double f0, bool springy) {
+//     const VectorND & sysSize = _box->size();
+//     double tol = sysSize(0)/10.0;
+//     CLNMiter cni = _crossNodeMap.begin();
+//     bool foundFirst = false;
+//     bool foundPair = false;
+//     DefNode * firstNode;
+//     while(foundPair==false && cni!=_crossNodeMap.end()) {
+//       DefNode * curMaster = cni->second;
+//       if(foundFirst==false && norm2(curMaster->point()-(sysSize/2.0)) <= tol) {
+// 	foundFirst = true;
+// 	firstNode = curMaster;
+// 	std::cout << "Found first pinch site: " << firstNode->point()[0] << ", " << firstNode->point()[1] << std::endl;
+//       }
+//       else if(foundFirst==true && curMaster!=firstNode && fabs(norm2(firstNode->point()-curMaster->point())-a) < 5.0e-1) {
+// 	addPinch(firstNode,curMaster,f0,springy);
+// 	foundPair = true;
+// 	std::cout << "Found second pinch site: " << curMaster->point()[0] << ", " << curMaster->point()[1] << std::endl;
+//       }
+//       cni++;
+//     }
+    
+//   }
+
+//   template<int N>
+//   void SemiflexibleGel<N>::addPinch(double f0, bool springy, DefNodeContainer & dNodes, double kBond, double kAngle, double visc, double kT, double dt, double kcl) {
+//     const VectorND & sysSize = _box->size();
+//     double rodLen = norm2(filament(0)->nodes[0]->point() - filament(0)->nodes[1]->point());
+//     int nNodesPF = filament(0)->nodes.size();
+//     int nFils = _filaments.size();
+//     int id;
+//     double ang = _rnguni->random()*2.0*3.14159;
+//     NodeBase::DofIndexMap idx(N);
+//     DefNode * newDN;
+//     VectorND startPos;
+//     VectorND curPos;
+//     startPos = sysSize/2.0;
+//     VectorND rodVec;
+//     DefNodeContainer tmpDNC(nNodesPF);
+//     DefNodeContainer tmpDNC2(nNodesPF);
+//     for(int i=0; i<nNodesPF; i++) {
+//       id = nFils*nNodesPF + i;
+//       for(int k=0; k<N; k++) {
+// 	idx[k] = N*id + k;
+//       }
+//       curPos[0] = startPos[0] + i*cos(ang)*rodLen;
+//       curPos[1] = startPos[1] + i*sin(ang)*rodLen;
+//       newDN = new BrownianNode<N>(id,idx,curPos,curPos);
+//       newDN->setId(id);
+//       tmpDNC[i] = newDN;
+//       dNodes.push_back(newDN);
+//       id += nNodesPF;
+//       for(int k=0; k<N; k++) {
+// 	idx[k] = N*id + k;
+//       }
+//       curPos[0] -= rodLen*6*sin(ang);
+//       curPos[1] += rodLen*6*cos(ang);
+//       newDN = new BrownianNode<N>(id,idx,curPos,curPos);
+//       newDN->setId(id);
+//       tmpDNC2[i] = newDN;
+//       dNodes.push_back(newDN);
+//     }
+//     FilamentContainer tmpFC;
+//     addFilament(tmpDNC,kBond,kAngle,visc,kT,dt);
+//     addFilament(tmpDNC2,kBond,kAngle,visc,kT,dt);
+//     Filament * f1 = filament(nFils);
+//     Filament * f2 = filament(nFils+1);
+//     for(int l=0; l<nFils; l++) {
+//       Filament * fold = filament(l);
+//       VectorND sep;
+//       bool twoAtt = false;
+//       sep = ((fold->nodes)[0])->point() - ((f1->nodes)[0])->point();
+//       _box->mapDistance(sep);
+//       if(norm2(sep) <= 2.0*rodLen*(nNodesPF-1)) {
+// 	bool att = false;
+// 	att = attachCrosslink(f1,fold,kcl);
+// 	if(att) twoAtt = true;
+//       }
+      
+//       sep = ((fold->nodes)[0])->point() - ((f2->nodes)[0])->point();
+//       _box->mapDistance(sep);
+//       if(norm2(sep) <= 2.0*rodLen*(nNodesPF-1)) {
+// 	bool att = false;
+// 	att = attachCrosslink(f2,fold,kcl);
+// 	if(att==false && twoAtt==true) twoAtt = false;
+//       }
+//       else twoAtt = false;
+
+//       if(twoAtt) tmpFC.push_back(fold);
+//     }
+
+//     bool foundclinkpts = false;
+//     int i = 3;
+//     int d1,d2;
+//     while(!foundclinkpts && i < nNodesPF-3) {
+//       i++;
+//       d1 = 0;
+//       d2 = 0;
+//       if(_crossNodeMap.find(f1->nodes[i]) == _crossNodeMap.end() && _crossNodeMap.find(f2->nodes[i]) == _crossNodeMap.end()) {
+// 	d1 = 1;
+// 	while(i-d1>0 && _crossNodeMap.find(f1->nodes[i-d1]) == _crossNodeMap.end()) {
+// 	  d1++;
+// 	}
+// 	if(d1>1 && i-d1>0) {
+// 	  d2 = 1;
+// 	  while(i+d2<nNodesPF-1 && _crossNodeMap.find(f2->nodes[i+d2]) == _crossNodeMap.end()) {
+// 	    d2++;
+// 	  }
+// 	  if(d2>1 && i+d2<nNodesPF-1) {
+// 	    DefNode * mast1 = (_crossNodeMap.find(f1->nodes[i-d1]))->second;
+// 	    DefNode * mast2 = (_crossNodeMap.find(f2->nodes[i+d2]))->second;
+// 	    addPinch(mast1,mast2,f0,springy);
+// 	    foundclinkpts = true;
+// 	    std::cout << "Added pinches at " << mast1->point()[0] << ", " << mast1->point()[1] << " and " << mast2->point()[0] << ", " << mast2->point()[1] << std::endl;
+// 	  }	
+// 	}
+//       }
+//     }
+//   }
+
+  template<int N>
+  void SemiflexibleGel<N>::attachCrosslink(Clink * cl, const Filament * f1, const Filament * f2) {
+      int nNodesFil1 = f1->nodes.size();
+      int nNodesFil2 = f2->nodes.size();
+      DefNodeIterator node1Iter = f1->nodes.begin();
+      DefNodeIterator node2Iter = f2->nodes.begin();
+      DefNode * node1A = *node1Iter;
+      DefNode * node2A = *node2Iter;
+      DefNode * node1B = *(f1->nodes.end()-1);
+      DefNode * node2B = *(f2->nodes.end()-1);
+      VectorND x1A = node1A->point();
+      VectorND x1B = node1B->point();
+      VectorND x2A = node2A->point();
+      VectorND x2B = node2B->point();
+      VectorND xintersect1;
+      VectorND xintersect2;
+      double end_to_end1 = norm2(x1B-x1A);
+      double end_to_end2 = norm2(x2B-x1A);
+      double tol = (end_to_end1+end_to_end2)/2.0;
+
+      double a1,a2;
+      if(abs(x1B[0]-x1A[0]) > 1.0e-6 && abs(x2B[0]-x2A[0]) > 1.0e-6) {
+	a1 = (x1B[1]-x1A[1])/(x1B[0]-x1A[0]);
+	a2 = (x2B[1]-x2A[1])/(x2B[0]-x2A[0]);
+	xintersect1[0] = (x1A[1]-x2A[1]+a2*x2A[0]-a1*x1A[0])/(a2-a1);
+	xintersect1[1] = (a2*(x1A[1]-a1*x1A[0])-a1*(x2A[1]-a2*x2A[0]))/(a2-a1);
+      }
+      else if(abs(x1B[0]-x1A[0]) <= 1.0e-6 && abs(x2B[0]-x2A[0]) > 1.0e-6){
+	xintersect1[0] = x1A[0];
+	a2 = (x2B[1]-x2A[1])/(x2B[0]-x2A[0]);
+	xintersect1[1] = a2*x1A[0] + x2A[1] - a2*x2A[0];
+      }
+      else if(abs(x2B[0]-x2A[0]) <= 1.0e-6 && abs(x1B[0]-x1A[0]) > 1.0e-6) {
+	xintersect1[0] = x2A[0];
+	a1 = (x1B[1]-x1A[1])/(x1B[0]-x1A[0]);
+	xintersect1[1] = x1A[1] - a1*(x1A[0] - x2A[0]);
+      }
+      else {
+	xintersect1[0] = (x1A[0]+x2A[0])/2.0;
+	xintersect1[1] = 1.0e30;
+      }
+
+      int node_jump1 = min((int)(nNodesFil1*norm2(xintersect1-x1A)/end_to_end1),nNodesFil1-2);
+      int node_jump2 = min((int)(nNodesFil2*norm2(xintersect1-x2A)/end_to_end2),nNodesFil2-2);
+
+      if(dot(x1B-x1A,xintersect1-x1A)<0.0) {
+	node_jump1 = 0;
+      }
+
+      if(dot(x2B-x2A,xintersect1-x2A)<0.0) {
+	node_jump2 = 0;
+      }
+      
+      bool intersected = false;
+      int rad = 1;
+      int curRadCounter = 0;
+      int totCounter = 0;
+      int node1_offset = node_jump1;
+      int node2_offset = node_jump2;
+      
+      while(intersected == false && totCounter < (nNodesFil1-1)*(nNodesFil2-1)) {
+	if(node1_offset >= 0 && node2_offset >= 0 && node1_offset < nNodesFil1 - 1 && node2_offset < nNodesFil2 - 1 && (abs(node1_offset-node_jump1) >= (rad-1)/2 || abs(node2_offset-node_jump2) >= (rad-1)/2)) {
+	  node1A = *(node1Iter + node1_offset);
+	  node1B = *(node1Iter + node1_offset + 1);
+	  node2A = *(node2Iter + node2_offset);
+	  node2B = *(node2Iter + node2_offset + 1);
+	  x1A = node1A->point();
+	  x1B = node1B->point();
+	  x2A = node2A->point();
+	  x2B = node2B->point();
+	  intersected = IntersectionFinder<N>::checkIntersection(x1A,x1B,x2A,x2B,xintersect1,xintersect2,tol,_box);
+	  if(intersected == true) {
+	    double eps1 = norm2(xintersect1-x1A)/end_to_end1;
+	    double eps2 = norm2(xintersect2-x2A)/end_to_end2;
+	    cl->setPosition(node1A,node1B,node2A,node2B,eps1,eps2);
+	    addCrosslink(cl);
+	  }
+	  totCounter++;
+	}
+	curRadCounter++;
+	if(curRadCounter >= sqr(rad)) {
+	  rad += 2;
+	  curRadCounter = 0;
+	}
+	
+	node2_offset = node_jump2 - ((rad-1)/2) + curRadCounter%rad;
+	node1_offset = node_jump1 - ((rad-1)/2) + curRadCounter/rad;
+      }
+  }
+
+  template<int N>
+  bool SemiflexibleGel<N>::attachCrosslink(Filament * f1, Filament * f2, double kcl, double relax) {
+    bool doRelax = false;
+    if(relax > 0.0) {
+      doRelax = true;
+    }
+    bool attachedCL = false;
+    int nNodesFil1 = f1->nodes.size();
+    int nNodesFil2 = f2->nodes.size();
+    DefNodeContainer & f1nodes = f1->nodes;
+    DefNodeContainer & f2nodes = f2->nodes;
+    DefNode * node1A = f1nodes[0];
+    DefNode * node2A = f2nodes[0];
+    DefNode * node1B = f1nodes[nNodesFil1-1];
+    DefNode * node2B = f2nodes[nNodesFil2-1];
+    VectorND x1A = node1A->point();
+    VectorND x1B = node1B->point();
+    VectorND x2A = node2A->point();
+    VectorND x2B = node2B->point();
+    VectorND xintersect1;
+    VectorND xintersect2;
+    double end_to_end1 = norm2(x1B-x1A);
+    double end_to_end2 = norm2(x2B-x2A);
+    double tol = (end_to_end1+end_to_end2)/2.0;
+
+    double a1,a2;
+    if(abs(x1B[0]-x1A[0]) > 1.0e-6 && abs(x2B[0]-x2A[0]) > 1.0e-6) {
+      a1 = (x1B[1]-x1A[1])/(x1B[0]-x1A[0]);
+      a2 = (x2B[1]-x2A[1])/(x2B[0]-x2A[0]);
+      xintersect1[0] = (x1A[1]-x2A[1]+a2*x2A[0]-a1*x1A[0])/(a2-a1);
+      xintersect1[1] = (a2*(x1A[1]-a1*x1A[0])-a1*(x2A[1]-a2*x2A[0]))/(a2-a1);
+    }
+    else if(abs(x1B[0]-x1A[0]) <= 1.0e-6 && abs(x2B[0]-x2A[0]) > 1.0e-6){
+      xintersect1[0] = x1A[0];
+      a2 = (x2B[1]-x2A[1])/(x2B[0]-x2A[0]);
+      xintersect1[1] = a2*x1A[0] + x2A[1] - a2*x2A[0];
+    }
+    else if(abs(x2B[0]-x2A[0]) <= 1.0e-6 && abs(x1B[0]-x1A[0]) > 1.0e-6) {
+      xintersect1[0] = x2A[0];
+      a1 = (x1B[1]-x1A[1])/(x1B[0]-x1A[0]);
+      xintersect1[1] = x1A[1] - a1*(x1A[0] - x2A[0]);
+    }
+    else {
+      xintersect1[0] = (x1A[0]+x2A[0])/2.0;
+      xintersect1[1] = 1.0e30;
+    }
+
+    int node_jump1 = min((int)(nNodesFil1*norm2(xintersect1-x1A)/end_to_end1),nNodesFil1-2);
+    int node_jump2 = min((int)(nNodesFil2*norm2(xintersect1-x2A)/end_to_end2),nNodesFil2-2);
+
+    if(dot(x1B-x1A,xintersect1-x1A)<0.0) {
+      node_jump1 = 0;
+    }
+
+    if(dot(x2B-x2A,xintersect1-x2A)<0.0) {
+      node_jump2 = 0;
+    }
+    
+    bool intersected = false;
+    int ctr1 = 0;
+    int node1_offset = node_jump1;
+    
+    while(intersected == false && ctr1 < (nNodesFil1-1)) {
+      int ctr2 = 0;
+      int node2_offset = node_jump2;
+      while(intersected == false && ctr2 < (nNodesFil2-1)) {
+	node1A = f1nodes[node1_offset];
+	node1B = f1nodes[node1_offset+1];
+	node2A = f2nodes[node2_offset];
+	node2B = f2nodes[node2_offset+1];
+	x1A = node1A->point();
+	x1B = node1B->point();
+	x2A = node2A->point();
+	x2B = node2B->point();
+	end_to_end1 = norm2(x1B-x1A);
+	end_to_end2 = norm2(x2B-x2A);
+	tol = (end_to_end1+end_to_end2)/2.0;
+	intersected = IntersectionFinder<N>::checkIntersection(x1A,x1B,x2A,x2B,xintersect1,xintersect2,tol,_box);
+	if(intersected == true) {
+	  double eps1 = norm2(xintersect1-x1A)/end_to_end1;
+	  double eps2 = norm2(xintersect2-x2A)/end_to_end2;
+	  if(kcl >= 0.0) { // if the crosslink spring constant is non-negative, add real crosslink //
+	    attachedCL = true;
+	    Clink * cl = new Crosslink<N>(node1A,node1B,node2A,node2B,eps1,eps2,kcl,_box,doRelax);
+	    addCrosslink(cl);
+	    
+	    int clposlow = 0;
+	    int clposhigh = f1->clinks.size();
+	    while(clposhigh - clposlow > 1) {
+	      int clposcur = (clposhigh + clposlow)/2;
+	      if(node1_offset + eps1 >= f1->clinks[clposcur]) clposlow = clposcur;
+	      else clposhigh = clposcur;
+	    }
+	    if(clposhigh == 0) f1->clinks.push_back(node1_offset+eps1);
+	    else if(f1->clinks.size() == 1) {
+	      if(node1_offset + eps1 < f1->clinks[0]) {
+		std::vector< double >::iterator clq = f1->clinks.begin();
+		f1->clinks.insert(clq,node1_offset+eps1);
+	      }
+	      else f1->clinks.push_back(node1_offset+eps1);
+	    }
+	    else if(clposlow == 0) {
+	      if(node1_offset + eps1 < f1->clinks[0]) {
+		std::vector< double >::iterator clq = f1->clinks.begin();
+		f1->clinks.insert(clq,node1_offset+eps1);
+	      }
+	      else {
+		std::vector< double >::iterator clq = f1->clinks.begin();
+		f1->clinks.insert(clq+1,node1_offset+eps1);
+	      }
+	    }
+	    else if(clposhigh == f1->clinks.size()) {
+	      if(node1_offset + eps1 >= f1->clinks[clposhigh-1]) f1->clinks.push_back(node1_offset+eps1);
+	      else {
+		std::vector< double >::iterator clq = f1->clinks.end();
+		f1->clinks.insert(clq-1,node1_offset+eps1);
+	      }
+	    }
+	    else {
+	      std::vector< double >::iterator clq = f1->clinks.begin();
+	      f1->clinks.insert(clq+clposhigh,node1_offset+eps1);
+	    }
+
+	    clposlow = 0;
+	    clposhigh = f2->clinks.size();
+	    while(clposhigh - clposlow > 1) {
+	      int clposcur = (clposhigh + clposlow)/2;
+	      if(node2_offset + eps2 >= f2->clinks[clposcur]) clposlow = clposcur;
+	      else clposhigh = clposcur;
+	    }
+	    if(clposhigh == 0) f2->clinks.push_back(node2_offset+eps2);
+	    else if(f2->clinks.size() == 1) {
+	      if(node2_offset + eps2 < f2->clinks[0]) {
+		std::vector< double >::iterator clq = f2->clinks.begin();
+		f2->clinks.insert(clq,node2_offset+eps2);
+	      }
+	      else f2->clinks.push_back(node2_offset+eps2);
+	    }
+	    else if(clposlow == 0) {
+	      if(node2_offset + eps2 < f2->clinks[0]) {
+		std::vector< double >::iterator clq = f2->clinks.begin();
+		f2->clinks.insert(clq,node2_offset+eps2);
+	      }
+	      else {
+		std::vector< double >::iterator clq = f2->clinks.begin();
+		f2->clinks.insert(clq+1,node2_offset+eps2);
+	      }
+	    }
+	    else if(clposhigh == f2->clinks.size()) {
+	      if(node2_offset + eps2 >= f2->clinks[clposhigh-1]) f2->clinks.push_back(node2_offset+eps2);
+	      else {
+		std::vector< double >::iterator clq = f2->clinks.end();
+		f2->clinks.insert(clq-1,node2_offset+eps2);
+	      }
+	    }
+	    else {
+	      std::vector< double >::iterator clq = f2->clinks.begin();
+	      f2->clinks.insert(clq+clposhigh,node2_offset+eps2);
+	    }
+	  }
+	  else { // a negative crosslink spring constant means we glue nodes together //
+	    VectorND AA,BB,AB,BA;
+	    AA = x1A - x2A;
+	    BB = x1B - x2B;
+	    AB = x1A - x2B;
+	    BA = x1B - x2A;
+	    _box->mapDistance(AA);
+	    _box->mapDistance(BB);
+	    _box->mapDistance(AB);
+	    _box->mapDistance(BA);
+	    double AAlen,BBlen,ABlen,BAlen;
+	    AAlen = norm2(AA);
+	    BBlen = norm2(BB);
+	    ABlen = norm2(AB);
+	    BAlen = norm2(BA);
+	    // create a map to put distance/node pair pairs in so that they are sorted //
+	    std::multimap < double, pair<DefNode*,DefNode*> > CLpairs;
+	    CLpairs.insert(pair<double,pair<DefNode*,DefNode*> >(AAlen,pair<DefNode*,DefNode*>(node1A,node2A)));
+	    CLpairs.insert(pair<double,pair<DefNode*,DefNode*> >(ABlen,pair<DefNode*,DefNode*>(node1A,node2B)));
+	    CLpairs.insert(pair<double,pair<DefNode*,DefNode*> >(BAlen,pair<DefNode*,DefNode*>(node1B,node2A)));
+	    CLpairs.insert(pair<double,pair<DefNode*,DefNode*> >(BBlen,pair<DefNode*,DefNode*>(node1B,node2B)));
+	    typename multimap< double,pair<DefNode*,DefNode*> >::iterator mi = CLpairs.begin();
+	    while(!attachedCL && mi!=CLpairs.end()) {
+	      //std::vector< pair<DefNode*,DefNode*> > pinPairs;
+	      //if(_crossNodeMap.find((mi->second).first) == _crossNodeMap.end() && _crossNodeMap.find((mi->second).second) != _crossNodeMap.end()) {
+ 	      //  pinPairs.push_back(pair<DefNode*,DefNode*>((mi->second).first,_crossNodeMap[(mi->second).second])); 
+	      //}
+	      //else if(_crossNodeMap.find((mi->second).first) != _crossNodeMap.end() && _crossNodeMap.find((mi->second).second) == _crossNodeMap.end()) {
+              //  pinPairs.push_back(pair<DefNode*,DefNode*>((mi->second).second,_crossNodeMap[(mi->second).first]));
+	      //}
+	      //else if(_crossNodeMap.find((mi->second).first) == _crossNodeMap.end() && _crossNodeMap.find((mi->second).second) == _crossNodeMap.end()) {
+              //  pinPairs.push_back(pair<DefNode*,DefNode*>((mi->second).second,(mi->second).first));
+		//pinPairs.push_back(pair<DefNode*,DefNode*>((mi->second).first,(mi->second).first));
+	      //}	
+
+  	      //if(relax>0.0 && pinPairs.size()!=0) {
+	        // check to make sure induced bending isn't too much; if it is, clear out pinPairs //
+		//VectorND smdiff;
+		//smdiff = (pinPairs[0].second)->point() - (pinPairs[0].first)->point();
+		//_box->mapDistance(smdiff);
+		//smdiff += (pinPairs[0].first)->point();
+		//(pinPairs[0].first)->setPoint(smdiff);
+		//double energycost = 0.0;
+		//for(AngleIterator ai=f1->angles.begin(); ai!=f1->angles.end(); ai++) {
+		//  (*ai)->compute(true,false,false);
+		//  energycost += (*ai)->energy();
+		//}
+		//for(BondIterator bi=f1->bonds.begin(); bi!=f1->bonds.end(); bi++) {
+		//  (*bi)->compute(true,false,false);
+		//  energycost += (*bi)->energy();
+		//}
+		//for(AngleIterator ai=f2->angles.begin(); ai!=f2->angles.end(); ai++) {
+		//  (*ai)->compute(true,false,false);
+		//  energycost += (*ai)->energy();
+		//}
+		//for(BondIterator bi=f2->bonds.begin(); bi!=f2->bonds.end(); bi++) {
+		//  (*bi)->compute(true,false,false);
+		//  energycost += (*bi)->energy();
+		//}
+//
+		//(pinPairs[0].first)->setPoint((pinPairs[0].first)->position());
+		
+	//	if(energycost > relax) {
+	//	  pinPairs.clear();
+	//	  std::cout << "Crosslink would force excessive bending prestress (" << energycost << " > " << relax << "); deleting." << std::endl;
+	//	}
+	  //    }
+	      
+	      //if(pinPairs.size()!=0) {
+	      //  PeriodicTie<N> * pt = new PeriodicTie<N>(pinPairs[0].second,pinPairs[0].first,_box,true);
+		//addConstraint(pt);
+		//for(int pct=0; pct<pinPairs.size(); pct++) {
+		//  _crossNodeMap.insert(pinPairs[pct]);
+		//}
+		//attachedCL = true;
+	      //}
+	
+	      if(_crossNodeMap.find((mi->second).first) == _crossNodeMap.end() && _crossNodeMap.find((mi->second).second) == _crossNodeMap.end()) {
+	        PeriodicTie<N> * pt = new PeriodicTie<N>((mi->second).first,(mi->second).second,_box,doRelax);
+		addConstraint(pt);
+		_crossNodeMap.insert(pair<DefNode*,DefNode*>((mi->second).second,(mi->second).first));
+		_crossNodeMap.insert(pair<DefNode*,DefNode*>((mi->second).first,(mi->second).first));
+		attachedCL = true;
+	      }
+       
+	      mi++;
+	    }
+// 	    if(_crossNodeMap.find(node1A) == _crossNodeMap.end() && _crossNodeMap.find(node2A) == _crossNodeMap.end()) {
+// 	      PeriodicTie<N> * pt = new PeriodicTie<N>(node1A,node2A,_box);
+// 	      addConstraint(pt);
+// 	      _crossNodeMap.insert(pair< DefNode*, DefNode* >(node2A,node1A));
+// 	      _crossNodeMap.insert(pair< DefNode*, DefNode* >(node1A,node1A));
+// // 	      std::cout << "Added crosslink # " << _constraints.size() << std::endl;
+// 	      attachedCL = true;
+// 	    }
+// 	    else if(_crossNodeMap.find(node1A) == _crossNodeMap.end() && _crossNodeMap.find(node2B) == _crossNodeMap.end()) {
+// 	      PeriodicTie<N> * pt = new PeriodicTie<N>(node1A,node2B,_box);
+// 	      addConstraint(pt);
+// 	      _crossNodeMap.insert(pair< DefNode*, DefNode* >(node2B,node1A));
+// 	      _crossNodeMap.insert(pair< DefNode*, DefNode* >(node1A,node1A));
+// // 	      std::cout << "Added crosslink # " << _constraints.size() << std::endl;
+// 	      attachedCL = true;
+// 	    }
+// 	    else if(_crossNodeMap.find(node1B) == _crossNodeMap.end() && _crossNodeMap.find(node2B) == _crossNodeMap.end()) {
+// 	      PeriodicTie<N> * pt = new PeriodicTie<N>(node1B,node2B,_box);
+// 	      addConstraint(pt);
+// 	      _crossNodeMap.insert(pair< DefNode*, DefNode* >(node2B,node1B));
+// 	      _crossNodeMap.insert(pair< DefNode*, DefNode* >(node1B,node1B));
+// // 	      std::cout << "Added crosslink # " << _constraints.size() << std::endl;
+// 	      attachedCL = true;
+// 	    }
+// 	    else if(_crossNodeMap.find(node1B) == _crossNodeMap.end() && _crossNodeMap.find(node2A) == _crossNodeMap.end()) {
+// 	      PeriodicTie<N> * pt = new PeriodicTie<N>(node1B,node2A,_box);
+// 	      addConstraint(pt);
+// 	      _crossNodeMap.insert(pair< DefNode*, DefNode* >(node2A,node1B));
+// 	      _crossNodeMap.insert(pair< DefNode*, DefNode* >(node1B,node1B));
+// // 	      std::cout << "Added crosslink # " << _constraints.size() << std::endl;
+// 	      attachedCL = true;
+// 	    }
+	  }
+	}
+	ctr2++;
+	node2_offset = (node_jump2+ctr2)%(nNodesFil2-1);
+      }
+      ctr1++;
+      node1_offset = (node_jump1+ctr1)%(nNodesFil1-1);
+    }
+    
+    return attachedCL;
+  }
+  
+  template<int N>
+  double SemiflexibleGel<N>::crosslinkenergy() {
+    double clen = 0.0;
+    for(ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++) {
+      clen += (*c)->energy();
+    }
+    return clen;
+  }
+
+  template<int N>
+  double SemiflexibleGel<N>::bendingenergy() {
+    double ben = 0.0;
+    for(ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++) {
+      for(ConstAngleIterator a=((*f)->angles).begin(); a!=((*f)->angles).end(); a++) {
+	ben += (*a)->energy();
+      }
+    }
+    return ben;
+  }
+  
+  template<int N>
+  double SemiflexibleGel<N>::stretchingenergy() {
+    double sten = 0.0;
+    for(ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++) {
+      for(ConstBondIterator b=((*f)->bonds).begin(); b!=((*f)->bonds).end(); b++) {
+	sten += (*b)->energy();
+      }
+    }
+    return sten;
+  }
+
+  template<int N>
+  void SemiflexibleGel<N>::cutOffEndsandCCD(double kcl, DefNodeContainer & dNodes) {
+    // compute crosslink dist. and cut off ends //
+    _meanCLsep = 0.0;
+    int totalCLseps = 0;
+    _crossDistFreqs.clear();
+    int nNodesBefore = dNodes.size();
+    dNodes.clear();
+    int nNodesCutOff = 0;
+    int id = 0;
+    NodeBase::DofIndexMap idx(N);
+    if(kcl  > 0.0) {
+      int nFils = _filaments.size();
+      std::cerr << "Cutting off dangling ends with springy crosslinks not implemented yet!" << std::endl;
+ //      for(int i=0; i<nFils; i++) {
+// 	Filament * fcur = filament(i);
+// 	for(std::vector< double >::iterator cls = fcur->clinks.begin()+1; cls!=fcur->clinks.end(); cls++) {
+// 	  double pos_prev = *(cls-1);
+// 	  double pos_cur = *(cls);
+// 	  int curSep = ((int)pos_cur) - ((int)pos_prev);
+// 	  if(_crossDistFreqs.find(curSep) == _crossDistFreqs.end()) {
+// 	    _crossDistFreqs.insert(pair< int, int >(curSep,1));
+// 	  }
+// 	  else {
+// 	    _crossDistFreqs[curSep] += 1;
+// 	  }
+// 	  totalCLseps++;
+// 	  _meanCLsep += (pos_cur - pos_prev);
+// 	}
+//       }
+    }
+    else {
+      int i = 0;
+      int nFils = _filaments.size();
+      while(i<nFils) {
+	Filament * fcur = filament(i);
+	int curSep;
+	double curDist;
+	bool hitFirstCL = false;
+	bool cutOffFirst = false;
+
+	// erase nodes before first crosslink, and also erase angle springs, etc. from filaments //
+	while(fcur->nodes.size() > 0 && _crossNodeMap.find(*(fcur->nodes.begin())) == _crossNodeMap.end()) {
+	  (fcur->nodes).erase(fcur->nodes.begin());
+	  nNodesCutOff++;
+	  if(cutOffFirst) {
+	    if(fcur->bonds.size() > 0) {
+	      fcur->bonds.erase(fcur->bonds.begin());
+	    }
+	    if(fcur->rods.size() > 0) {
+	      fcur->rods.erase(fcur->rods.begin());
+	    }
+	    if(fcur->angles.size() > 0) {
+	      fcur->angles.erase(fcur->angles.begin());
+	    }
+	  }
+	  else cutOffFirst = true;
+	}
+	if(cutOffFirst) {
+	  if(fcur->bonds.size() > 0) {
+	    fcur->bonds.erase(fcur->bonds.begin());
+	  }
+	  if(fcur->rods.size() > 0) {
+	    fcur->rods.erase(fcur->rods.begin());
+	  }
+	  if(fcur->angles.size() > 0) {
+	    fcur->angles.erase(fcur->angles.begin());
+	  }
+	}
+
+	// now find distances between crosslinks //
+	for(DefNodeIterator fn=fcur->nodes.begin(); fn!=fcur->nodes.end(); fn++) {
+	  if(_crossNodeMap.find(*fn) != _crossNodeMap.end()) {
+	    if(!hitFirstCL) {
+	      curSep = 0;
+	      curDist = 0.0;
+	      hitFirstCL = true;
+	    }
+	    else {
+	      if(_crossDistFreqs.find(curSep) == _crossDistFreqs.end()) {
+		_crossDistFreqs.insert(pair< int, int >(curSep,1));
+	      }
+	      else {
+		_crossDistFreqs[curSep] += 1;
+	      }
+	      totalCLseps++;
+	      curDist += norm2((*fn)->point()-(*(fn-1))->point());
+	      _meanCLsep += curDist;
+	      curSep = 0;
+	      curDist = 0.0;
+	    }
+	  }
+	  else {
+	    if(hitFirstCL) {
+	      curSep++;
+	      curDist += norm2((*fn)->point()-(*(fn-1))->point());
+	    }
+	  }
+	}
+
+	// now erase stuff after last crosslink //
+	cutOffFirst = false;
+	while(fcur->nodes.size() > 0 && _crossNodeMap.find(*(fcur->nodes.end()-1)) == _crossNodeMap.end()) {
+	  (fcur->nodes).erase(fcur->nodes.end()-1);
+	  nNodesCutOff++;
+	  if(cutOffFirst) {
+	    if(fcur->bonds.size() > 0) {
+	      fcur->bonds.erase(fcur->bonds.end()-1);
+	    }
+	    if(fcur->rods.size() > 0) {
+	      fcur->rods.erase(fcur->rods.end()-1);
+	    }
+	    if(fcur->angles.size() > 0) {
+	      fcur->angles.erase(fcur->angles.end()-1);
+	    }
+	  }
+	  else cutOffFirst = true;
+	}
+	if(cutOffFirst) {
+	  if(fcur->bonds.size() > 0) {
+	    fcur->bonds.erase(fcur->bonds.end()-1);
+	  }
+	  if(fcur->rods.size() > 0) {
+	    fcur->rods.erase(fcur->rods.end()-1);
+	  }
+	  if(fcur->angles.size() > 0) {
+	    fcur->angles.erase(fcur->angles.end()-1);
+	  }
+	}
+
+	// now repopulate node container (for solver) with remaining nodes and reset node IDs //
+	for(DefNodeIterator fn=fcur->nodes.begin(); fn!=fcur->nodes.end(); fn++) {
+	  dNodes.push_back(*fn);
+	  for(int k=0; k<N; k++) {
+	    idx[k] = N*id + k;
+	  }
+	  (*fn)->setId(id);
+	  (*fn)->setIndex(idx);
+	  id++;
+	}
+	if(fcur->nodes.size() != 0) {
+	  i++;
+	  // check consistency of filament //
+	  if(fcur->angles.size() != fcur->nodes.size()-2 || fcur->rods.size() != fcur->nodes.size()-1 || fcur->bonds.size() != fcur->nodes.size()-1) {
+	    std::cerr << "# of angles/rods/bonds in filament incorrect after end chop!" << std::endl;
+	  }
+	  else {
+	    int nn = 0;
+	    for(AngleIterator ai = fcur->angles.begin(); ai != fcur->angles.end(); ai++) {
+	      if((*ai)->baseNodes()[0] != fcur->nodes[nn] || (*ai)->baseNodes()[1] != fcur->nodes[nn+1] || (*ai)->baseNodes()[2] != fcur->nodes[nn+2]) {
+		std::cerr << "Angle springs are messed up" << std::endl;
+	      }
+	      nn++;
+	    }
+	    nn = 0;
+	    for(BondIterator bi = fcur->bonds.begin(); bi != fcur->bonds.end(); bi++) {
+	      if((*bi)->baseNodes()[0] != fcur->nodes[nn] || (*bi)->baseNodes()[1] != fcur->nodes[nn+1]) {
+		std::cerr << "Bond springs are messed up" << std::endl;
+	      }
+	      nn++;
+	    }
+	    nn = 0;
+	    for(RodIterator ri = fcur->rods.begin(); ri != fcur->rods.end(); ri++) {
+	      if((*ri)->baseNodes()[0] != fcur->nodes[nn] || (*ri)->baseNodes()[1] != fcur->nodes[nn+1]) {
+		std::cerr << "Brownian rods are messed up" << std::endl;
+	      }
+	      nn++;
+	    }
+	  }
+	}
+	else {
+	  std::cout << "Filament with 0 nodes encountered; removing filament." << std::endl;
+	  nFils--;
+	  FilamentIterator fi = _filaments.begin();
+	  _filaments.erase(fi+i);
+	}
+      }
+    }
+    _meanCLsep /= totalCLseps;
+    std::cout << "Consistency check: beginning # of nodes = " << nNodesBefore << ", # of nodes cut off = " << nNodesCutOff << ", so expected size of container = " 
+	      << nNodesBefore-nNodesCutOff << "; actual size of container = " << dNodes.size() << "." << std::endl;
+  }
+
+  template<int N>
+  void SemiflexibleGel<N>::computeCrossDistro(double kcl) {
+    _meanCLsep = 0.0;
+    double stdd = 0.0;
+    int totalCLseps = 0;
+    _crossDistFreqs.clear();
+    int nFils = _filaments.size();
+    if(kcl  > 0.0) {
+      for(int i=0; i<nFils; i++) {
+	Filament * fcur = filament(i);
+	for(std::vector< double >::iterator cls = fcur->clinks.begin()+1; cls!=fcur->clinks.end(); cls++) {
+	  double pos_prev = *(cls-1);
+	  double pos_cur = *(cls);
+	  int curSep = ((int)pos_cur) - ((int)pos_prev);
+	  if(_crossDistFreqs.find(curSep) == _crossDistFreqs.end()) {
+	    _crossDistFreqs.insert(pair< int, int >(curSep,1));
+	  }
+	  else {
+	    _crossDistFreqs[curSep] += 1;
+	  }
+	  totalCLseps++;
+	  _meanCLsep += (pos_cur - pos_prev);
+	}
+      }
+    }
+    else {
+      std::multiset<double> clLengths;
+      double maxl = -1.0;
+      double minl = 1.0e30;
+      for(int i=0; i<nFils; i++) {
+	Filament * fcur = filament(i);
+	double curDist;
+	bool hitFirstCL = false;
+	int nNodesHere = fcur->nodes.size();
+	for(int fn=0; fn<nNodesHere; fn++) {
+	  DefNode* dn = fcur->nodes[fn];
+	  if(_crossNodeMap.find(dn) != _crossNodeMap.end() || _crosslinkNodes.find(dn) != _crosslinkNodes.end()) {
+	    if(hitFirstCL) {
+	      _meanCLsep += curDist;
+	      stdd += sqr(curDist);
+	      clLengths.insert(curDist);
+	      if(curDist < minl) minl = curDist;
+	      if(curDist > maxl) maxl = curDist;
+	      if(fn!=nNodesHere-1) curDist = fcur->bonds[fn]->getLength();
+	      if(dn == _crossNodeMap[dn]) {
+                int nclsHere = _nSlavesMap[dn]-1;
+		for(int icl=0; icl<nclsHere; icl++) clLengths.insert(0.0);
+              }
+	    }
+	    else {
+	      if(fn!=nNodesHere-1) curDist = fcur->bonds[fn]->getLength();
+	      hitFirstCL = true;
+	      if(dn == _crossNodeMap[dn]) {
+                int nclsHere = _nSlavesMap[dn]-1;
+		for(int icl=0; icl<nclsHere; icl++) clLengths.insert(0.0);
+              }
+            }
+	  }
+	  else {
+	    if(hitFirstCL) {
+	      if(fn!=nNodesHere-1) curDist += fcur->bonds[fn]->getLength();
+	    }
+	  }
+	}
+      }
+      totalCLseps = clLengths.size();
+      stdd /= totalCLseps;
+      stdd = stdd - sqr(_meanCLsep/totalCLseps);
+      stdd = sqrt(stdd);
+      double binwidth = 3.49*stdd/pow(totalCLseps,1.0/3.0);
+      int nBins = (int)((maxl-minl)/binwidth) + 2;
+      double minVal = minl-.5*binwidth;
+      for(int i=0; i<nBins; i++) {
+        multiset<double>::iterator lenItHigh;
+        double curHigh = minVal + (i+1.0)*binwidth;
+        lenItHigh = clLengths.lower_bound(curHigh);
+        int numPts = clLengths.size();
+        clLengths.erase(clLengths.begin(),lenItHigh);
+        _crossDistFreqs.insert(pair<double,int>(curHigh-.5*binwidth,numPts-clLengths.size()));
+      }
+
+      assert(clLengths.size()==0);
+
+    }
+    _meanCLsep /= totalCLseps;
+  }
+
+  template<int N>
+  void SemiflexibleGel<N>::computeFilLenDistro() {
+    _filLenFreqs.clear();
+    _meanFilLen = 0.0;
+    double stdd = 0.0;
+    double minl = 1.0e30;
+    double maxl = -1.0;
+    int nFils = _filaments.size();
+    std::multiset<double> filLengths;
+    for(int i=0; i<nFils; i++) {
+      Filament * fil = filament(i);
+      double dist = 0.0;
+      for(BondIterator bi=fil->bonds.begin(); bi!=fil->bonds.end(); bi++) {
+	dist += (*bi)->getLength();
+      }
+      filLengths.insert(dist);
+      if(dist < minl) minl = dist;
+      if(dist > maxl) maxl = dist;
+      _meanFilLen += dist/nFils;
+      stdd += sqr(dist)/nFils;
+    }
+    stdd = stdd - sqr(_meanFilLen);
+    stdd = sqrt(stdd);
+    double binwidth = 3.49*stdd/pow(nFils,1.0/3.0);
+    int nBins = (int)((maxl-minl)/binwidth) + 2;
+    double minVal = minl-.5*binwidth;
+    for(int i=0; i<nBins; i++) {
+      multiset<double>::iterator lenItHigh;
+      double curHigh = minVal + (i+1.0)*binwidth;
+      lenItHigh = filLengths.lower_bound(curHigh);
+      int numPts = filLengths.size();
+      filLengths.erase(filLengths.begin(),lenItHigh);
+      _filLenFreqs.insert(pair<double,int>(curHigh-.5*binwidth,numPts-filLengths.size()));
+    }
+
+    assert(filLengths.size()==0);
+  }
+
+  template<int N>
+  void SemiflexibleGel<N>::computeNematicDistro() {
+    _nematicFreqs.clear();
+    _nematicOP = 0.0;
+    double avgAng = 0.0;
+    double stdd = 0.0;
+    double minl = -M_PI;
+    double maxl = M_PI;
+    int nFils = _filaments.size();
+    std::multiset<double> filAngles;
+    for(int i=0; i<nFils; i++) {
+      Filament * fil = filament(i);
+      VectorND e2e;
+      e2e = fil->nodes[fil->nodes.size()-1]->point() - fil->nodes[0]->point();
+      double ang = atan2(e2e[1],e2e[0]);
+      filAngles.insert(ang);
+      _nematicOP += cos(2.0*ang)/nFils;
+      avgAng += ang/nFils;
+      stdd += sqr(ang)/nFils;
+    }
+    stdd = stdd - sqr(avgAng);
+    stdd = sqrt(stdd);
+    double binwidth = 3.49*stdd/pow(nFils,1.0/3.0);
+    int nBins = (int)(floor((maxl-minl)/binwidth)+.5);
+    binwidth = (maxl-minl)/nBins;
+    double minVal = minl;
+    for(int i=0; i<nBins; i++) {
+      multiset<double>::iterator lenItHigh;
+      double curHigh = minVal + (i+1.0)*binwidth;
+      lenItHigh = filAngles.lower_bound(curHigh);
+      int numPts = filAngles.size();
+      filAngles.erase(filAngles.begin(),lenItHigh);
+      _nematicFreqs.insert(pair<double,int>(curHigh-.5*binwidth,numPts-filAngles.size()));
+    }
+
+    assert(filAngles.size()==0);
+  }
+
+//   template<int N>
+//   bool SemiflexibleGel<N>::checkCrosslinks() {
+//     // make sure filaments are not doubly-crosslinked //
+//     bool err = false;
+//     int totCL = 0;
+//     for(int i=0; i<_filaments.size(); i++) {
+//       Filament* f1 = filament(i);
+//       DefNodeContainer mastNodes;
+//       for(int n1=0; n1<f1->nodes.size(); n1++) {
+// 	if(_crossNodeMap.find(f1->nodes[n1]) != _crossNodeMap.end()) {
+// 	  mastNodes.push_back(_crossNodeMap[f1->nodes[n1]]);
+// 	}
+//       }
+//       for(int j=i+1; j<_filaments.size(); j++) {
+// 	Filament* f2 = filament(j);
+// 	int nConnex = 0; // number of crosslinks between filaments //
+// 	for(int n2=0; n2<f2->nodes.size(); n2++) {
+// 	  DefNode* curMast;
+// 	  if(_crossNodeMap.find(f2->nodes[n2]) != _crossNodeMap.end()) {
+// 	    curMast = _crossNodeMap[f2->nodes[n2]];
+// 	    for(int ncl=0; ncl<mastNodes.size(); ncl++) {
+// 	      if(mastNodes[ncl] == curMast) {
+// 		nConnex++;
+// 		totCL++;
+// 	      }
+// 	    }
+// 	  }
+// 	}
+// 	if(nConnex>1) {
+// 	  std::cout << "Error: filaments " << i << " and " << j << " are crosslinked " << nConnex << " times." << std::endl;
+// 	  err = true;
+// 	}
+// 	else if(nConnex==1) std::cout << "Filaments " << i << " and " << j << " are crosslinked " << nConnex << " times." << std::endl;
+//       }
+//     }
+//     if(!err) {
+//       std::cout << "All filaments linked 0 or 1 times!" << std::endl << "Total # of crosslinks = " << totCL << "." << std::endl;
+//     }
+//     return err;
+//   }
+//   template<int N>
+//   std::vector< pair< double, double > > & SemiflexibleGel<N>::getAffinityMeasure(double step, double max) {
+//     int nFils = _filaments.size();
+//     std::vector< pair< double, double > > affins;
+//     affins.reserve(max/step+1);
+//     for(int count=0; count<=max/step; count++) {
+//       affins.push_back(pair< double, double >(count*step,0.0));
+//     }
+//     for(int i=0; i<nFils; i++) {
+//       Filament * fcur = filament(i);
+//       for(int j=0; j<=i; j++) {
+// 	Filament * fcur2 = filament(j);
+// 	for(DefNodeIterator fn1=fcur->nodes.begin(); fn1!=fcur->nodes.end(); fn1++) {
+// 	  for(DefNodeIterator fn2=fcur2->nodes.begin(); fn2!=fcur2->nodes.end(); fn2++) {
+// 	    bool sepHit = false;
+// 	    while(!sepHit) {
+	      
+// 	    }
+// 	  }
+// 	}
+//       }
+//     }
+//   }
+
+  template<int N>
+  void SemiflexibleGel<N>::printCLFilDist() {
+    std::map<int,int> CLFilDist;
+    typename std::map<DefNode*,int>::iterator cli = _nSlavesMap.begin();
+    for(cli; cli!=_nSlavesMap.end(); cli++) {
+      int nFilsCL = cli->second + 1;
+      if(CLFilDist.find(nFilsCL) == CLFilDist.end()) CLFilDist.insert(pair<int,int>(nFilsCL,1));
+      else CLFilDist[nFilsCL]++;
+    }
+    std::cout << std::endl << "Printing out distribution of # of filaments in crosslinks." << std::endl << std::endl;
+    std::cout << "# of fils\t# of cls" << std::endl;
+    for(typename map<int,int>::iterator clfdi = CLFilDist.begin(); clfdi!=CLFilDist.end(); clfdi++) {
+      std::cout << clfdi->first << "\t" << clfdi->second << std::endl;
+    }
+    std::cout << std::endl;
+  }
+
+  template<int N>
+  void SemiflexibleGel<N>::printInitialBends() {
+    double meanAng = 0.0;
+    double stdd = 0.0;
+    int nAngs = 0;
+    std::multiset<double> angs;
+    double mina = M_PI;
+    double maxa = -M_PI;
+    for(FilamentIterator fi=_filaments.begin(); fi!=_filaments.end(); fi++) {
+      for(AngleIterator ai=(*fi)->angles.begin(); ai!=(*fi)->angles.end(); ai++) {
+        double angABC = (*ai)->getAngleABC();
+	meanAng += angABC;
+	stdd += sqr(angABC);
+	nAngs++;
+	angs.insert(angABC);
+	if(angABC < mina) mina = angABC;
+	if(angABC > maxa) maxa = angABC;
+      }
+    }
+    meanAng /= nAngs;
+    stdd /= nAngs;
+    stdd -= sqr(meanAng);
+    stdd = sqrt(stdd);
+
+    double binwidth = 3.49*stdd/pow(nAngs,1.0/3.0);
+    int nBins = (int)(floor((maxa-mina)/binwidth)+.5);
+    binwidth = (maxa-mina)/nBins;
+    double minVal = mina;
+    std::cout << "Printing distribution of initial bending angles." << std::endl << std::endl;
+    std::cout << "theta\t#angles" << std::endl;
+    for(int i=0; i<nBins; i++) {
+      multiset<double>::iterator lenItHigh;
+      double curHigh = minVal + (i+1.0)*binwidth;
+      lenItHigh = angs.lower_bound(curHigh);
+      int numPts = angs.size();
+      angs.erase(angs.begin(),lenItHigh);
+      std::cout << curHigh - 0.5*binwidth << "\t" << numPts-angs.size() << std::endl;
+    }
+  }
+};

@@ -18,15 +18,15 @@ namespace voom {
      * 
      * ^ s2 
      * |
-     * 1
+     * 2
      * | \ 
-     * 4  3
+     * 4  6
      * |    \
-     * 2--5--0--> s1
+     * 3--5--1--> s1
      */
-    _functions[3] = 4.0*s(0)*s(1);
-    _functions[4] = 4.0*s(1)*(1.0-s(0)-s(1));
-    _functions[5] = 4.0*s(0)*(1.0-s(0)-s(1));
+    _functions[5] = 4.0*s(0)*s(1);
+    _functions[3] = 4.0*s(1)*(1.0-s(0)-s(1));
+    _functions[4] = 4.0*s(0)*(1.0-s(0)-s(1));
     _functions[0] = s(0)          - 0.5*_functions[3] - 0.5*_functions[5];
     _functions[1] = s(1)          - 0.5*_functions[3] - 0.5*_functions[4];
     _functions[2] = 1.0-s(0)-s(1) - 0.5*_functions[5] - 0.5*_functions[4];

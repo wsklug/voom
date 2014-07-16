@@ -61,9 +61,28 @@ namespace voom
       return;
     }
     
-    virtual double stiffness() const {return _k;}
+    virtual double stiffness() {return _k;}
+    
+    virtual double stiffness(double L) {return _k;}
+
+    virtual double initialStiff() {return _k; }
 
     virtual void setStiffness(double k) { _k = k; }
+
+    virtual double stiffnessChange() {
+      return (stiffness()/stiffness(_d0));
+
+    }
+
+    virtual double strain() {
+      const VectorND & xA = _nodeA->point();
+      const VectorND & xB = _nodeB->point();
+      double d  = norm2(xB-xA);
+
+      return (d-_d0)/_d0;
+    }
+
+    bool checkConsistency() { return true; }
 
     virtual void resetLength() {
       const VectorND & xA = _nodeA->point();
@@ -74,8 +93,14 @@ namespace voom
     
     void resetLength(double d0) { _d0 = d0; }
     
-    double getLength() {
+    virtual double getLength() {
       return _d0;
+    }
+
+    virtual void setLin(double mult) {;}
+
+    virtual bool getLin() {
+      return true;
     }
 
   protected:
@@ -84,6 +109,8 @@ namespace voom
     Node_t * _nodeB;
     double _k;
     double _d0;
+
+    bool _lin;
     
   };
 };

@@ -42,20 +42,22 @@ namespace voom
       //! Return parametric coordinates of nodes.
       /*! Nodal arrangement    \verbatim
 	
+      //! Changed the numbering of nodes to comply with triangle (http://www.cs.cmu.edu/~quake/triangle.highorder.html)
+
       ^ s2 		
       |		
-      1		
+      2		
       | \ 		
-      4  3		
+      4  6		
       |    \		
-      2--5--0--> s1	    \endverbatim
+      3--5--1--> s1	    \endverbatim
       */
       _positions[0] = 1.0, 0.0;
       _positions[1] = 0.0, 1.0;
       _positions[2] = 0.0, 0.0;
-      _positions[3] = 0.5, 0.5;
-      _positions[4] = 0.0, 0.5;
-      _positions[5] = 0.5, 0.0;
+      _positions[5] = 0.5, 0.5;
+      _positions[3] = 0.0, 0.5;
+      _positions[4] = 0.5, 0.0;
 
       compute(s);
     }

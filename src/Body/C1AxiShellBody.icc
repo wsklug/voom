@@ -109,7 +109,10 @@ namespace voom
 			   nds,
 			   _pressureNode,
 			   _tensionNode,
-			   _totalCurvatureNode
+			   _totalCurvatureNode,
+			   _volumeConstraint,
+			   _areaConstraint,
+			   _totalCurvatureConstraint
 			   );
       _shells.push_back(elem);
     }
@@ -200,22 +203,18 @@ namespace voom
     if(f0) {
       _energy = 0.0;
       
-      if( _volumeConstraint == penalty || _volumeConstraint == augmented  ) {
+      if( _volumeConstraint == penalty || _volumeConstraint == augmented ) {
 	_energy += 0.5 * _penaltyVolume * sqr(dV/_prescribedVolume);
       }
-      if( _volumeConstraint == multiplier || 
-	  _volumeConstraint == augmented  ||
-	  _volumeConstraint == noConstraint ) {
+      if( _volumeConstraint == multiplier || _volumeConstraint == augmented ) {
 	_energy += - _fixedPressure * dV;
       }
       
 
       if( _areaConstraint == penalty || _areaConstraint == augmented ) {
-	_energy += 0.5 * _penaltyArea * sqr(dA/_prescribedArea)*_prescribedArea;
+	_energy += 0.5 * _penaltyArea * sqr(dA/_prescribedArea);
       }
-      if( _areaConstraint == multiplier || 
-	  _areaConstraint == augmented  ||
-	  _areaConstraint == noConstraint ) {
+      if( _areaConstraint == multiplier || _areaConstraint == augmented ) {
 	_energy += _fixedTension * dA;
       }
       
@@ -223,9 +222,7 @@ namespace voom
       if( _totalCurvatureConstraint == penalty || _totalCurvatureConstraint == augmented ) {
 	_energy += 0.5 * _penaltyTotalCurvature * sqr(dtc/_prescribedTotalCurvature);
       }
-      if( _totalCurvatureConstraint == multiplier || 
-	  _totalCurvatureConstraint == augmented  ||
-	  _totalCurvatureConstraint == noConstraint ) {
+      if( _totalCurvatureConstraint == multiplier || _totalCurvatureConstraint == augmented ) {
 	_energy += _fixedTotalCurvatureForce * dtc;
       }
 
@@ -234,9 +231,7 @@ namespace voom
     double pressure = 0.0;
     double tension = 0.0;
     double tcForce = 0.0;
-    if( _volumeConstraint == multiplier || 
-	_volumeConstraint == augmented  ||
-	_volumeConstraint == noConstraint ) {
+    if( _volumeConstraint == multiplier || _volumeConstraint ==augmented ) {
       pressure = _fixedPressure;
     }
 
@@ -246,21 +241,17 @@ namespace voom
     }
     _pressureNode->setPoint(pressure);
 
-    if( _areaConstraint == multiplier || 
-	_areaConstraint == augmented  || 
-	_areaConstraint == noConstraint ) {
+    if( _areaConstraint == multiplier || _areaConstraint == augmented ) {
       tension = _fixedTension;
     }
     if( _areaConstraint == penalty || _areaConstraint == augmented ) {
       tension += 
-	_penaltyArea * (_area/_prescribedArea-1.0);
+	_penaltyArea * (_area/_prescribedArea-1.0)/_prescribedArea;
     }
     _tensionNode->setPoint(tension);
 
-    if( _totalCurvatureConstraint == multiplier ||
-	_totalCurvatureConstraint == augmented  ||
-	_totalCurvatureConstraint == noConstraint ) {
-      tcForce = _fixedTotalCurvatureForce;
+    if( _totalCurvatureConstraint == multiplier | _totalCurvatureConstraint == augmented ) {
+      tcForce = _fixedTension;
     }
     if( _totalCurvatureConstraint == penalty || _totalCurvatureConstraint ==augmented ) {
        tcForce += 

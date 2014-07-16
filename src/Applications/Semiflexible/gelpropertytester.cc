@@ -3,12 +3,13 @@
 #include <vector>
 #include <fstream>
 #include <getopt.h>
+#include <dirent.h>
 #include <ctime>
 #include "Node.h"
 #include "SemiflexibleGel.h"
 #include "Model.h"
 #include "Lbfgsb.h"
-//#include "Lbfgs.h"
+#include "Lbfgs.h"
 #include "CGfast.h"
 #include "BrownianRod.h"
 #include <random/uniform.h>
@@ -112,6 +113,10 @@ int main(int argc, char* argv[]) {
   bool prestress = false;
   std::string nemPDFtype = "Gaussian";
 
+  double k_max = -1.0; // maximum stiffness allowed in nonlinear rods (entropic elasticity) //
+  double entropic_k = -1.0;
+  double entropic_Lp = -1.0;
+
   int nGels2avg = 1;
   int curGelNum = -1;
 
@@ -128,6 +133,7 @@ int main(int argc, char* argv[]) {
   double actualL;
   double minLength = 0.0;
 
+  double motorForce = 0.0;
 
   ParamMap pm;
   std::string curString;
@@ -149,7 +155,20 @@ int main(int argc, char* argv[]) {
       int pNameBegin = curString.find_first_not_of('\t',pNameEnd);
       pNameEnd = curString.find_first_of('\t',pNameBegin);
       parValStr.assign(curString,pNameBegin,pNameEnd-pNameBegin);
-      if(parName.find("kT")!=string::npos) {
+      if(parName.find("k_max")!=string::npos) {
+	k_max = atof(parValStr.data());
+	pm.insert(pair< std::string, std::string >("k_max",parValStr));
+	bondType = "EntropicSpring";
+      }
+      else if(parName.find("Entropic_k")!=string::npos) {
+	entropic_k = atof(parValStr.data());
+	pm.insert(pair< std::string, std::string >("Entropic_k",parValStr));
+      }
+      else if(parName.find("Entropic_Lp")!=string::npos) {
+	entropic_Lp = atof(parValStr.data());
+	pm.insert(pair< std::string, std::string >("Entropic_Lp",parValStr));
+      }
+      else if(parName.find("kT")!=string::npos) {
 	kT = atof(parValStr.data());
 	pm.insert(pair< std::string, std::string>("kT",parValStr));
       }
@@ -164,6 +183,10 @@ int main(int argc, char* argv[]) {
       else if(parName.find("kcl")!=string::npos) {
 	kcl = atof(parValStr.data());
 	pm.insert(pair< std::string, std::string >("crosslink stiffness",parValStr));
+      }
+      else if(parName.find("Max_Motor_force")!=string::npos) {
+	motorForce = atof(parValStr.data());
+	pm.insert(pair< std::string, std::string >("motor force",parValStr));
       }
       else if(parName.find("L_p")!=string::npos) L_p = atof(parValStr.data());
       else if(parName.find("kC")!=string::npos) kC = atof(parValStr.data());
@@ -198,7 +221,7 @@ int main(int argc, char* argv[]) {
     std::ostringstream tmpStr;
     tmpStr << setprecision(16) << kC;
     pm.insert(pair< std::string, std::string>("bending modulus",tmpStr.str()));
-    gelFileName.insert(0,gelDirectory);
+    //gelFileName.insert(0,gelDirectory);
 
     gel = new SemiflexibleGel<2>(gelFileName,nodes,bondType,true,pm,minLength);
     box = gel->box();
@@ -253,67 +276,72 @@ int main(int argc, char* argv[]) {
       std::cout << ish*startShear << "\t" << gel->computeBucklingEnergy(ish*startShear,kC,kC/sqr(l_B)) << std::endl;
     }
   }
+
+  // COMMENTED OUT DUE TO VTK LIBRARY ISSUES ON MAC OS 10.6
   
-  std::cout << "Do you want to compute (theoretial) energy versus shear for independent buckling?\n(1) yes\n(2) no\n\n: ";
-  int doAffinityTest;
-  std::cin >> doAffinityTest;
-  if(doAffinityTest==1) {
-    std::cout << "Please input the mean crosslink distance for this gel: ";
-    double cldist;
-    std::cin >> cldist;
-    std::cout << "Please input a step size to use for averaging node displacements: ";
-    double stepSize;
-    std::cin >> stepSize;
-    std::cout << "Please input a maximum box size to use for averaging node displacements: ";
-    double maxLength;
-    std::cin >> maxLength;
-    if(cldist < minLength) cldist = minLength;
+//   std::cout << "Do you want to compute (theoretical) energy versus shear for independent buckling?\n(1) yes\n(2) no\n\n: ";
+//   int doAffinityTest;
+//   std::cin >> doAffinityTest;
+//   if(doAffinityTest==1) {
+//     std::cout << "Please input the mean crosslink distance for this gel: ";
+//     double cldist;
+//     std::cin >> cldist;
+//     std::cout << "Please input a step size to use for averaging node displacements: ";
+//     double stepSize;
+//     std::cin >> stepSize;
+//     std::cout << "Please input a maximum box size to use for averaging node displacements: ";
+//     double maxLength;
+//     std::cin >> maxLength;
+//     if(cldist < minLength) cldist = minLength;
     
-    doublePairContainer affData;
-    doublePairContainer affData2;
-    box->setShear(0.0);
-    affData = gel->affineMeasurement(cldist,stepSize,maxLength,shear,"strain");
-    affData2 = gel->affineMeasurement(cldist,stepSize,maxLength,shear,"rotation");
-    std::cout << "Please enter the name of a file in which to put the affine measurement data: ";
-    char affFileName[256];
-    std::cin >> affFileName;
-    std::ofstream affFile(affFileName);
-    affFile << "#scale\tstrn\trot\n";
-    doublePairContainer::iterator dpi=affData.begin();
-    doublePairContainer::iterator dpi2=affData2.begin();
-    while(dpi!=affData.end() && dpi2!= affData2.end()) {
-      affFile << dpi->first << "\t" << dpi->second << "\t" << dpi2->second << "\n";
-      dpi++;
-      dpi2++;
-    }
-    affFile.close();
-  }
+//     doublePairContainer affData;
+//     doublePairContainer affData2;
+//     box->setShear(0.0);
+//     affData = gel->affineMeasurement(cldist,stepSize,maxLength,shear,"strain");
+//     affData2 = gel->affineMeasurement(cldist,stepSize,maxLength,shear,"rotation");
+//     std::cout << "Please enter the name of a file in which to put the affine measurement data: ";
+//     char affFileName[256];
+//     std::cin >> affFileName;
+//     std::ofstream affFile(affFileName);
+//     affFile << "#scale\tstrn\trot\n";
+//     doublePairContainer::iterator dpi=affData.begin();
+//     doublePairContainer::iterator dpi2=affData2.begin();
+//     while(dpi!=affData.end() && dpi2!= affData2.end()) {
+//       affFile << dpi->first << "\t" << dpi->second << "\t" << dpi2->second << "\n";
+//       dpi++;
+//       dpi2++;
+//     }
+//     affFile.close();
+//   }
 
-  std::cout << "Do you want to compute correlation functions using the triangulated values of the rotation?\n(1) yes\n(2) no\n\n: ";
-  int doAffinityCorrTest;
-  std::cin >> doAffinityCorrTest;
-  if(doAffinityCorrTest==1) {
-    std::cout << "Please input a length scale on which to average: ";
-    double boxsize;
-    std::cin >> boxsize;
-    std::cout << "Please input a maximum length on which to compute correlations: ";
-    double maxLength;
-    std::cin >> maxLength;
-    
-    std::cout << "Please input a the maximum length at which filaments are considered short: ";
-    double maxFL;
-    std::cin >> maxFL;
-//     std::cout << "Please input a file name in which to store the correlation function: ";
-//     char affCorrFN[256];
-//     std::cin >> affCorrFN;
-//     std::string acfn(affCorrFN);
-    
-    box->setShear(shear);
-    gel->compute(true,true,false);
-    box->setShear(0.0);
 
-    gel->computeNonaffinityLengthDensityCorrelation(boxsize,maxLength,maxFL,shear);
-  }
+  // COMMENTED OUT DUE TO VTK LIBRARY ISSUES ON MAC OS 10.6
+
+//   std::cout << "Do you want to compute correlation functions using the triangulated values of the rotation?\n(1) yes\n(2) no\n\n: ";
+//   int doAffinityCorrTest;
+//   std::cin >> doAffinityCorrTest;
+//   if(doAffinityCorrTest==1) {
+//     std::cout << "Please input a length scale on which to average: ";
+//     double boxsize;
+//     std::cin >> boxsize;
+//     std::cout << "Please input a maximum length on which to compute correlations: ";
+//     double maxLength;
+//     std::cin >> maxLength;
+    
+//     std::cout << "Please input a the maximum length at which filaments are considered short: ";
+//     double maxFL;
+//     std::cin >> maxFL;
+// //     std::cout << "Please input a file name in which to store the correlation function: ";
+// //     char affCorrFN[256];
+// //     std::cin >> affCorrFN;
+// //     std::string acfn(affCorrFN);
+    
+//     box->setShear(shear);
+//     gel->compute(true,true,false);
+//     box->setShear(0.0);
+
+//     gel->computeNonaffinityLengthDensityCorrelation(boxsize,maxLength,maxFL,shear);
+//   }
 
   std::cout << "Do you want to compute affinity as a function of length scale (Head/Levine measure)?\n(1) yes\n(2) no\n\n: ";
   int doAffinityTest2;
@@ -403,7 +431,7 @@ int main(int argc, char* argv[]) {
   }
 
 
-  std::cout << "Do you want to compute cross-correlations?\n(1) yes\n(2) no\n\n: ";
+  std::cout << "Do you want to compute nonaffinity/energy/length density cross-correlations?\n(1) yes\n(2) no\n\n: ";
   int doCrossCorr;
   std::cin >> doCrossCorr;
   if(doCrossCorr==1) {
@@ -418,6 +446,124 @@ int main(int argc, char* argv[]) {
     gel->compute(true,true,false);
     box->setShear(0.0);
     gel->computeCrossCorrelations(len,shear,crossCorrFile);
+  }
+
+  std::cout << "Do you want to make a buckling order parameter (MacKintosh/Conti measure) map?\n(1) yes\n(2) no\n\n: ";
+  int doBuckOPMap;
+  std::cin >> doBuckOPMap;
+  if(doBuckOPMap==1) {
+    std::cout << "Please enter a length scale on which to mesh the system: ";
+    double len;
+    std::cin >> len;
+    bool goodVal = true;
+    std::map<double,std::string> shearGelMap;
+    shearGelMap.insert(pair<double,std::string>(0.0,gelFileName));
+    while(goodVal) {
+      std::cout << "Please enter the shear exactly as it appears in the next sheared gel file's name, or simply type DONE to indicate all shear files are exhausted:\n";
+      char shearedFN[256];
+      std::cin >> shearedFN;
+      std::string shearFNandShear(shearedFN);
+      if(shearFNandShear.find("DONE")!=string::npos) goodVal = false;
+      else {
+	double newShear = atof(shearedFN);
+	int spaceEq = gelFileName.find_last_of("=");
+	int spaceDot = gelFileName.find_last_of(".");
+	std::string shearFN(gelFileName);
+	shearFN.replace(spaceEq+1,spaceDot-spaceEq-1,shearFNandShear);
+	shearGelMap.insert(pair<double,std::string>(newShear,shearFN));
+      }
+    }
+
+    tvmet::Vector<double,2> gridSize;
+    gridSize[0] = len;
+    gridSize[1] = len;
+
+    std::cout << "Do you want to compute correlations (this will take more time)?\n(1) yes\n(2) no\n\n: ";
+    int doCorr;
+    std::cin >> doCorr;
+    bool doCorrs = false;
+    if(doCorr==1) doCorrs = true;
+
+    gel->buckleOPCalc(len,shearGelMap,doCorrs);
+
+    box->setShear(0.0);
+  }
+
+  std::cout << "Do you want to make a buckling map?\n(1) yes\n(2) no\n\n: ";
+  int doBuckMap;
+  std::cin >> doBuckMap;
+  if(doBuckMap==1) {
+    std::cout << "Please enter a length scale on which to mesh the system: ";
+    double len;
+    std::cin >> len;
+    std::cout << "At what fraction of bending energy should compressed segments be considered buckled? ";
+    double bfrac;
+    std::cin >> bfrac;
+    std::cout << "Do you want to compute the buckling correlation function, too? ";
+    int dobc;
+    std::cin >> dobc;
+    bool compCF = true;
+    if(dobc!=1) compCF = false;
+    std::cout << "Please enter a file name in which to store the buckling map (leave out the vtk extension): ";
+    char crossCorrFN[256];
+    std::cin >> crossCorrFN;
+    std::string crossCorrFile(crossCorrFN);
+    crossCorrFile += ".vtk";
+    box->setShear(shear);
+    gel->compute(true,true,false);
+    box->setShear(0.0);
+
+    tvmet::Vector<double,2> gridSize;
+    gridSize[0] = len;
+    gridSize[1] = len;
+
+    gel->computeBucklingMap(gridSize,shear,bfrac,crossCorrFile,compCF);
+
+    box->setShear(0.0);
+  }
+
+  std::cout << "Do you want to compute the buckling strain map and correlation?\n(1) yes\n(2) no\n\n: ";
+  int doBuckStrainMap;
+  std::cin >> doBuckStrainMap;
+  if(doBuckStrainMap==1) {
+    std::cout << "Please enter a length scale on which to mesh the system: ";
+    double len;
+    std::cin >> len;
+    std::cout << "At what fraction of bending energy should compressed segments be considered buckled? ";
+    double bfrac;
+    std::cin >> bfrac;
+    bool goodVal = true;
+    std::map<double,std::string> shearGelMap;
+    //shearGelMap.insert(pair<double,std::string>(0.0,gelFileName));
+    while(goodVal) {
+      std::cout << "Please enter the shear exactly as it appears in the next sheared gel file's name, or simply type DONE to indicate all shear files are exhausted:\n";
+      char shearedFN[256];
+      std::cin >> shearedFN;
+      std::string shearFNandShear(shearedFN);
+      if(shearFNandShear.find("DONE")!=string::npos) goodVal = false;
+      else {
+	double newShear = atof(shearedFN);
+	int spaceEq = gelFileName.find_last_of("=");
+	int spaceDot = gelFileName.find_last_of(".");
+	std::string shearFN(gelFileName);
+	shearFN.replace(spaceEq+1,spaceDot-spaceEq-1,shearFNandShear);
+	shearGelMap.insert(pair<double,std::string>(newShear,shearFN));
+      }
+    }
+
+    tvmet::Vector<double,2> gridSize;
+    gridSize[0] = len;
+    gridSize[1] = len;
+
+    std::cout << "Do you want to compute correlations (this will take more time)?\n(1) yes\n(2) no\n\n: ";
+    int doCorr;
+    std::cin >> doCorr;
+    bool doCorrs = false;
+    if(doCorr==1) doCorrs = true;
+
+    gel->cooperativeBuckleMeasure(len,bfrac,l_B,shearGelMap,doCorrs);
+
+    box->setShear(0.0);
   }
 
   std::cout << "Do you want to compute the fraction of energy in filaments parallel and perpendicular to the shear?\n(1) yes\n(2) no\n\n: ";
@@ -541,6 +687,224 @@ int main(int argc, char* argv[]) {
     affEnFile.close();
   }
 
+  std::cout << "Do you want to test the nonlinear springs?\n(1) yes\n(2) no\n\n: ";
+  int doNLST;
+  std::cin >> doNLST;
+  if(doNLST == 1) {
+    std::vector<int> dofim(2);
+    dofim[0] = 0;
+    dofim[1] = 1;
+    int id = 0;
+    tvmet::Vector<double,2> p1,p2;
+    p1[0] = 0.0;
+    p1[1] = 0.0;
+    p2[0] = 0.1;
+    p2[1] = 0.0;
+    double L0 = norm2(p2-p1);
+    id++;
+    dofim[0] += 2;
+    dofim[1] += 2;
+    BrownianNode<2> * node1 = new BrownianNode<2>(id,dofim,p1,p1);
+    BrownianNode<2> * node2 = new BrownianNode<2>(id,dofim,p2,p2);
+
+    std::cout << "L0 = " << L0 << std::endl
+	      << "Lp = ";
+    
+    double Lp;
+    std::cin >> Lp;
+    
+    std::cout << "entrop_k = ";
+
+    double entropk;
+    std::cin >> entropk;
+
+    std::cout << "mu = ";
+    double mu;
+    std::cin >> mu;
+
+    EntropicSpring<2> * newESpring = new EntropicSpring<2>(node1,node2,entropk,Lp,L0,mu);
+
+    std::cout << "File in which to store spring data: ";
+
+    char fn[256];
+    std::cin >> fn;
+
+    std::string fname(fn);
+
+    newESpring->printOutVals(fname);
+
+    newESpring->checkConsistency();
+
+    delete newESpring;
+  }
+
+  std::cout << "Do you want to compute the energy of the gel?\n(1) yes\n(2) no\n\n: ";
+  int doEnergyCalc;
+  std::cin >> doEnergyCalc;
+  if(doEnergyCalc==1) {
+    box->setShear(shear);
+    gel->compute(true,true,false);
+    std::cout << shear << "\t" << gel->energy() << "\t" << gel->filenergy() << "\t" << gel->bendingenergy() << "\t" << gel->stretchingenergy()<< "\t" << gel->crosslinkenergy() << "\t" << gel->motorenergy() << "\t" << gel->pinchenergy() << std::endl;
+    box->setShear(0.0);
+  }
+
+  std::cout << "Do you want to minimize the energy in an old gel?\n(1) yes\n(2) no\n\n: ";
+  int doEnergyMinCalc;
+  std::cin >> doEnergyMinCalc;
+  if(doEnergyMinCalc==1) {
+    box->setShear(0.0);
+    gel->compute(true,true,false);
+    std::cout << "Sanity check: gel energy at zero shear = " << gel->energy() << std::endl;
+    Model::NodeContainer modelnodes;
+    modelnodes.reserve( nodes.size() );
+    for(SemiflexibleGel<2>::DefNodeIterator n=nodes.begin(); n!=nodes.end(); n++) {
+      modelnodes.push_back( *n );
+    }
+    Model model(modelnodes);
+    model.pushBackBody( gel );
+    
+    int m=7;
+    double factr=1.0e7;
+    double pgtol=1.0e-5;
+    double gtol = 1.0e-5;
+    int iprint = 100;
+    int maxiter = 1500000;
+    Solver * solver;
+
+//     ifstream lbfgsbinp("lbfgsb.inp");
+//     lbfgsbinp >> iprint >> factr >> pgtol >> m ;
+//     if(verbose) {
+//       std::cout << "Input iprint: " << iprint << std::endl
+// 		<< "Input factr: " << factr << std::endl
+// 		<< "Input pgtol: " << pgtol << std::endl
+// 		<< "Input m: " << m << std::endl;
+//     }
+    solver = new Lbfgsb(model.dof(),m,factr,pgtol,iprint,maxiter);
+
+    std::cout << "Enter a shear value: ";
+    double shearin;
+    std::cin >> shearin;
+
+    box->setShear(shearin);
+    guessAffineShearX(gel,shearin);
+    solver->solve(&model);
+    
+    gel->compute(true,true,false);
+    std::cout << shearin << "\t" << gel->energy() << "\t" << gel->filenergy() << "\t" << gel->bendingenergy() << "\t" << gel->stretchingenergy()<< "\t" << gel->crosslinkenergy() << "\t" << gel->motorenergy() << "\t" << gel->pinchenergy() << std::endl;
+    box->setShear(0.0);
+  }
+
+//   std::cout << "Do you want to run a consistency check on entropic springs?\n(1) yes\n(2) no\n: ";
+//   int doConsCheck;
+//   std::cin >> doConsCheck;
+//   if(doConsCheck && bondType == "EntropicSpring") {
+//     SemiflexibleGel<2>::Filament * Fil;
+//     int nFils = gel->filaments().size();
+//     for(int numfil=0; numfil<nFils; numfil++) {
+//       Fil = gel->filament(numfil);
+//       int nESprings = Fil->bonds.size();
+//       for(int numsp=0; numsp<nESprings; numsp++) {
+// 	bool consist = Fil->bonds[numsp]->checkConsistency();
+// 	if(!consist) std::cout << "Filament " << numfil << ", bond " << numsp << " is inconsistent!" << std::endl;
+//       }
+//     }
+//   }
+
+  std::cout << "Do you want to make a solution movie/see when nodes converged?\n(1) yes\n(2) no\n: ";
+  int doSolMovie;
+  std::cin >> doSolMovie;
+  if(doSolMovie==1) {
+    char runDirName[256];
+    sprintf(runDirName,"Run%d",runNum);
+    DIR* runDir = opendir(runDirName);
+    std::map<int,std::string> stateFiles;
+    if(runDir!=0) {
+      struct dirent* newFile = readdir(runDir);
+      while(newFile!=0) {
+	char* stateFileName = newFile->d_name;
+	std::string stateFileNameStr(stateFileName);
+	if(stateFileNameStr.find("lbfgsbiter")!=string::npos) {
+	  int iterStart = stateFileNameStr.find_first_of("0123456789");
+	  int iterEnd = stateFileNameStr.find_first_not_of("0123456789",iterStart);
+	  int iterNumber = atoi(stateFileNameStr.substr(iterStart,iterEnd-iterStart).data());
+	  stateFiles.insert(pair<int,std::string>(iterNumber,stateFileNameStr));
+	}
+	newFile = readdir(runDir);
+      }
+
+      std::cout << "Read in data on " << stateFiles.size() << " solution snapshots." << std::endl;
+
+      std::vector< tvmet::Vector<double,2> > finalPositions;
+      int nGelFils = gel->filaments().size();
+      for(int ngf=0; ngf<nGelFils; ngf++) {
+	int nGelNodes = gel->filament(ngf)->nodes.size();
+	for(int ngn=0; ngn<nGelNodes; ngn++) {
+	  finalPositions.push_back(gel->filament(ngf)->nodes[ngn]->point());
+	}
+      }
+      
+      std::map<int,std::string>::iterator sfiter = stateFiles.begin();
+      for(sfiter; sfiter!=stateFiles.end(); sfiter++) { 
+	gelFileName = sfiter->second;
+	//gelFileName.insert(0,gelDirectory);
+	SemiflexibleGel<2>::DefNodeContainer newNodes;
+	SemiflexibleGel<2>* newGel = new SemiflexibleGel<2>(gelFileName,newNodes,bondType,true,pm,minLength);
+
+	newGel->setBox(box);
+	newGel->makeFinalPosMap(finalPositions);
+
+	char gelStoreName[256];
+	sprintf(gelStoreName,"lbfgsb-iter%d",sfiter->first);
+	std::string gelSN(gelStoreName);
+	box->setShear(shear);
+	newGel->compute(true,true,false);
+	std::cout << "Gel energy = " << newGel->energy() << std::endl;
+	//gel->print(gelStoreName);
+	output.printGel(newGel,gelStoreName);
+	box->setShear(0.0);
+	delete newGel;	
+      }
+      
+    }
+
+    else {
+      std::cout << "Error: could not open directory " << runDirName << " with solution snapshots." << std::endl;
+    }
+
+  }
+
+  std::cout << "Do you want to write out segment connectivity data?\n(1) yes\n(2) no\n: ";
+  int doSegConn;
+  std::cin >> doSegConn;
+  if(doSegConn==1) {
+    std::cout << "Please enter a file name in which to store the segment connectivity data: ";
+    char gelConnName[256];
+    std::cin >> gelConnName;
+    std::string gelCN(gelConnName);
+
+    gel->printConnectionData(gelCN);
+  }
+
+  std::cout << "Do you want to write out a list of segments that have stiffened by at least some amount?\n(1) yes\n(2) no\n: ";
+  int doSegWrite;
+  std::cin >> doSegWrite;
+  if(doSegWrite==1) {
+    double minStiff;
+    std::cout << "By what minimum factor should filaments have stiffened to be considered for inclusion? ";
+    std::cin >> minStiff;
+
+    char stiffSegFile[256];
+    std::cout << "Enter the name of a file in which to store the stiff segments: ";
+    std::cin >> stiffSegFile;
+    std::string stiffSF(stiffSegFile);
+    
+    box->setShear(shear);
+    gel->compute(true,true,false);
+
+    gel->printStiffenedSegments(stiffSF,minStiff);
+  }
+
+
   std::cout << "Do you want to store the state of the gel to a vtk file for later Paraview visualization?\n(1) yes\n(2) no\n: ";
   int doStore;
   std::cin >> doStore;
@@ -552,8 +916,39 @@ int main(int argc, char* argv[]) {
     box->setShear(shear);
     gel->compute(true,true,false);
     std::cout << "Gel energy = " << gel->energy() << std::endl;
-    gel->print(gelStoreName);
+    //gel->print(gelStoreName);
+    output.printGel(gel,gelStoreName);
     box->setShear(0.0);
+  }
+
+  std::cout << "Do you want to create an abaqus input file for this gel?\n(1) yes\n(2) no\n: ";
+  int doAba;
+  std::cin >> doAba;
+  if(doAba==1) {
+    std::cout << "Please enter a file name in which to store the gel's state for abaqus (do not provide an extension, please): ";
+    char gelStoreName[256];
+    std::cin >> gelStoreName;
+    std::string gelSN(gelStoreName);
+    gelSN += ".inp";
+    box->setShear(0.0);
+    std::cout << "Please enter the value of mu to use: ";
+    char muchar[256];
+    std::cin >> muchar;
+    std::cout << "Please enter the value of l_B to use: ";
+    char lBchar[256];
+    std::cin >> lBchar;
+    double mu4ab = atof(muchar);
+    double lB4ab = atof(lBchar);
+    std::cout << "Do you want to create nodes at the edges or use a 'ghost' node to enforce proper displacements?\n(1) edge pin\n(2) ghost node\n:";
+    int method;
+    std::cin >> method;
+    double minL;
+    if(method==1) {
+      std::cout << "Please enter a minimum segment length: ";
+      std::cin >> minL;
+    }
+    else minL = 0.0;
+    gel->printforAbaqus(gelSN,mu4ab,lB4ab,minL,method);
   }
   
 }

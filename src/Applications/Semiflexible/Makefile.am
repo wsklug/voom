@@ -1,4 +1,4 @@
-bin_PROGRAMS    = brownian box boxnl relax periodicbox translate shear triangulate trianglestrain
+bin_PROGRAMS    = brownian box boxnl relax periodicbox translate shear affinetest nematictest gelpropertytester rodliquid
 AM_CPPFLAGS =-I$(srcdir)/../../       		\
 		-I$(srcdir)/../../Body/		\
 		-I$(srcdir)/../../Model/		\
@@ -24,9 +24,10 @@ AM_LDFLAGS = -L$(blitz_libraries) \
         -L../../Shape/			\
         -L../../Elements/		\
 	-L../../VoomMath/		\
-	-L../../Mesh/			
-LDADD=	-lblitz              		\
-        -lBody                    	\
+	-L../../Mesh/			\
+	-L../../Elements/
+#
+LDADD	= -lblitz              		\
         -lMaterials                    	\
 	-lModel                        	\
 	-lSolvers                      	\
@@ -36,23 +37,11 @@ LDADD=	-lblitz              		\
 	-lElements			\
 	-lVoomMath				\
 	-lMesh				\
-	-lvtkIO 			\
-	-lvtkGraphics			\
-	-lvtkGenericFiltering 		\
-	-lvtkFiltering 			\
-	-lvtkRendering			\
-	-lvtkCommon 			\
-	-lvtksys			\
-        -lvtkIO                         \
-        -lvtkGraphics                   \
-        -lvtkGenericFiltering           \
-        -lvtkFiltering                  \
-        -lvtkRendering                  \
-        -lvtkCommon                     \
-        -lvtksys                        \
 	-llapack			\
 	-lblas				\
-	-lifport -lifcore
+	-lgfortran			\
+	-lpthread			\
+	-ldl
 #
 brownian_SOURCES    =  brownian.cc 
 #
@@ -68,5 +57,10 @@ translate_SOURCES    =  translate.cc GelOutput.cc
 #
 shear_SOURCES    =  shear.cc GelOutput.cc
 #
-triangulate_SOURCES = triangulate.cc
-
+affinetest_SOURCES    =  affinetest.cc GelOutput.cc
+#
+nematictest_SOURCES    =  nematictest.cc GelOutput.cc
+#
+gelpropertytester_SOURCES    =  gelpropertytester.cc GelOutput.cc
+#
+rodliquid_SOURCES    =  rodliquid.cc GelOutput.cc

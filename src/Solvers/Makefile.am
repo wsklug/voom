@@ -20,8 +20,11 @@ libSolvers_a_SOURCES=		\
 	ViscousRelaxation.cc 	\
 	Lbfgsb.cc		\
 	lbfgsb-routines.f	\
+	Lbfgs.cc		\
+	lbfgs-routines.f	\
 	CGfast.cc 		\
 	SimulatedAnnealing.cc	\
 	CgDescent.cc		\
 	cg_descent.c		\
-	BrownianDynamics.cc
+	BrownianDynamics.cc	\
+	BrownianMotorDynamics.cc

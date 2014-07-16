@@ -159,7 +159,7 @@ namespace voom
     void checkPositions();
 		
     //! recompute the reference geometry and send it to materials
-    void updateRefConfiguration(double edgeLength=-1.0);
+    void updateRefConfiguration();
 
 //     void setCytoSpring(double new_mu, double new_kS, double new_kSpring){
 //       for(QuadPointIterator p=_quadPoints.begin(); p!=_quadPoints.end(); p++){

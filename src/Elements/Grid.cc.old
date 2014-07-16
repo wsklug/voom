@@ -1,0 +1,37 @@
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                          Andrew R. Missel
+//                University of California Los Angeles
+//                   (C) 2009 All Rights Reserved
+//
+//----------------------------------------------------------------------
+
+#include "Grid.h"
+
+namespace voom {
+  template<class T>
+  void Grid<T,2>::getNeighborIndices(VectorNI & gcs, IndexList & idxs) {
+    idxs.clear();
+    for(int ix=-1;ix<2;ix++) {
+      for(int iy=-1;iy<2;iy++) {
+	if(ix!=0 || iy!=0) {
+	  VectorNI tmpInd;
+	  tmpInd[0] = (gcs[0]+ix+_nBoxes[0])%_nBoxes[0];
+	  tmpInd[1] = (gcs[1]+iy+_nBoxes[1])%_nBoxes[1];
+	  idxs.push_back(getBoxIndex(tmpInd));
+	}
+      }
+    }
+  }
+
+  template<int N>
+  VectorND Grid<SemiflexibleGel<N>::Filament,N>::getElemPos(SemiflexibleGel<N>::Filament * f) {
+    VectorND fpos;
+    int nNodes = f->nodes.size();
+    fpos = f->nodes[0]->point() + f->nodes[nNodes-1]->point();
+    fpos /= 2.0;
+    return fpos;
+  }
+
+};

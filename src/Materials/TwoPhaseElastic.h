@@ -54,13 +54,6 @@ namespace voom
     double _epsilon;//determine the width of the region of transition between phases, length scale
     double _h;      //height of barrier between teh two minima of psi(c)
 
-    double _C; // GL order-parameter field
-    Vector2D _dC; // GL order-parameter gradient
-
-    tvmet::Vector< Vector3D, 3 > _nC; // concentration stress resultants
-    double _muC; // chemical resultants 
-    Vector2D  _muDC;// chemical gradient resultants
-
   public:
 
     TwoPhaseElastic(const double kC1, const double kG1, const double C01, const double kC2, const double kG2, const double C02, double mu, const double kS, const double epsilon, const double h) 
@@ -86,11 +79,8 @@ namespace voom
     
     }
 
-    void setConcentration(const double& C, const Vector2D & dC) 
-    {
-      _C = C; 
-      _dC = dC;
-    }
+
+
 
   };
   

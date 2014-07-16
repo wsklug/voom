@@ -67,13 +67,6 @@ namespace voom
     virtual double getStiffness(int ia) const { return 0; }
     virtual void setStiffness(int ia, double k) {};
     virtual void addStiffness(int ia, double k) {};    
-
-    virtual double getMass() const {return 0;}
-
-    virtual void setMass(double m) {};
-    
-    virtual void addMass(double m) {};
-    
     
     //! assign id
     virtual void setId( const int i ) { _id = i; }

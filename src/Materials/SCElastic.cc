@@ -74,17 +74,10 @@ namespace voom
     //          negative mean curvature (_H), -1/R, I believe that the operatore should be "+"
     double twoHminusC0 = 2.0*_H /* + */ - _C0;
 
-    // compute strain energy
-
-    // will need energy if either energy or force is requested.
-    
-    double W =  0.5 * _kC * twoHminusC0 * twoHminusC0 + _kG * _K;
-    // include effect of spontaneous curvature on Gauss term
-    W += _kG * ( - _C0*_H + 0.25*_C0*_C0 );
-
-
     if( f0 ) {
-      _W = W;
+      // compute strain energy
+      _W =  0.5 * _kC * twoHminusC0 * twoHminusC0;
+      _W += _kG * _K;
     }
 		
     if( f1 ) {
@@ -92,15 +85,15 @@ namespace voom
       // -------------- stress resultants --------------
       _n(0) = _kC * twoHminusC0 * 
 	( aInv(0,0) * dPartials(0) + 
-	  aInv(0,1) * dPartials(1) );
-
-      _n(0) += W*dual(0);
+	  aInv(0,1) * dPartials(1) )
+	+ 0.5 * _kC * twoHminusC0 * twoHminusC0 * dual(0) ;
+      _n(0) += _kG*_K*dual(0);
 
       _n(1) = _kC * twoHminusC0 * 
 	( aInv(1,0) * dPartials(0) + 
-	  aInv(1,1) * dPartials(1) );
-
-      _n(1) += W*dual(1);
+	  aInv(1,1) * dPartials(1) )
+	+ 0.5 * _kC * twoHminusC0 * twoHminusC0 * dual(1) ;
+      _n(1) += _kG*_K*dual(1); 
 
       for(int beta=0; beta<2; beta++) {
 	for(int alpha=0; alpha<2; alpha++) {
@@ -124,18 +117,6 @@ namespace voom
 	  _m(beta) += _kG*mixedCurvatureTensor(beta,alpha)*dual(alpha);
 	}
       }
-
-      // include effect of spontaneous curvature on Gauss terms
-      _n(0) -= 0.5*_kG*_C0 * 
-	( aInv(0,0) * dPartials(0) + 
-	  aInv(0,1) * dPartials(1) );
-      _n(1) -= 0.5*_kG*_C0 *
-	( aInv(1,0) * dPartials(0) + 
-	  aInv(1,1) * dPartials(1) );
-
-      _m(0) += 0.5 * _kG * _C0 * dual(0);
-      _m(1) += 0.5 * _kG * _C0 * dual(1);
-
     }
 
     return;

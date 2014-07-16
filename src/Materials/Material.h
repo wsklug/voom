@@ -51,8 +51,6 @@ class Material
   virtual const Tensor3D & cauchyStress() const { return _C; }
   virtual double vonMisesStress() const { return _vMises; }
 
-  virtual Material * copy() = 0;
-
  protected:
   double _W; // Energy Density
   Tensor3D _F; // Deformation Gradient

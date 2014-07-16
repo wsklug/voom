@@ -1,0 +1,179 @@
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                         William S. Klug
+//                University of California Los Angeles
+//                 (C) 2004-2008 All Rights Reserved
+//
+//----------------------------------------------------------------------
+
+#if !defined(__Crosslink_h__)
+#define __Crosslink_h__
+
+#include "Node.h"
+#include "Element.h"
+#include "VoomMath.h"
+#include "Spring.h"
+#include <iostream>
+#include "PeriodicBox.h"
+
+using namespace tvmet;
+using namespace std;
+using namespace voom;
+
+namespace voom
+{
+
+  template<int N>
+  class Crosslink : public Element {
+    
+  public: 
+
+    typedef tvmet::Vector<double,N> VectorND;
+    typedef BrownianNode<N> Node_t;
+    typedef std::vector< Node_t*> Node_tContainer;
+    typedef typename Node_tContainer::iterator Node_tIterator;
+
+<<<<<<< .mine
+    Crosslink(double k) : _k(k), _d0(0.0) {}
+
+    Crosslink(Node_t * node1A, Node_t * node1B, Node_t * node2A, Node_t * node2B, double epsi1, double epsi2, double k) 
+      : _node1A(node1A), _node1B(node1B), _node2A(node2A), _node2B(node2B), _epsi1(epsi1), _epsi2(epsi2), _k(k) { 
+      
+      const VectorND & x1A = _node1A->point();
+      const VectorND & x1B = _node1B->point();
+      const VectorND & x2A = _node2A->point();
+      const VectorND & x2B = _node2B->point();
+=======
+    Crosslink(Node_t * node1A, Node_t * node1B, Node_t * node2A, Node_t * node2B, double epsi1, double epsi2, double k, PeriodicBox * box) 
+      : _node1A(node1A), _node1B(node1B), _node2A(node2A), _node2B(node2B), _epsi1(epsi1), _epsi2(epsi2), _k(k), _box(box) { 
+      //changed from const & to variables
+      VectorND x1A = _node1A->point();
+      VectorND x1B = _node1B->point();
+      VectorND x2A = _node2A->point();
+      VectorND x2B = _node2B->point();
+>>>>>>> .r694
+
+      //Periodic BC
+      _box->rod(x1A,x1B);
+      _box->rod(x2A,x2B);
+
+      int a = 0;
+      int id = a;
+      BrownianNode<2>::Point X;
+      //X = 0.0 , 0.0;
+      X = x1A*(1-_epsi1)+x1B*_epsi1;
+      NodeBase::DofIndexMap idx(2);
+      idx[0]=2*a; idx[1]=2*a+1;
+      _node1 = new Node_t(id,idx,X,X);
+      _node1->setId(id);
+
+      a = a+1;
+      id = a;
+      X = x2A*(1-_epsi2)+x2B*_epsi2;
+      idx[0]=2*a; idx[1]=2*a+1;
+      _node2 = new Node_t(id,idx,X,X);
+      _node2->setId(id);
+
+      _d0=0.0;
+    }
+
+    void setPosition(Node_t * node1A, Node_t * node1B, Node_t * node2A, Node_t * node2B, double epsi1, double epsi2) {
+      _node1A = node1A; 
+      _node1B = node1B; 
+      _node2A = node2A;
+      _node2B = node2B; 
+      _epsi1 = epsi1; 
+      _epsi2 = epsi2;
+
+      const VectorND & x1A = _node1A->point();
+      const VectorND & x1B = _node1B->point();
+      const VectorND & x2A = _node2A->point();
+      const VectorND & x2B = _node2B->point();
+
+      int a = 0;
+      int id = a;
+      BrownianNode<2>::Point X;
+      //X = 0.0 , 0.0;
+      X = x1A*(1-_epsi1)+x1B*_epsi1;
+      NodeBase::DofIndexMap idx(2);
+      idx[0]=2*a; idx[1]=2*a+1;
+      _node1 = new Node_t(id,idx,X,X);
+      _node1->setId(id);
+
+      a = a+1;
+      id = a;
+      X = x2A*(1-_epsi2)+x2B*_epsi2;
+      idx[0]=2*a; idx[1]=2*a+1;
+      _node2 = new Node_t(id,idx,X,X);
+      _node2->setId(id);
+    }
+
+    void compute(bool f0, bool f1, bool f2) {
+
+      VectorND x1A = _node1A->point();
+      VectorND x1B = _node1B->point();
+      VectorND x2A = _node2A->point();
+      VectorND x2B = _node2B->point();
+
+      //Periodic BC
+      _box->rod(x1A,x1B);
+      _box->rod(x2A,x2B);
+      
+      for(int i=0; i<N; i++) {	  
+
+        double p1 = x1A(i)*(1-_epsi1)+x1B(i)*_epsi1;
+        double p2 = x2A(i)*(1-_epsi2)+x2B(i)*_epsi2;
+        _node1->setPoint(i, p1);
+	_node2->setPoint(i, p2);
+      }
+ 
+      const VectorND & x1 = _node1->point();
+      const VectorND & x2 = _node2->point();
+      double d  = norm2(x2-x1);
+      
+      if(f0) {
+	_energy = 0.5*_k*sqr(d-_d0);
+      }
+      
+      if(f1) {	
+	for(int i=0; i<N; i++) {
+	  double f = -_k*(d-_d0)*(x1(i)-x2(i))/d;
+	  _node1A->addForce(i, -f*(1-_epsi1));
+          _node1B->addForce(i, -f*_epsi1);
+          _node2A->addForce(i, f*(1-_epsi2));
+	  _node2B->addForce(i, f*_epsi2);
+	}
+      }
+      return;
+    }
+    
+    double stiffness() const {return _k;}
+
+    void setStiffness(double k) { _k = k; }
+
+    Node_tContainer getNodes(){
+      Node_tContainer nodes;
+      nodes.push_back(_node1);
+      nodes.push_back(_node2);
+      return nodes;
+    }
+
+  private:
+    
+    Node_t * _node1;
+    Node_t * _node2;
+    Node_t * _node1A;
+    Node_t * _node1B;
+    Node_t * _node2A;
+    Node_t * _node2B;
+    double _epsi1;
+    double _epsi2;
+    double _k;
+    double _d0;
+    PeriodicBox * _box;
+    
+  };
+};
+
+#endif // __Crosslink_h__

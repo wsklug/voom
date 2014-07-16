@@ -10,7 +10,6 @@
 #include <string>
 #include <fstream>
 #include <blitz/array-impl.h>
-#include <boost/lexical_cast.hpp>
 
 #if defined(_OPENMP)
 #include <omp.h>
@@ -109,6 +108,7 @@ namespace voom
   template< class Quadrature_t, class Material_t, class Shape_t >
   void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::compute( bool f0, bool f1, bool f2 )
   {
+
     int eBegin=0, eEnd=_elements.size();
     int sBegin=0, sEnd=_membranes.size();
 #ifdef WITH_MPI
@@ -274,27 +274,73 @@ namespace voom
 	
   //! create input file used by Paraview, a 3D viewer
   template<class Quadrature_t, class Material_t, class Shape_t>
-  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::printParaview(std::string name) const
+  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::printParaview(const std::string name) const
   {
 
     int numShells = _membranes.size();
     
     blitz::Array<double,1> energy(blitz::shape(numShells));
+    blitz::Array<double,1> curvature(blitz::shape(numShells));
 
     energy = 0.0;
+    curvature = 0.0;
 
+#ifdef WITH_MPI
+    int eBegin=0, eEnd=0;
+    MPE_Decomp1d( _membranes.size(), _nProcessors, _processorRank, 
+		  &eBegin, &eEnd );
+    eBegin--;
+#endif
+
+#ifdef WITH_MPI
+    for(int e=eBegin; e<eEnd && e<_membranes.size(); e++) {
+	const MembraneElement_t*const*const pe=&(_membranes[e]);
+#else
     ConstMembraneElementIterator pe = _membranes.begin();
     for ( int e = 0; pe != _membranes.end(); pe++, e++) {
+#endif
       int npts=0;
       typename MembraneElement_t::ConstQuadPointIterator 
 	p = (*pe)->quadraturePoints().begin();
       for( ; p != (*pe)->quadraturePoints().end(); p++){
 	energy(e) += p->material.energyDensity();
+	curvature(e) += p->material.meanCurvature();
 	npts++;
       }
       energy(e) /= (double)( npts );
+      curvature(e) /= (double)( npts );
     }
 
+// //     char pid[30]; 
+// //     sprintf(pid, "%d", _processorRank);
+// //     std::string dataName = name + ".printData." + pid;
+// //     std::ofstream dataStream(dataName.c_str());
+// //     dataStream << energy << std::endl
+// // 	       << curvature << std::endl;
+// //     dataStream.close();
+
+// #ifdef WITH_MPI
+//     blitz::Array<double,1> globalsum(blitz::shape(numShells));
+//     globalsum = 0.0;
+//     MPI_Reduce(energy.data(), globalsum.data(), energy.size(), 
+// 	       MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+//     blitz::cycleArrays(energy,globalsum);
+//     MPI_Reduce(curvature.data(), globalsum.data(), curvature.size(), 
+// 	       MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+//     blitz::cycleArrays(curvature,globalsum);
+// #endif
+
+// #ifdef WITH_MPI
+//     if(_processorRank!=0) {
+//       return;
+//     }
+// #endif
+
+// //     dataName = name + ".printData.sum";
+// //     dataStream.open(dataName.c_str());
+// //     dataStream << energy << std::endl
+// // 	       << curvature << std::endl;
+// //     dataStream.close();
 
     std::string fileName = name + ".vtk";
     std::ofstream ofs(fileName.c_str());
@@ -313,7 +359,7 @@ namespace voom
     ofs << "# vtk DataFile Version 2.0\n"
 	<< "Test example" << std::endl
 	<< "ASCII" << std::endl
-	<< "DATASET UNSTRUCTURED_GRID" << std::endl
+	<< "DATASET POLYDATA" << std::endl
 	<< "POINTS  " << _membraneNodes.size() << "  double" << std::endl;
     
     //
@@ -335,35 +381,19 @@ namespace voom
     for(int e=0; e<_membranes.size(); e++) {
       if(_active[e]) nActiveMembranes++;
     }
-
-    int nodes_per_element = _membranes[0]->nodes().size();
-
-    ofs << "CELLS  " << nActiveMembranes << "  "
-	<<  (nodes_per_element+1)*nActiveMembranes << std::endl;
+    ofs << "POLYGONS  " << nActiveMembranes << "  "
+	<< 4*nActiveMembranes << std::endl;
     for(int e=0; e<_membranes.size(); e++) {
       if(!_active[e])  continue;
       const MembraneElement_t * pe = _membranes[e];
       const typename MembraneElement_t::NodeContainer & pnc = (pe)->nodes();
-      ofs << nodes_per_element << "  ";
-      for(int a=0; a<nodes_per_element; a++) {      
-	ofs << std::setw(10) << pnc[a] -> id();
-      }
-      ofs << std::endl;
+      ofs << 3 << "  "
+	  << std::setw(10) << pnc[0] -> id()
+	  << std::setw(10) << pnc[1] -> id()
+	  << std::setw(10) << pnc[2] -> id()
+	  << std::endl;
     }
 
-    int vtk_cell_type=0;
-    if( nodes_per_element == 3 ) {
-      // 3-node triangle
-      vtk_cell_type = 5;
-    } else if( nodes_per_element == 6 ) {
-      // 6-node triangle
-      vtk_cell_type = 22;
-    } 
-    
-    ofs << "CELL_TYPES  " << nActiveMembranes << std::endl;
-    for(int f=0; f<nActiveMembranes; f++) {
-      ofs << vtk_cell_type << std::endl;
-    }
 
      	
     //////////////////////////////////////////////////////////////////////////
@@ -381,95 +411,6 @@ namespace voom
       ofs << energy(e) << std::endl;
     }
     ofs << std::endl;
-
-
-    ofs << "FIELD FieldData " << 2*_stressDirections.size() << std::endl;
-    // 
-    // output Normal Cauchy stresses along stress directions 
-    // 
-    // on second thought, make that 2nd-PK stresses
-    //
-    for(int i=0; i<_stressDirections.size(); i++) {
-
-      std::string stressName = "S";
-      std::string strainName = "E";
-      stressName += boost::lexical_cast<std::string>( i );
-      strainName += boost::lexical_cast<std::string>( i );
-
-      blitz::Array<double,1> stress(blitz::shape(numShells));
-      blitz::Array<double,1> strain(blitz::shape(numShells));
-
-      stress = 0.0;
-      strain = 0.0;
-
-
-      ConstMembraneElementIterator pe = _membranes.begin();
-      for ( int e = 0; pe != _membranes.end(); pe++, e++) {
-
-	int npts=0;
-	typename MembraneElement_t::ConstQuadPointIterator 
-	  p = (*pe)->quadraturePoints().begin();
-	for( ; p != (*pe)->quadraturePoints().end(); p++){
-	  Vector2D N(0.0);
-	  for(int alpha=0; alpha<2; alpha++) {
-	    N(alpha) += tvmet::dot( _stressDirections[i],  
-				    p->material.refShellGeometry().a()[alpha] 
-				    );
-	  }
-	  double J = 0.0;
-	  double s = 0.0;
-	  double E = 0.0;
-	  const Tensor2D & metricDual 
-	    =  p->material.shellGeometry().metricTensorInverse();
-	  const Tensor2D & refDual 
-	    =  p->material.refShellGeometry().metricTensorInverse();
-	  const Tensor2D & stressDual 
-	    =  p->material.stress();
-	  
-	  Tensor2D strainDual(0.0);
-	  
-	  for(int alpha=0; alpha<2; alpha++) {
-	    for( int beta=0; beta<2; beta++) {
-
-	      for(int gamma=0; gamma<2; gamma++) {
-		for(int nu=0; nu<2; nu++) {
-		  E += 
-		    refDual(alpha,gamma)*refDual(beta,nu)*
-		    ( p->material.strain()(gamma,nu) ) * N(alpha) * N(beta);
-		}
-	      }
-
-	      J += metricDual(alpha,beta) * N(alpha) * N(beta);
-	      s += stressDual(alpha,beta) * N(alpha) * N(beta);
-	    }
-	  }
-	  J *= ( p->material.shellGeometry().metric()    ) /
-	    ( p->material.refShellGeometry().metric() );
-	  
-	  stress(e) += s;// /J;
-	  strain(e) += E;
-	  npts++;
-	}
-	stress(e) /= (double)( npts );
-	strain(e) /= (double)( npts );
-      }
-	
-	
-      ofs << stressName << " 1 " << numShells << " double" << std::endl;
-      for ( int e = 0; e<numShells; e++) {
-	if(!_active[e])  continue;
-	ofs << stress(e) << std::endl;
-      }
-      ofs << std::endl;
-
-      ofs << strainName << " 1 " << numShells << " double" << std::endl;
-      for ( int e = 0; e<numShells; e++) {
-	if(!_active[e])  continue;
-	ofs << strain(e) << std::endl;
-      }
-      ofs << std::endl;
-
-    }
 
     ofs << endl << "POINT_DATA " << _membraneNodes.size() << endl
 	<< "VECTORS displacements double" << endl;

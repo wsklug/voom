@@ -1,0 +1,129 @@
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                              Mo Bai
+//                University of California Los Angeles
+//                   (C) 2009 All Rights Reserved
+//
+//----------------------------------------------------------------------
+
+#if !defined(__AffinityElement_h__)
+#define __AffinityElement_h__
+
+#include <blitz/array.h>
+#include <vector>
+#include <cstdio>
+#include <ctime>
+
+#include "Element.h"
+#include "Node.h"
+#include "VoomMath.h"
+#include "ShapeTri3.h"
+
+namespace voom
+{
+  class AffinityElement 
+    : public Element
+  {
+    
+  public:
+    
+    typedef BrownianNode<2> Node_t;
+    typedef ShapeTri3 Shape_t;
+
+    typedef std::vector<Node_t*> NodeContainer;
+    typedef NodeContainer::iterator NodeIterator;
+    typedef NodeContainer::const_iterator ConstNodeIterator;
+
+    //! virtual destructor
+    virtual ~AffinityElement() {;}
+
+  public:
+    AffinityElement(const Shape_t & s, const NodeContainer & nodes ) : _s(s) {
+      // _s = s;
+      //! initialize NodeContainer
+      unsigned nNodes = nodes.size();
+      
+      _nodes = nodes;
+      
+      for(ConstNodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) 
+	_baseNodes.push_back(*n);
+    }
+    
+    // return strain tensor
+    const Tensor2D & Strain() const {
+      return _strain;
+    }
+
+    // return displacement gradient tensor
+    const Tensor2D & DisplacementGradient() const {
+      return _dispGrad;
+    }
+
+    double Rotation() const { return _rotation; }
+
+    void compute() {
+      
+      // Compute spatial derivatives of shape functions from
+      // parametric derivatives by transforming with matrix jacobian
+      // of isoparametric mapping.
+      
+      // parametric derivatives from shape object
+      const Shape_t::DerivativeContainer & dnds = _s.derivatives();
+      
+      // matrix duds;
+      tvmet::Matrix<double,2,2> duds(0.0);
+      for(int i=0; i<2; i++) {
+	for(int alpha=0; alpha<2; alpha++) {   
+	  for(int a=0; a<_nodes.size(); a++) {
+	    duds(i,alpha) += dnds[a](alpha)*(_nodes[a]->getPoint(i) - _nodes[a]->getPosition(i) );
+	  }
+	}      
+      }
+      
+      // matrix jacobian dxds;
+      tvmet::Matrix<double,2,2> dxds(0.0);
+      for(int i=0; i<2; i++) {
+	for(int alpha=0; alpha<2; alpha++) {   
+	  for(int a=0; a<_nodes.size(); a++) {
+	    dxds(i,alpha) += dnds[a](alpha)*(_nodes[a]->getPosition(i) );
+	  }
+	}      
+      }
+      
+      // compute scalar jacobian by calculating the determinant of dxds
+      double J = dxds(0,0)*dxds(1,1) - dxds(0,1)*dxds(1,0);
+      
+      // invert matrix jacobian
+      tvmet::Matrix<double,2,2> invJac(0.0);
+      invJac(0,0) = dxds(1,1);
+      invJac(0,1) = -dxds(0,1);
+      invJac(1,0) = -dxds(1,0);
+      invJac(1,1) = dxds(0,0);
+      
+      invJac /= J;
+      
+      //std::cout << "duds=" << std::endl << duds << std::endl;
+      //std::cout << "dxds=" << std::endl << dxds << std::endl;
+      
+      _dispGrad = duds * invJac;
+      _strain = 0.5*(tvmet::trans(_dispGrad) + _dispGrad);
+      _rotation = (_dispGrad(0,1)-_dispGrad(1,0))/2.0;
+    }
+    
+    // Access the container of nodes
+    const NodeContainer & nodes() { return _nodes; }
+
+    virtual void compute(bool f0, bool f1, bool f2) {;}
+
+  private:
+
+    NodeContainer _nodes;
+    Shape_t _s;
+    Tensor2D _strain;
+    Tensor2D _dispGrad;
+    double _rotation;
+  };  // end of class
+} // namespace voom
+
+#endif // __AffinityElement_h__

@@ -24,6 +24,7 @@
 #include "SemiflexibleGel.h"
 #include "voom.h"
 #include "Node.h"
+#include "Lbfgsb.h"
 
 #ifdef WITH_MPI
 #include <mpi.h>
@@ -42,6 +43,18 @@ namespace voom
     
     typedef  SemiflexibleGel<N> Gel;
 
+    typedef BrownianNode<N> DefNode;
+    typedef typename std::vector< DefNode* > DefNodeContainer;
+    typedef typename DefNodeContainer::iterator DefNodeIterator;
+    typedef typename DefNodeContainer::const_iterator ConstDefNodeIterator;
+
+    typedef typename Gel::Filament Filament;
+    typedef std::vector< Filament* > FilamentContainer;
+    typedef typename FilamentContainer::iterator FilamentIterator;
+    typedef typename FilamentContainer::const_iterator ConstFilamentIterator;
+
+    typedef tvmet::Vector<double,N> VectorND;
+
     //! Construct from stuff
     GelOutput() {}
     
@@ -49,6 +62,8 @@ namespace voom
     virtual ~GelOutput() {;}
 
     virtual void operator()(Gel * gel, std::string filename);
+    
+    virtual void printGel(Gel* gel, std::string filename);
 
     virtual void printParamHeader(std::string enFileName, std::string paramHeader);
 
@@ -61,6 +76,8 @@ namespace voom
     virtual void printFilLengthData(Gel * gel, std::string fileName);
 
     virtual void printNematicData(Gel * gel, std::string fileName);
+
+    //virtual void printSolverData(Gel * gel, Solver * solver, std::string fileName);
 
   };  
 

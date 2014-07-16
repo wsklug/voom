@@ -32,6 +32,10 @@
 #include "VoomMath.h"
 
  
+typedef tvmet::Vector<double,3> Vector3D;
+typedef tvmet::Matrix<double,2,2> Tensor2D;
+typedef tvmet::Matrix<double,3,3> Tensor3D;
+
 namespace voom
 {
 
@@ -47,48 +51,28 @@ namespace voom
     //typedef tvmet::Matrix<double,2,2> Tensor2D;
     //typedef tvmet::Matrix<double,3,3> Tensor3D;
 	  
-  public:
-
-    GLElastic( const double kC, 
-	       const double kG, 
-	       const double C0, 
-	       const double E, 
-	       const double nu, 
-	       const double Gamma,
-	       const double g0,
-	       const double deltag,
-	       const double muA,
-	       int formulation=0) 
-      : FVK(kC, kG, C0, E, nu), 
-	_Gamma(Gamma), _g0(g0), _deltag(deltag), _muA(muA),
-	_formulation(formulation)
-    { 
-      assert(_formulation==0 || _formulation==1);
-    }
-
-    void updateState(bool f0, bool f1, bool f2);
-    
-    virtual double Field() const { return _eta; }
-    
-    void setField(const double eta, const Vector2D & deta) 
-    {_eta = eta; _deta = deta;}
-
-    virtual double GLResultants() const {return _mu;}
-    virtual const Vector2D & GLGradientResultants() const {return _lambda;}
-
   protected:
     double _Gamma;//determine the width of the region of transition between phases, length scale
-    double _g0;      //curvature of the reaction coordinate free energy
-    double _deltag; // difference in energy eta 0->1
+    double _gDoublePrime;      //curvature of the reaction coordinate free energy
+    double _gammaZero; //coupling constant
+    double _factor; //determines the magnitude of two minima, _factor=1 gives two equal
 
-    double _muA; // Constant chemical potential
-    double _eta; // GL order-parameter field
-    Vector2D _deta; // GL order-parameter gradient
 
-    double _mu; // chemical resultants 
-    Vector2D _lambda; // chemical gradient resultants
+  public:
 
-    int _formulation; // what type of GL function is it?
+    GLElastic(const double kC, const double kG, const double C0, const double E, const double nu, 
+	      const double gDoublePrime, const double Gamma, const double gammaZero, const double factor) 
+      : FVK(kC, kG, C0, E, nu)
+    {
+      _Gamma = Gamma;
+      _gDoublePrime = gDoublePrime;
+      _gammaZero = gammaZero;
+      _factor = factor;
+    }
+
+      void updateState(bool f0, bool f1, bool f2);
+
+
   };
   
 } //namespace voom

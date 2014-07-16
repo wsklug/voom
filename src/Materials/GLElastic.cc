@@ -33,7 +33,7 @@ namespace voom
 {
   void GLElastic::updateState(bool f0, bool f1, bool f2)
   {
-    FVK::updateState(f0||f1, f1, f2); //claculate _n & _m, _W 
+    FVK::updateState(f0, f1, f2); //claculate _n & _m, _W 
 
     typedef tvmet::Vector< Vector3D, 2 > BasisVectors;
                 
@@ -44,6 +44,8 @@ namespace voom
     const BasisVectors & rbasis = _referenceGeometry.a();
     const BasisVectors & rdual = _referenceGeometry.aDual();
     
+    _H = - 0.5 * ( dot(dual(0), dPartials(0)) + dot(dual(1), dPartials(1)) );
+    
     const Tensor2D& metricInv = 
       _deformedGeometry.metricTensorInverse();
     const Tensor2D& refMetricInv =
@@ -52,109 +54,93 @@ namespace voom
     const Tensor2D& metric = _deformedGeometry.metricTensor();
     const Tensor2D& refMetric = _referenceGeometry.metricTensor();
 
-    // Previously we'd considered the GL energy as defined per unit
-    // reference area.  Since shell materials are defined per unit
-    // deformed area (who knows why), we needed a Jacobian, the ratio
-    // between referenced and deformed areas.  Now we have changed
-    // this energy to be per unit deformed area, so we no longer need
-    // the jacobian.
-    
-    //double jacobian = _referenceGeometry.metric()/_deformedGeometry.metric();
-		
-    double g=0.0, dg=0.0;
-    if(_formulation==0) {
-      // g is a simple quartic with curvature g0 at eta=0 and g(1)=g(0)+_deltag
-      double eta2=_eta*_eta;
-      double eta3=eta2*_eta;
-      double eta4=eta3*_eta;
-      g  = _g0*(eta4-2.0*eta2) - 2.0*(_deltag+_g0)*(eta3-1.5*eta2);
-      dg = (_g0*(4.0*_eta - 2.0) - 6.0*_deltag)*(eta2-_eta); 
-    } else {
-      // g is a two piece function which has different curvature at two minima
-      double g1=_g0-32.0*_deltag;
+    double jacobian = _referenceGeometry.metric()/_deformedGeometry.metric();
 
-      if (_eta < 0.5){
-	g  = _g0*_eta*_eta*(_eta*_eta - 2.0*_eta + 1.0)/2.0;
-	dg = _g0*_eta*(2.0*_eta*_eta - 3.0*_eta + 1.0);
-      }
-      
-      else {
-	g  = g1*_eta*_eta*(_eta*_eta - 2.0*_eta + 1.0)/2.0 + _deltag;
-	dg = g1*_eta*(2.0*_eta*_eta - 3.0*_eta + 1.0);
+    Tensor2D strain(0.0);
+
+    strain = 0.5*(metric-refMetric);
+//     if (strain(0,1) != strain(1,0)){
+//       double xx=strain(0,1);
+//       std::cout<<"xx="<<xx<<std::endl;
+//       double yy=strain(1,0);
+//       std::cout<<"yy="<<yy<<std::endl;
+//       std::cout<<"xx-yy="<<xx-yy<<std::endl;
+//     }
+    assert(std::abs(strain(0,1)-strain(1,0))<1.0e-8);
+    if (std::abs(strain(0,1) - strain(1,0))>1.0e-8){
+      double xx=strain(0,1);
+      std::cout<<"xx="<<xx<<std::endl;
+      double yy=strain(1,0);
+      std::cout<<"yy="<<yy<<std::endl;
+      std::cout<<"xx-yy="<<xx-yy<<std::endl;
+    }
+    double traceStrain = 0.0;
+    for(int alpha=0; alpha<2; alpha++) {
+      for(int beta=0; beta<2; beta++) {
+	traceStrain   += refMetricInv(alpha,beta)*strain(alpha,beta);
       }
     }
 
-    // subtract a constant chemical potential term
-    g  -= _muA*_eta;
-    dg -= _muA;
+		
+    double twoHminusC0 = 2.0*_H - _C0;
 
-    double strainEnergy=0.0;
-    if(f1) strainEnergy = _W;
 
-    double W_GL = 0.0;
-    if(f0||f1) {
-      // now add GL energy
-      W_GL += g;//*jacobian;
+//     double g = _gDoublePrime*_eta*_eta*(_eta*_eta - 2.0*_eta + _c)/2.0/_c;
+//     double dg = _gDoublePrime*_eta*(2.0*_eta*_eta - 3.0*_eta + _c)/_c;
+    
+    double g, dg;
+    // g is now a two piece function which has different curvature at two minima
+    if (_eta < 0.5){
+      g  = _gDoublePrime*_eta*_eta*(_eta*_eta - 2.0*_eta + 1.0)/2.0;
+      dg = _gDoublePrime*_eta*(2.0*_eta*_eta - 3.0*_eta + 1.0);
+    }
 
-      for (int alpha = 0; alpha < 2; alpha++){
-	for (int beta =0; beta <2; beta++){
-
-	  // if gradient is defined on reference configuration
-	  //W_GL += 0.5*_Gamma*_deta(alpha)*_deta(beta)*refMetricInv(alpha, beta);
-
-	  // if gradient is defined on deformed configuration
-	  W_GL += 0.5*_Gamma*_deta(alpha)*_deta(beta)*metricInv(alpha, beta);
-	}
-      }
+    else {
+      g  = _gDoublePrime*_eta*_eta*(_eta*_eta - 2.0*_eta + 1.0)/2.0/_factor + _gDoublePrime*(1.0-1.0/_factor)/32.0;
+      dg = _gDoublePrime*_eta*(2.0*_eta*_eta - 3.0*_eta + 1.0)/_factor;
     }
 
     if (f0){
-      // scale elastic terms by order parameter for linear coupling
-      _W *= _eta;
+      _W += g*jacobian;
 
-      _Ws *= _eta;
+      _W += -_gammaZero*_eta*traceStrain*jacobian;
+      
+      for (int alpha = 0; alpha < 2; alpha++){
+	for (int beta =0; beta <2; beta++){
 
-      _stress *= _eta;
+	  _W += _Gamma/2.0*_dEta(alpha)*_dEta(beta)*metricInv(alpha, beta)*jacobian;
 
-      _W += W_GL;
+	}
+      }
+
     }
 
 
-    // Compute stress & chemical potential resultants
 
     if (f1){
-      // stress resultants
       for (int alpha = 0; alpha < 2; alpha++){
-	// scale elastic term by order parameter for linear coupling
-	_n(alpha) *= _eta;
+	_nEta(alpha) = 0.0, 0.0, 0.0;
 
-	// variation of deformed area metric
-	_n(alpha) += W_GL*dual(alpha);
+	for (int mu = 0; mu < 2; mu++){
+	  _nEta(alpha) += -_gammaZero*_eta*refMetricInv(alpha, mu)*basis(mu)*jacobian;
+
+	  for (int beta = 0; beta < 2; beta ++){
+	    _nEta(alpha) += - _Gamma*metricInv(alpha, mu)*_dEta(mu)*_dEta(beta)*dual(beta)*jacobian;
+
+	  }
+	}
       }
 
-      _n(2)= 0.0, 0.0, 0.0;
+      _nEta(2)= 0.0, 0.0, 0.0;
 
 
-      // chemical potential resultants
-      _mu = strainEnergy;
-      _mu += dg;
+      _muEta = (dg - _gammaZero*traceStrain)*jacobian;
 
+      for (int beta = 0; beta < 2; beta++){
+	_muDEta(beta) = 0.0;
 
-      // chemical potential gradient resultants
-      for (int alpha = 0; alpha < 2; alpha++){
-	_lambda(alpha) = 0.0;
-
-	for (int beta = 0; beta < 2; beta++){
-	  // if gradient is defined on reference configuration
-	  //_lambda(alpha) += _Gamma*refMetricInv(alpha, beta)*_deta(beta);
-	  
-	  // if gradient is defined on deformed configuration
-	  _lambda(alpha) += _Gamma*metricInv(alpha, beta)*_deta(beta);
-
-	  for (int mu=0; mu<2; mu++){
-	    _n(alpha) += 
-	      - _Gamma*metricInv(alpha, mu)*_deta(mu)*_deta(beta)*dual(beta);
-	  }
+	for (int alpha = 0; alpha < 2; alpha++){
+	  _muDEta(beta) += _Gamma*metricInv(alpha, beta)*_dEta(alpha)*jacobian;
 
 	}
       }

@@ -62,22 +62,11 @@ namespace voom
     const PositionVector & position() {return _X;}
 
     //! access point
-    const Point & point() const {return _point;}
+    const Point & point() {return _point;}
 
     //! access force
-    const Point & force() const {return _force;}
-
-    //! set force
-    void setForce(double f) {_force = f; }
-
-    //! add force
-    void addForce(double df) {
-#ifdef _OPENMP
-#pragma omp critical
-#endif
-      _force = _force + df;
-    }
-
+    const Point & force() {return _force;}
+ 
     virtual void setPosition(int i, double x) {assert(i<dim_n); _X(i) = x; }
 
     virtual double getPosition(int i) const { assert(i<dim_n); return _X(i); }
@@ -163,10 +152,10 @@ namespace voom
     void setPosition( const PositionVector & p ) { _X = p; }
 
     //! access point
-    const Point & point() const {return _point;}
+    const Point & point() {return _point;}
 
     //! access force
-    const Point & force() const {return _force;}
+    const Point & force() {return _force;}
  
     virtual void setPosition(int i, double x) {assert(i<dim_n); _X(i) = x; }
 
@@ -299,7 +288,7 @@ namespace voom
     //! access normal
     const Point & normal() const {return _n;}
     //! access a component of normal
-    double normal( int i ) const 
+    const double normal( int i ) const 
     { assert(i<dim_n); return _n(i); }
     //! assign normal
     virtual void setNormal( const Point & n ) { 
@@ -398,7 +387,7 @@ namespace voom
     //! access velocity
     const Point & velocity() const {return _v;}
     //! access a component of velocity
-    double velocity( int i ) const 
+    const double velocity( int i ) const 
     { assert(i<dim_n); return _v(i); }
     //! assign velocity
     virtual void setVelocity( const Point & v ) { _v = v; }
@@ -406,22 +395,14 @@ namespace voom
     //! access acceleration
     const Point & acceleration() const {return _a;}
     //! access a component of acceleration
-    double acceleration( int i ) const 
+    const double acceleration( int i ) const 
     { assert(i<dim_n); return _a(i); }
     //! assign acceleration
     virtual void setAcceleration( const Point & a ) { _a = a; }
 
-    //! access mass
-    double getMass() const {return _M;}
-    //! assign mass
-    void setMass(double m) {_M=m;}
-    //! add mass
-    void addMass(double m){_M+=m;}
-
   protected:
     Point _v;
     Point _a;
-    double _M; // nodal mass 
   };
 
 
@@ -463,7 +444,7 @@ namespace voom
     //! access velocity
     const Point & velocity() const {return _v;}
     //! access a component of velocity
-    double velocity( int i ) const 
+    const double velocity( int i ) const 
     { assert(i<dim_n); return _v(i); }
     //! assign velocity
     virtual void setVelocity( const Point & v ) { _v = v; }
@@ -471,7 +452,7 @@ namespace voom
     //! access mobility
     const Matrix & mobility() const {return _M;}
     //! access a component of mobility
-    double getMobility( int i, int j ) const 
+    const double getMobility( int i, int j ) const 
     { assert(i<dim_n && j<dim_n); return _M(i,j); }
 
     //! assign mobility
@@ -486,7 +467,7 @@ namespace voom
     //! access drag
     const Matrix & drag() const {return _D;}
     //! access a component of drag
-    double getDrag( int i, int j ) const 
+    const double getDrag( int i, int j ) const 
     { assert(i<dim_n && j<dim_n); return _D(i,j); }
 
     //! assign drag
@@ -504,7 +485,7 @@ namespace voom
     Matrix _D; //Drag matrix
   };
 
- 
+
   class MultiplierNode : public NodeBase
   {
   public:

@@ -1,20 +1,27 @@
-bin_PROGRAMS 	= test sceTest gl 
-AM_CPPFLAGS	= -I ./                             \
+bin_PROGRAMS 	= test sceTest
+INCLUDES	= -I ./                             \
                   -I ../                            \
                   -I ../../                         \
                   -I ../../Geometry/                \
                   -I$(blitz_includes)               \
                   -I$(tvmet_includes)               \
-                  -I ../../VoomMath/
-AM_LDFLAGS 	= -L$(blitz_libraries)              \
+                  -I ../../Math/
+test_SOURCES 	= test.cpp 
+test_LDFLAGS 	= -L$(blitz_libraries)              \
                   -L../                             \
                   -L../../Geometry/                 \
-                  -L../../VoomMath/
-LDADD		= -lblitz                           \
+                  -L../../Math/
+test_LDADD	= -lblitz                           \
                   -lMaterials                       \
                   -lGeometry                        \
-                  -lVoomMath
-test_SOURCES 	= test.cpp 
+                  -lMath
 sceTest_SOURCES = sce-test.cc
-gl_SOURCES	= gl.cc
+sceTest_LDFLAGS = -L$(blitz_libraries)              \
+                  -L../                             \
+                  -L../../Geometry/                 \
+                  -L../../Math/
+sceTest_LDADD	= -lblitz                           \
+                  -lMaterials                       \
+                  -lGeometry                        \
+                  -lMath
 

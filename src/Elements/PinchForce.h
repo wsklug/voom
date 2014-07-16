@@ -32,7 +32,16 @@ namespace voom
     typedef BrownianNode<N> Node_t;
 
     PinchForce(Node_t * node1, Node_t * node2, double f0, PeriodicBox * box) 
-      : _node1(node1), _node2(node2), _f0(f0), _box(box) { 
+      : _node1(node1), _node2(node2), _f0(f0), _box(box), _state(true) {
+      
+      VectorND p1 = _node1->position();
+      VectorND p2 = _node2->position();
+
+      VectorND diff;
+      diff = p1-p2;
+      _box->mapDistance(diff);
+      _d0 = norm2(diff);
+
     }
 
     void setBox(PeriodicBox * pb) {
@@ -41,33 +50,51 @@ namespace voom
 
     void compute(bool f0, bool f1, bool f2) {
 
-      const VectorND & x1 = _node1->point();
-      const VectorND & x2 = _node2->point();
-      //Periodic BC
- 
-      VectorND dx(0.0);
-      dx = x2 - x1;
-      _box->mapDistance(dx);
-      double d = norm2(dx);
-      
-      if(f0) {
-	_energy = _f0*d;
-      }
-      
-      if(f1) {
-	for(int i=0; i<N; i++) {
-	  double f = (dx(i)/d)*_f0;
-	  _node1->addForce(i, -f);
-	  _node2->addForce(i, f);
+      _energy = 0.0;
+
+      if(_state) {
+	const VectorND & x1 = _node1->point();
+	const VectorND & x2 = _node2->point();
+	//Periodic BC
+	
+	VectorND dx(0.0);
+	dx = x2 - x1;
+	_box->mapDistance(dx);
+	double d = norm2(dx);
+	
+	if(f0) {
+	  _energy = _f0*(d-_d0);
 	}
 	
+	if(f1) {
+	  for(int i=0; i<N; i++) {
+	    double f = (dx(i)/d)*_f0;
+	    _node1->addForce(i, -f);
+	    _node2->addForce(i, f);
+	  }
+	  
+	}
       }
+      
       return;
     }
     
     double pinchF() const {return _f0;}
+    
+    void turnOn() {
+      _state = true;
+    }
+    
+    void turnOff() {
+      _state = false;
+    }
 
     void setPinchF(double f0) { _f0 = f0; }
+
+    std::pair<Node_t *,Node_t *> getNodes() {
+      std::pair<Node_t *, Node_t *> nds = pair<Node_t *, Node_t *>(_node1,_node2);
+      return nds;
+    }
 
 //     Node_tContainer getNodes(){
 //       Node_tContainer nodes;
@@ -89,7 +116,9 @@ namespace voom
     
     Node_t * _node1;
     Node_t * _node2;
+    bool _state;
     double _f0;
+    double _d0;
     PeriodicBox * _box;
     
   };

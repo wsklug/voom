@@ -287,6 +287,12 @@ int main(int argc, char* argv[]) {
     infofile << pi->first << "\t" << pi->second << std::endl;
   }
   infofile.close();
+  
+  char datfl[256];
+  sprintf(datfl,"RodLiquidRun%d/nemdata.dat",runNum);
+  std::ofstream dfile(datfl);
+  dfile << "#t\tS_tot\tang" << std::endl;
+  dfile.close();
 
   for(int ct=0; ct<maxIters/printStep; ct++) {
     bd->computeAndAssemble(true,false,false);
@@ -295,6 +301,22 @@ int main(int argc, char* argv[]) {
     sprintf(fname,"RodLiquidRun%d/gelliq-%d",runNum,ct);
     std::string fnm(fname);
     outp(gel,fnm);
+    gel->computeNematicOP();
+    Vector2D & director = gel->getNemDirector();
+    double nemang = atan2(director[1],director[0]);
+    dfile.open(datfl,ios_base::app);
+    dfile << ct*printStep*dt << "\t" << gel->getNematicOP() << "\t" << nemang << std::endl;
+    dfile.close();
+    char nemfl[256];
+    sprintf(nemfl,"RodLiquidRun%d/nemcorrdata%d.dat",runNum,ct);
+    std::vector< std::pair<double,double> > nemcorrdata = gel->computeNemCorrelations(.5*L,.5*L,.1*L);
+    std::ofstream nemf(nemfl);
+    nemf << "#r\tcorr" << std::endl;
+    for(std::vector< std::pair<double,double> >::iterator di=nemcorrdata.begin(); di!=nemcorrdata.end(); di++) {
+      nemf << di->first << "\t" << di->second << std::endl;
+    }
+    nemf.close();
+    
     bd->run(printStep,dt);
   }
   

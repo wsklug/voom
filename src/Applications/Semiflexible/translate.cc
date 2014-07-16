@@ -5,7 +5,7 @@
 #include <getopt.h>
 #include <ctime>
 #include "Node.h"
-#include "nlSemiflexibleGel.h"
+#include "SemiflexibleGel.h"
 #include "Model.h"
 #include "Lbfgsb.h"
 #include "BrownianRod.h"
@@ -15,6 +15,7 @@
 #include "PeriodicBox.h"
 #include "LeesEdwards.h"
 #include "GelOutput.h"
+#include "PeriodicTie.h"
 
 #if defined(_OPENMP)
 #include <omp.h>
@@ -51,7 +52,7 @@ int main(int argc, char* argv[])
   ////////////////////////////////////////////////////////////////////
 
   int nNodesperRod = 10; //Number of nodes per rod
-  int nRods = 10;
+  int nRods = 100;
   int nNodes = nNodesperRod * nRods;
   double Lbox = 5.0; 
 
@@ -90,11 +91,20 @@ int main(int argc, char* argv[])
 
   //double angle = 30.0 * M_PI /180.0; // tilted 30 degree
   
-  // create body 
-  SemiflexibleGel<2> * gel = new SemiflexibleGel<2>;
+  tvmet::Vector<double,2> syssize;
+  syssize = Lbox,Lbox;
+    
+  double kcl = -1.0;
+    
+  double she = 0.0; // shear //
   
   // all of the nodes from all of the filaments
   SemiflexibleGel<2>::DefNodeContainer nodes;
+  
+  // create body 
+  SemiflexibleGel<2> * gel = new SemiflexibleGel<2>(nodes,syssize,nRods/(Lbox*Lbox),nNodesperRod,L/nNodesperRod,kBond,kAngle,viscosity,kT,dt,kcl,she);
+  
+
 
 
   //////////////////////////////////////////////////////////////////////////
@@ -103,80 +113,80 @@ int main(int argc, char* argv[])
   //
   //////////////////////////////////////////////////////////////////////////
 
-  for (int iRod=0; iRod<nRods; iRod++) {
-
-    ranlib::Normal<double> rng( 0.0, sqrt(dL/xi_p) );
-    ranlib::Uniform<double> rnu;
-    rng.seed((unsigned int)time(0)+iRod);// has to seed every for loop otherwise the random numbers in different loops will be the same
-    rnu.seed((unsigned int)time(0)+iRod);// has to seed every for loop otherwise the random numbers in different loops will be the same
-
-    double dtheta_avg = 0.0;
-    double dtheta2_avg = 0.0;
+ //  for (int iRod=0; iRod<nRods; iRod++) {
+// 
+//     ranlib::Normal<double> rng( 0.0, sqrt(dL/xi_p) );
+//     ranlib::Uniform<double> rnu;
+//     rng.seed((unsigned int)time(0)+iRod);// has to seed every for loop otherwise the random numbers in different loops will be the same
+//     rnu.seed((unsigned int)time(0)+iRod);// has to seed every for loop otherwise the random numbers in different loops will be the same
+// 
+//     double dtheta_avg = 0.0;
+//     double dtheta2_avg = 0.0;
+//     
+//     blitz::Array<double,1> theta(nNodesperRod);
+// 
+// 
+//     theta(0) = rnu.random();
+//     theta(0) *= M_PI/2.0;
+ //    std::cout << "a = " << 0 
+// 		<< " dtheta = " << 0.0
+// 		<< " theta = " << theta(0)*180.0/M_PI 
+// 		<< std::endl;
+//     for ( int a=1; a<nNodesperRod; a++) {      
+//       double dtheta = rng.random(); 
+//       theta(a) = theta(a-1) + dtheta;
+//       dtheta_avg += dtheta;
+//       dtheta2_avg += sqr(dtheta);
+//       std::cout << "a = " << a 
+// 		<< " dtheta = " << dtheta*180.0/M_PI 
+// 		<< " theta = " << theta(a)*180.0/M_PI 
+// 		<< std::endl;
+//     }
+//     //theta(nNodesperRod-1) = 0.0;
+//     
+//     // make the rod straight
+//     //theta = 0.0;
+// 
+// 
+//     // temporary container for the nodes of a particular filament
+//     SemiflexibleGel<2>::DefNodeContainer rod_nodes;
+// 
+//     // vector for nodal coordinates, initialized randomly for first node
+//     BrownianNode<2>::Point X(0.0);
+//     X = rnu.random()*Lbox, rnu.random()*Lbox;
+//     for ( int a=0; a<nNodesperRod; a++) {
+//       unsigned int id = a+nNodesperRod*iRod;
+//       NodeBase::DofIndexMap idx(2);
+//       idx[0]=2*id; idx[1]=2*id+1;
+//       SemiflexibleGel<2>::DefNode * nd 
+// 	= new SemiflexibleGel<2>::DefNode(id,idx,X,X);
+//       
+//       // add to this filament's node list
+//       rod_nodes.push_back( nd );
+//       // add to global node list
+//       nodes.push_back( nd );
+//       
+//       BrownianNode<2>::Point dX(0.0);
+//       dX = dL*cos(theta(a)), dL*sin(theta(a));
+//       X = X + dX;
+//     }
+//     dtheta_avg /= nNodesperRod;
+//     dtheta2_avg /= nNodesperRod;
     
-    blitz::Array<double,1> theta(nNodesperRod);
-
-
-    theta(0) = rnu.random();
-    theta(0) *= M_PI/2.0;
-    std::cout << "a = " << 0 
-		<< " dtheta = " << 0.0
-		<< " theta = " << theta(0)*180.0/M_PI 
-		<< std::endl;
-    for ( int a=1; a<nNodesperRod; a++) {      
-      double dtheta = rng.random(); 
-      theta(a) = theta(a-1) + dtheta;
-      dtheta_avg += dtheta;
-      dtheta2_avg += sqr(dtheta);
-      std::cout << "a = " << a 
-		<< " dtheta = " << dtheta*180.0/M_PI 
-		<< " theta = " << theta(a)*180.0/M_PI 
-		<< std::endl;
-    }
-    //theta(nNodesperRod-1) = 0.0;
-    
-    // make the rod straight
-    //theta = 0.0;
-
-
-    // temporary container for the nodes of a particular filament
-    SemiflexibleGel<2>::DefNodeContainer rod_nodes;
-
-    // vector for nodal coordinates, initialized randomly for first node
-    BrownianNode<2>::Point X(0.0);
-    X = rnu.random()*Lbox, rnu.random()*Lbox;
-    for ( int a=0; a<nNodesperRod; a++) {
-      unsigned int id = a+nNodesperRod*iRod;
-      NodeBase::DofIndexMap idx(2);
-      idx[0]=2*id; idx[1]=2*id+1;
-      SemiflexibleGel<2>::DefNode * nd 
-	= new SemiflexibleGel<2>::DefNode(id,idx,X,X);
-      
-      // add to this filament's node list
-      rod_nodes.push_back( nd );
-      // add to global node list
-      nodes.push_back( nd );
-      
-      BrownianNode<2>::Point dX(0.0);
-      dX = dL*cos(theta(a)), dL*sin(theta(a));
-      X = X + dX;
-    }
-    dtheta_avg /= nNodesperRod;
-    dtheta2_avg /= nNodesperRod;
-    
-    std::cout << " dtheta_avg = " << dtheta_avg 
-	      << " dtheta2_avg = " << dtheta2_avg << std::endl;
-    
-    // add the new filament to the gel body
-    gel->addFilament( rod_nodes, kAngle, viscosity, kT, dt, kC, fitOrder);
-
-
-  }  // end of loop over filaments
+//     std::cout << " dtheta_avg = " << dtheta_avg 
+// 	      << " dtheta2_avg = " << dtheta2_avg << std::endl;
+//     
+//     // add the new filament to the gel body
+//     gel->addFilament( rod_nodes, kAngle, viscosity, kT, dt, kC, fitOrder);
+// 
+// 
+//   }  // end of loop over filaments
 
   // Define periodic BC
   //PeriodicBox *box = new PeriodicBox (Lbox, Lbox);
-  LeesEdwards *box = new LeesEdwards (Lbox, Lbox, 1.0);
- 
-  gel->setBox( box ); 
+//   LeesEdwards *box = new LeesEdwards (Lbox, Lbox, 1.0);
+//  
+//   gel->setBox( box ); 
 
 
   //////////////////////////////////////////////////////////////////////////
@@ -185,50 +195,50 @@ int main(int argc, char* argv[])
   //
   //////////////////////////////////////////////////////////////////////////
 
-  const SemiflexibleGel<2>::FilamentContainer & filaments = gel->filaments();
-  SemiflexibleGel<2>::ConstFilamentIterator f1 = filaments.begin();
-  for(; f1!=filaments.end(); f1++){
-    SemiflexibleGel<2>::ConstFilamentIterator f2 = f1+1;
-    for(; f2!=filaments.end(); f2++){
-      SemiflexibleGel<2>::RodContainer rods1 = (*f1)->rods;
-      SemiflexibleGel<2>::RodContainer rods2 = (*f2)->rods;
-      SemiflexibleGel<2>::RodIterator r1 = rods1.begin();
-      SemiflexibleGel<2>::RodIterator r2 = rods2.begin();
-      for (; r1!=rods1.end(); r1++){
-	r2 = rods2.begin();
-	for (; r2!=rods2.end();r2++){
-	  SemiflexibleGel<2>::DefNodeContainer rodnodes1 = (*r1)->getNodes();
-	  SemiflexibleGel<2>::DefNodeContainer rodnodes2 = (*r2)->getNodes();
-	  const BrownianNode<2>::Point & X1A = rodnodes1[0]->position();
-	  const BrownianNode<2>::Point & X1B = rodnodes1[1]->position();
-	  const BrownianNode<2>::Point & X2A = rodnodes2[0]->position();
-	  const BrownianNode<2>::Point & X2B = rodnodes2[1]->position();
-	  
-	  // if the midpoints of the two rods are closer than have a
-	  // rod length apart, then add a crosslink
-	  Vector2D dx(0.0);
-	  dx = 0.5*(X1A+X1B) - 0.5*(X2A+X2B);
-	  box->mapDistance(dx);
-	  if(norm2(dx) < 0.5*dL){
-	    double xi1 = 0.5;
-	    double xi2 = 0.5;
-	    double k_crosslink = kBond;//0.0;
-	    Crosslink<2> * crosslink 
-	      = new Crosslink<2> ( rodnodes1[0], rodnodes1[1], 
-				   rodnodes2[0], rodnodes2[1], 
-				   xi1, xi2, 
-				   k_crosslink, 
-				   box );
-	    gel->addCrosslink(crosslink);
-        std::cout << "crosslink created " << " X1A= " << X1A  
-			<< " X1B= " << X1B << std:: endl
-                                          << " X2A= " << X2A  
-                                          << " X2B= " << X2B << std::endl;  
-	  }
-	}
-      }
-    }
-  }
+//   const SemiflexibleGel<2>::FilamentContainer & filaments = gel->filaments();
+//   SemiflexibleGel<2>::ConstFilamentIterator f1 = filaments.begin();
+//   for(; f1!=filaments.end(); f1++){
+//     SemiflexibleGel<2>::ConstFilamentIterator f2 = f1+1;
+//     for(; f2!=filaments.end(); f2++){
+//       SemiflexibleGel<2>::RodContainer rods1 = (*f1)->rods;
+//       SemiflexibleGel<2>::RodContainer rods2 = (*f2)->rods;
+//       SemiflexibleGel<2>::RodIterator r1 = rods1.begin();
+//       SemiflexibleGel<2>::RodIterator r2 = rods2.begin();
+//       for (; r1!=rods1.end(); r1++){
+// 	r2 = rods2.begin();
+// 	for (; r2!=rods2.end();r2++){
+// 	  SemiflexibleGel<2>::DefNodeContainer rodnodes1 = (*r1)->getNodes();
+// 	  SemiflexibleGel<2>::DefNodeContainer rodnodes2 = (*r2)->getNodes();
+// 	  const BrownianNode<2>::Point & X1A = rodnodes1[0]->position();
+// 	  const BrownianNode<2>::Point & X1B = rodnodes1[1]->position();
+// 	  const BrownianNode<2>::Point & X2A = rodnodes2[0]->position();
+// 	  const BrownianNode<2>::Point & X2B = rodnodes2[1]->position();
+// 	  
+// 	  // if the midpoints of the two rods are closer than have a
+// 	  // rod length apart, then add a crosslink
+// 	  Vector2D dx(0.0);
+// 	  dx = 0.5*(X1A+X1B) - 0.5*(X2A+X2B);
+// 	  box->mapDistance(dx);
+// 	  if(norm2(dx) < 0.5*dL){
+// 	    double xi1 = 0.5;
+// 	    double xi2 = 0.5;
+// 	    double k_crosslink = kBond;//0.0;
+// 	    Crosslink<2> * crosslink 
+// 	      = new Crosslink<2> ( rodnodes1[0], rodnodes1[1], 
+// 				   rodnodes2[0], rodnodes2[1], 
+// 				   xi1, xi2, 
+// 				   k_crosslink, 
+// 				   box );
+// 	    gel->addCrosslink(crosslink);
+//         std::cout << "crosslink created " << " X1A= " << X1A  
+// 			<< " X1B= " << X1B << std:: endl
+//                                           << " X2A= " << X2A  
+//                                           << " X2B= " << X2B << std::endl;  
+// 	  }
+// 	}
+//       }
+//     }
+//   }
 
   /////////////////////////////////////////////////////////////////////////////
   //
@@ -280,11 +290,9 @@ int main(int argc, char* argv[])
       for(int i=0; i<2; i++) {
 	nodes[a]->addPoint(i,(i)*dL/10.0);
       }
-    }
+	}
 
-  }
-  
+      }
   std::cout << "All done." << std::endl;
   return 0;
-  
 }

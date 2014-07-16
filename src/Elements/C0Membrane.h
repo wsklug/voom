@@ -145,7 +145,7 @@ namespace voom
     void checkPositions();
 		
     //! recompute the reference geometry and send it to materials
-    void updateRefConfiguration(double edgeLength=-1.0);
+    void updateRefConfiguration();
 
     //
     //   data

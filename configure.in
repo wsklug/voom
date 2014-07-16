@@ -43,7 +43,6 @@ AC_SUBST(tvmet_includes)
 AC_CONFIG_FILES([Makefile
 	src/Makefile
 	src/Elements/Makefile
-	src/Body/Makefile
 	src/Solvers/Makefile
 	src/Model/Makefile
 	src/Geometry/Makefile

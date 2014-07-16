@@ -1,4 +1,4 @@
-bin_PROGRAMS    = nonlinElasQuadTet axi contract angle entropicSpring c0membranegl c0membrane c0_membrane_configurational springshell
+bin_PROGRAMS    = nonlinElasQuadTet axi contract angle entropicSpring
 AM_CPPFLAGS        =                 	\
 	-I$(blitz_includes)            	\
 	-I$(tvmet_includes)            	\
@@ -15,10 +15,6 @@ contract_SOURCES = contract.cc
 axi_SOURCES    = axi.cc
 angle_SOURCES    = angle.cc
 entropicSpring_SOURCES    = entropicSpring.cc
-c0membranegl_SOURCES    = c0membranegl.cc
-c0membrane_SOURCES    = c0membrane.cc
-c0_membrane_configurational_SOURCES = c0_membrane_configurational.cc
-springshell_SOURCES = springshell.cc
 LDFLAGS    = -L$(blitz_libraries) \
 	-L../                          \
 	-L../../VoomMath/                  \
@@ -27,12 +23,11 @@ LDFLAGS    = -L$(blitz_libraries) \
 	-L../../Quadrature/           \
 	-L../../Shape/                 
 LDADD      = 	\
-	-lQuadrature	\
-        -lElements	\
+	-lVoomMath	\
 	-lMaterials	\
 	-lGeometry	\
+	-lQuadrature	\
+        -lElements	\
 	-lShape		\
-	-lVoomMath	\
-	-lblitz		\
-	-lm
+	-lblitz
 

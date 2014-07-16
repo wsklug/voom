@@ -34,14 +34,6 @@ namespace voom
   class ShellMaterial
   {
   public:
-    // ShellMaterial() {
-    //   _W = 0.0;
-    //   _n(0) = _n(1) = _n(2) =
-    // 	_nTC(0) = _nTC(1) = _nTC(2) = Vector3D(0.0);
-    //   _m(1) = _m(2) = Vector3D(0.0);
-    //   _stretch = 0.0;
-    // }
-
     //! virtual destructor
     virtual ~ShellMaterial() { ; }
     //! initialize the geometry in reference coords
@@ -49,19 +41,44 @@ namespace voom
     void setGeometry( const ShellGeometry& g ) {_deformedGeometry = g;}
 
 
+    // ***********************************************************************
+    // Lin: I cannot believe that you added all of this crap to the
+    // shell Material class.  Do all shell materials have
+    // concentration, reaction coordinate, etc.?  Obviously not.
+    // These things shoulod be only in the material classes that need
+    // them.  Don't pollute base classes with unnescessary junk! -WSK
+    // ***********************************************************************
+
+    void setConcentration(const double& C, const tvmet::Vector< double, 2 > & dC) {_C = C; _dC = dC;}
+    void setReactionCoordinate(const double& eta, const tvmet::Vector< double, 2 > & dEta) {_eta = eta; _dEta = dEta;}
+
     virtual double energyDensity() const { return _W; }    
 
     virtual double stretchingEnergy() const = 0;   
 
     virtual double bendingEnergy() const = 0;
 
+    virtual double concentration() const { return _C; }
+  
     virtual const tvmet::Vector< Vector3D, 3 >& stressResultants() const 
     { return _n; }
     virtual const tvmet::Vector< Vector3D, 2 >& momentResultants() const 
     { return _m; }
-
+    virtual const tvmet::Vector< Vector3D, 3 >& concentrationStressResultants() const 
+    { return _nC; }
+    virtual const double& chemicalResultants() const
+    {return _muC;}
+    virtual const tvmet::Vector< double, 2 >& chemicalGradientResultants() const
+    {return _muDC;}
     virtual const tvmet::Vector< Vector3D, 3 >& totalCurvatureStressResultants() const 
     { return _nTC; }
+
+    virtual const tvmet::Vector< Vector3D, 3 >& GLStressResultants() const 
+    { return _nEta; }
+    virtual const double& GLResultants() const
+    {return _muEta;}
+    virtual const tvmet::Vector< double, 2 >& GLGradientResultants() const
+    {return _muDEta;}
 
     const double& stretch() const { return _stretch; }
 
@@ -73,7 +90,16 @@ namespace voom
 
     tvmet::Vector< Vector3D, 3 > _n;  // stress resultants
     tvmet::Vector< Vector3D, 2 > _m;  // moment resultants
+    tvmet::Vector< Vector3D, 3 > _nC; // concentration stress resultants
+    double _muC;                      // chemical resultants 
+    tvmet::Vector< double, 2 >  _muDC;// chemical gradient resultants
     tvmet::Vector< Vector3D, 3 > _nTC;
+
+    tvmet::Vector< Vector3D, 3 > _nEta;
+    double _muEta;                      
+    tvmet::Vector< double, 2 >  _muDEta;
+
+
 
     std::vector< BaseMaterial_t > _baseMaterials;
   
@@ -81,6 +107,11 @@ namespace voom
     ShellGeometry _referenceGeometry;
     double _stretch;
 
+    double _C; //concentration
+    tvmet::Vector< double, 2 > _dC;//concentration gradient
+
+    double _eta; //reaction coordinate
+    tvmet::Vector< double, 2 > _dEta;//gradient
   };
 
 } //namespace voom

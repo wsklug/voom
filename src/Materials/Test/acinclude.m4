@@ -4,14 +4,26 @@ AC_DEFUN([VOOM_CHECK_BLITZ],
 ac_blitz_includes=NO
 ac_blitz_libraries=NO
 
-blitz_includes="/home/software/blitz-gcc/include"
-blitz_libraries="/home/software/blitz-gcc/lib"
+blitz_includes="/home/software/blitz-gcc"
+blitz_libraries="/home/software/blitz-gcc/lib/.libs"
 
 AC_ARG_WITH(blitz-root,
     [  --with-blitz-root=DIR       Blitz root directory],
     [
 	blitz_includes="$withval"/include
        	blitz_libraries="$withval"/lib
+    ])
+
+AC_ARG_WITH(blitz-includes,
+    [  --with-blitz-includes=DIR  Blitz header files],
+    [
+       	blitz_includes="$withval"
+    ])
+
+AC_ARG_WITH(blitz-libraries,
+    [  --with-blitz-libraries=DIR Blitz library directory],
+    [
+	blitz_libraries="$withval"
     ])
 
 if test ! "$ac_blitz_includes" = "NO"; then

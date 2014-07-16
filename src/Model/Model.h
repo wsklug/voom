@@ -90,7 +90,7 @@ namespace voom
     void computeAndAssemble( Solver_t & solver, bool f0, bool f1, bool f2 );
 
     //! Get the number of degrees of freedom in the model
-    int dof() const {return _dof;} 
+    const int dof() const {return _dof;} 
 
     const BodyContainer & bodies() const {return _bodies;}
 

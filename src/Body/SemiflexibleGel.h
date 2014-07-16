@@ -53,8 +53,10 @@
 #include "PinchForce.h"
 #include "NematicProbTable.h"
 
-#include "AffinityElement.h"
-#include "AffinityMeasure.h"
+//#include "AffinityElement.h"
+//#include "AffinityMeasure.h"
+
+#include "ViscousRegularizer.h"
 
 #ifdef WITH_MPI
 #include <mpi.h>
@@ -153,6 +155,10 @@ namespace voom
 
       Filament(const DefNodeContainer & n, double kappa, double mu, double viscosity, double kT, double dt, double minLength);
 
+      Filament(const DefNodeContainer & n, double entropic_k, double kap, double Lp, double viscosity, double kT, double dt, double k_max, double mu, std::map<DefNode*,DefNode*> & cnMap);
+
+
+
       ~Filament();
 
       const VectorND & point();
@@ -172,7 +178,8 @@ namespace voom
     
     typedef Grid<Filament,Filament,N> FilGrid;
     typedef Grid<DefNode,BaseDefNode,N> NodeGrid;
-    typedef Grid<AffinityElement,AffinityElement,N> AffElementGrid;
+//     typedef Grid<AffinityElement,AffinityElement,N> AffElementGrid;
+    typedef Grid<Bond,Bond,N> BondGrid;
 
     struct TempCrosslink {
       //VectorND location;
@@ -195,6 +202,37 @@ namespace voom
     };
 
     typedef typename std::vector<TempFilament *> TempFilamentContainer;
+
+    struct Segment {
+      int filID;
+      int nodeID1,nodeID2;
+
+      double length;
+
+      double critStrain;
+
+      double buckleStrain;
+      
+      double bendE,stretchE;
+      
+      //std::vector<Segment*> neighbors;
+
+      VectorND pos;
+      VectorND pt;
+
+      const VectorND & position() { return pos; }
+
+      const VectorND & point() { return pt; }
+      
+    };
+
+    struct buckleComp {
+      bool operator() (const Segment* a, const Segment* b) {
+	if(a->critStrain < b->critStrain) return true;
+	else return false;
+      }
+
+    };
 
     //! Default Constructor
     SemiflexibleGel() {
@@ -229,6 +267,8 @@ namespace voom
       }
       _energy = 0.0;
     }
+
+    void updateNodalPoints(std::string & strainedGelFN);
     
     void removePrestress();
     
@@ -245,6 +285,8 @@ namespace voom
 
     void storeSparseGel(std::string fileName, TempFilamentContainer & tmpFils);
 
+    void printforAbaqus(std::string fileName, double mu, double lB, double minLength, int method);
+
     void addFilament( const DefNodeContainer & n, double kBond, double kAngle,
 		      double viscosity, double kT, double dt ) { 
       Filament * f = new Filament( n, kBond, kAngle, viscosity, kT, dt );
@@ -252,14 +294,20 @@ namespace voom
     }
 
     //! Add a filament with nonlinear (entropic) springs
-    void addFilament( const DefNodeContainer & n, double kAngle, double viscosity, 
-		      double kT, double dt, double kC, int fitOrder, double maxForce){ 
-      Filament * f = new Filament( n, kAngle, viscosity, kT, dt, kC, fitOrder, maxForce);
-      _filaments.push_back( f );
-    }
+//     void addFilament( const DefNodeContainer & n, double kAngle, double viscosity, 
+// 		      double kT, double dt, double kC, int fitOrder, double maxForce){ 
+//       Filament * f = new Filament( n, kAngle, viscosity, kT, dt, kC, fitOrder, maxForce);
+//       _filaments.push_back( f );
+//     }
 
     void addFilament(const DefNodeContainer & n, double kappa, double mu, double viscosity, double kT, double dt, double minLength) {
       Filament * f = new Filament(n,kappa,mu,viscosity,kT,dt,minLength);
+      _filaments.push_back(f);
+
+    }
+
+    void addFilament(const DefNodeContainer & n, double entropic_k, double kap, double Lp, double viscosity, double kT, double dt, double k_max, double mu) {
+      Filament * f = new Filament(n,entropic_k,kap,Lp,viscosity,kT,dt,k_max,mu,_crossNodeMap);
       _filaments.push_back(f);
     }
 
@@ -270,7 +318,26 @@ namespace voom
     const Filament * filament(int a) const { return _filaments[a]; }
 
     Filament * filament(int a) {return _filaments[a]; }
+
+    void affineShearX(double shear) {      
+      for(FilamentIterator fi=_filaments.begin(); fi!=_filaments.end(); fi++) {
+	for(DefNodeIterator dni=(*fi)->nodes.begin(); dni!=(*fi)->nodes.end(); dni++) {
+	  VectorND nodePos;
+	  nodePos = (*dni)->position();
+	  nodePos[0] += shear*(nodePos[1]-(_box->size()[1]/2.0));
+	  (*dni)->setPoint(nodePos);
+	}
+      }
+    }
+
+    void printConnectionData(std::string & connFileName);
+
+    void printStiffenedSegments(std::string & stiffSegFile, double crit);
     
+    void stiffenRandomSegments(double frac, double mult);
+
+    //void reportStiffened
+
     void moveCLNodes(Filament * f);
 
     void setGrid(FilGrid * g) { _grid = g; }
@@ -315,15 +382,38 @@ namespace voom
 
     void addConstraint( Constraint * c ) { _constraints.push_back( c ); }
 
-    void addPinches(double pinchDensity, double a, double tol, double f0);
+    void addPinches(double pinchDensity, double a, double tol, double f0, bool sameFilament);
     
-    void addPinches(int nPinches, double a, double tol, double f0);
+    void addPinches(int nPinches, double a, double tol, double f0, bool sameFilament);
 
     void addPinch(DefNode * n1, DefNode * n2, double f0);
 
     void addPinch(double a, double tol, double f0);
 
+    Pinch* pinch(int i) { return _pinches[i]; }
+    
+    std::vector<Pinch*> & pinches() { return _pinches; }
+
     //void addPinch(double f0, bool springy, DefNodeContainer & dNodes, double kBond, double kAngle, double visc, double kT, double dt, double kcl);
+
+    void turnOffPinches() {
+      for(PinchIterator pi = _pinches.begin(); pi!=_pinches.end(); pi++) {
+	(*pi)->turnOff();
+      }
+    }
+    
+    void turnOnPinches() {
+      for(PinchIterator pi = _pinches.begin(); pi!=_pinches.end(); pi++) {
+	(*pi)->turnOn();
+      }
+    }
+
+    void turnOnPinches(double f0) {
+      for(PinchIterator pi = _pinches.begin(); pi!=_pinches.end(); pi++) {
+	(*pi)->turnOn();
+	(*pi)->setPinchF(f0);
+      }
+    }
 
     void setBox( PeriodicBox * box ) { _box = box; }
 
@@ -339,9 +429,15 @@ namespace voom
 
     double crosslinkenergy();
 
+    double filenergy() { return bendingenergy() + stretchingenergy(); }
+
     double bendingenergy();
 
     double stretchingenergy();
+
+    double motorenergy();
+    
+    double pinchenergy();
 
     double parallelenergy();
     
@@ -361,6 +457,8 @@ namespace voom
       std::map< double, int > & nd = _nematicFreqs;
       return nd;
     }
+
+    std::set<DefNode *> & pinchNodes() { return _pinchNodes; }
 
     std::map< doublePair, doublePair > getAngularEnergyDistro();
     
@@ -433,6 +531,53 @@ namespace voom
     void computeCrossCorrelations(double len, double shear, std::string & fileName);
 
     double computeBucklingEnergy(double shear, double kap, double mu);
+
+    void computeBucklingMap(VectorND & boxsize, double shear, double bendfrac, std::string fileName, bool doCorrTest);
+
+    void buckleOPCalc(double gridSize, std::map<double,std::string> strainedGelFiles, bool doCorrs);
+
+    void cooperativeBuckleMeasure(double gridSize, double bendfrac, double l_B, std::map<double,std::string> strainedGelFiles, bool doCorrs);
+
+    void setViscReg(double visc) {
+      std::vector<NodeBase*> allNodes;
+      for(FilamentIterator fi=_filaments.begin(); fi!=_filaments.end(); fi++) {
+	for(DefNodeIterator ni=(*fi)->nodes.begin(); ni!=(*fi)->nodes.end(); ni++) {
+	  allNodes.push_back(*ni);
+	}
+      }
+      
+      if(_viscReg!=0) delete _viscReg;
+      
+      _viscReg = new ViscousRegularizer(allNodes,visc);
+    }
+
+    ViscousRegularizer* viscReg() { return _viscReg; }
+
+    void makeFinalPosMap(std::vector<VectorND> & finalPos) {
+      _finalPosMap.clear();
+      int nNodesTotal = 0;
+      int nFils = _filaments.size();
+      for(int fn=0; fn<nFils; fn++) {
+	int nNodes = filament(fn)->nodes.size();
+	for(int nn=0; nn<nNodes; nn++) {
+	  nNodesTotal++;
+	}
+      }
+
+      assert(nNodesTotal == finalPos.size());
+
+      nNodesTotal = 0;
+      for(int fn=0; fn<nFils; fn++) {
+	int nNodes = filament(fn)->nodes.size();
+	for(int nn=0; nn<nNodes; nn++) {
+	  _finalPosMap.insert(pair<DefNode*,VectorND>(filament(fn)->nodes[nn],finalPos[nNodesTotal]));
+	  nNodesTotal++;
+	}
+      }     
+      
+    }
+
+    std::map<DefNode*,VectorND> & finalPosMap() { return _finalPosMap; }
     
 
   private:
@@ -478,6 +623,10 @@ namespace voom
     std::vector<TwoBodyPotential*> _tbp;
     
     FilGrid * _grid;
+
+    ViscousRegularizer* _viscReg;
+
+    std::map<DefNode*, VectorND> _finalPosMap;
 
   };  
 } // namespace voom

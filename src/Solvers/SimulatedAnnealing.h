@@ -93,19 +93,19 @@ namespace voom
       exit(0);
     };
     
-    double field(int i) const {return _x(i);}
-    double function() const {return _f;}
-    double gradient(int i) const {
+    const double field(int i) const {return _x(i);}
+    const double function() const {return _f;}
+    const double gradient(int i) const {
       std::cerr << "No gradient in Simulate Annealing solver." << std::endl;
       exit(0);
     };
-    double hessian(int i, int j) const {
+    const double hessian(int i, int j) const {
       std::cerr << "No stiffness in Simulate Annealing solver." << std::endl;
       exit(0);
     };
 
     double & hessian(int i) { return hessian(i,i);}
-    double hessian(int i) const { return hessian(i,i);}
+    const double hessian(int i) const { return hessian(i,i);}
     
     virtual double * field() {return _x.data();}
     virtual double * gradient() {return 0;}

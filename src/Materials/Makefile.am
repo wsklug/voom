@@ -7,10 +7,8 @@ libMaterials_a_SOURCES= 	\
 	TwoPhaseElastic.cc	\
 	GLElastic.cc             \
 	FVK.cc			\
-	StVenantShell.cc	\
 	StVenant.cc 		\
 	LinearizedMaterial.cc 	\
 	Hookean2D.cc 		\
 	Hookean.cc              \
-	CompNeoHookean.cc	\
-	Graphene.cc
+	CompNeoHookean.cc

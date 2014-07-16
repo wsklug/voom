@@ -8,7 +8,7 @@
 #include "SemiflexibleGel.h"
 #include "Model.h"
 #include "Lbfgsb.h"
-//#include "Lbfgs.h"
+#include "Lbfgs.h"
 #include "CGfast.h"
 #include "BrownianRod.h"
 #include <random/uniform.h>
@@ -17,6 +17,7 @@
 #include "PeriodicBox.h"
 #include "LeesEdwards.h"
 #include "GelOutput.h"
+#include "ViscousRegularizer.h"
 //#include <process.h>
 
 #define USEOPENMP 0
@@ -265,8 +266,9 @@ int main(int argc, char* argv[]) {
   double tmpratio = -1.0; // nominal value of L/l_c //
   double actuall_c = -1.0; // actual value of l_c //
   double lambda = -1.0; // l_c*(l_c/l_B)^z //
-  double F_max = -1.0; // maximum force allowed in nonlinear rods (entropic elasticity) //
-  int fitOrder = -1; // order of fitting function to use for entropic springs //
+  double k_max = -1.0; // maximum stiffness allowed in nonlinear rods (entropic elasticity) //
+  double entropic_k = -1.0;
+  double entropic_Lp = -1.0;
   double filDens = -1.0; // filament density in microns^-2 //
   int nNodesPerFilament = -1; // # of nodes per filament //
   double nodesPerCL = 2.5; // avg # of nodes between crosslinks //
@@ -283,14 +285,22 @@ int main(int argc, char* argv[]) {
   std::string gelDirectory = "./";
   std::string gelFileName;
   std::string bondType = "Spring";
+  
+  bool linearizedentropic = false;
+  double linentfrac = 0.0;
+  double linentmult = 1.0;
 
   std::string solverType = "LBFGSB";
 
   bool cutOffEnds = false;
 
+  double viscReg = -1.0;
+
   bool relaxPrestress = false;
 
   bool retrieveGel = false;
+
+  bool checkConsist = false;
 
   bool shearXtest = false;
   bool shearYtest = false;
@@ -307,7 +317,14 @@ int main(int argc, char* argv[]) {
   std::string polydisp = "none";
   double actualL;
 
+  // motor parameters //
+  double maxMotorForce = -1.0;
+  double startMotorSep = -1.0;
+  double annulusTol = -1.0;
+  double motorDens = -1.0;
+
   // parameters for nematic test //
+  double shrStart = 0.0;
   double shrEnd = -1.0;
   int nShrSteps = -1;
   double shrStep = -1.0;
@@ -346,16 +363,41 @@ int main(int argc, char* argv[]) {
       }
       else if(parName.find("L_p")!=string::npos) L_p = atof(parValStr.data());
       else if(parName.find("kC")!=string::npos) kC = atof(parValStr.data());
+      else if(parName.find("visc. reg.")!=string::npos) {
+	viscReg = atof(parValStr.data());
+      }
       else if(parName.find("visc")!=string::npos) {
 	visc = atof(parValStr.data()); 
 	pm.insert(pair< std::string, std::string >("viscosity",parValStr));
       }
       else if(parName.find("SolverType")!=string::npos) solverType = parValStr.data();
       // else if(parName.find("r")!=string::npos) r = parVal;
-      else if(parName.find("F_max")!=string::npos) {
-	F_max = atof(parValStr.data());
-	pm.insert(pair< std::string, std::string >("F_max",parValStr));
+      else if(parName.find("k_max")!=string::npos) {
+	k_max = atof(parValStr.data());
+	pm.insert(pair< std::string, std::string >("k_max",parValStr));
 	bondType = "EntropicSpring";
+      }
+      else if(parName.find("Entropic_lin")!=string::npos) {
+	if(atof(parValStr.data()) > 0.5) {
+	  linearizedentropic = true;
+	  pm.insert(pair< std::string, std::string >("Entropic_lin_springs","1"));
+	}
+      }
+      else if(parName.find("Entr_lin_frac")!=string::npos) {
+	pm.insert(pair< std::string, std::string >("Entropic_lin_stiff_frac",parValStr.data()));
+	linentfrac = atof(parValStr.data());
+      }
+      else if(parName.find("Entr_lin_mult")!=string::npos) {
+	pm.insert(pair< std::string, std::string >("Entropic_lin_stiff_mult",parValStr.data()));
+	linentmult = atof(parValStr.data());
+      }
+      else if(parName.find("Entropic_k")!=string::npos) {
+	entropic_k = atof(parValStr.data());
+	pm.insert(pair< std::string, std::string >("Entropic_k",parValStr));
+      }
+      else if(parName.find("Entropic_Lp")!=string::npos) {
+	entropic_Lp = atof(parValStr.data());
+	pm.insert(pair< std::string, std::string >("Entropic_Lp",parValStr));
       }
       else if(parName.find("NodesPerCL")!=string::npos) {
 	nodesPerCL = atof(parValStr.data());
@@ -376,9 +418,10 @@ int main(int argc, char* argv[]) {
 	pm.insert(pair< std::string, std::string >("l_B",parValStr));
       }
       else if(parName.find("fit")!=string::npos) {
-	fitOrder = atoi(parValStr.data());
+	//fitOrder = atoi(parValStr.data());
 	pm.insert(pair< std::string, std::string >("fit order",parValStr));	
       }
+      else if(parName.find("Shear_start")!=string::npos) shrStart = atof(parValStr.data());
       else if(parName.find("Shear_final")!=string::npos) shrEnd = atof(parValStr.data());
       else if(parName.find("Shear_size")!=string::npos) shrStep = atof(parValStr.data()); 
       else if(parName.find("Stretch_final")!=string::npos) stretchEnd = atof(parValStr.data()); 
@@ -471,8 +514,33 @@ int main(int argc, char* argv[]) {
       else if(parName.find("Long fraction")!=string::npos) {
 	pm.insert(pair< std::string, std::string >("longfraction",parValStr));
       }
+      else if(parName.find("Long stiffness")!=string::npos) {
+	pm.insert(pair< std::string, std::string >("longstiffness",parValStr));
+      }
+      else if(parName.find("Long bend_stiff")!=string::npos) {
+	pm.insert(pair< std::string, std::string >("longbendstiffness",parValStr));
+      }
+      else if(parName.find("Long cutoff")!=string::npos) {
+	pm.insert(pair< std::string, std::string >("longcutoff",parValStr));
+      }
       else if(parName.find("Min. length")!=string::npos) {
 	pm.insert(pair< std::string, std::string >("minlength",parValStr));
+      }
+      else if(parName.find("Check_consist")!=string::npos) {
+	if(atof(parValStr.data()) >= .5) checkConsist = true;
+      }
+      else if(parName.find("Motor_dens")!=string::npos) {
+	motorDens = atof(parValStr.data());
+      }
+      else if(parName.find("Max_Motor_force")!=string::npos) {
+	maxMotorForce = atof(parValStr.data());
+	pm.insert(pair< std::string, std::string >("motor force",parValStr));
+      }
+      else if(parName.find("Motor_sep_tol")!=string::npos) {
+	annulusTol = atof(parValStr.data());
+      }
+      else if(parName.find("Motor_sep")!=string::npos) {
+	startMotorSep = atof(parValStr.data());
       }
       else if(parName.find("L")!=string::npos) {
 	L = atof(parValStr.data());
@@ -502,55 +570,58 @@ int main(int argc, char* argv[]) {
       if(!adaptiveMeshing) pm.insert(pair< std::string, std::string>("bending modulus",tmpStr.str()));
       else pm.insert(pair< std::string, std::string>("angle stiffness",tmpStr.str()));
       // get nominal l_c and L from gel file name //
-      int Lpos = gelFileName.find("L=") + 2;
-      int l_Cpos = gelFileName.find("l_C");
-      int dLpos = gelFileName.find("dL");
-      int Wxpos = gelFileName.find("Wx");
-      int kclpos = gelFileName.find("kcl");
-      int nempos = gelFileName.find("S");
-      int gelNumpos = gelFileName.find("gelnum");
-      int endPos = gelFileName.find(".gelsave");
-      std::string Lstr;
-      Lstr.assign(gelFileName,Lpos,l_Cpos-1-Lpos);
-      pm["L"] = Lstr;
-      L = atof(Lstr.data());
-      std::string l_Cstr;
-      l_Cstr.assign(gelFileName,l_Cpos+4,dLpos-5-l_Cpos);
-      tmpratio = L/atof(l_Cstr.data());
-      std::ostringstream tm;
-      tm << setprecision(16) << tmpratio;
-      pm["L/l_c"] = tm.str();
-      std::string dLstr;
-      dLstr.assign(gelFileName,dLpos+3,Wxpos-4-dLpos);
-      if(!adaptiveMeshing) {
-        pm["dL"] = dLstr;
-        dL = atof(dLstr.data());
-      }
-      else dL = -1.0;
-      std::string kclStr;
-      kclStr.assign(gelFileName,kclpos+4,nempos-5-kclpos);
-      kcl = atof(kclStr.data());
-      pm["crosslink stiffness"] = kclStr;
-      std::string nemstr;
-      nemstr.assign(gelFileName,nempos+2,gelNumpos-nempos-3);
-      nematicOP = atof(nemstr.data());
-      std::string GNstr;
-      GNstr.assign(gelFileName,gelNumpos+7,endPos-gelNumpos-7);
-      curGelNum = atoi(GNstr.data());
+     //  int Lpos = gelFileName.find("L=") + 2;
+//       int l_Cpos = gelFileName.find("l_C");
+//       int dLpos = gelFileName.find("dL");
+//       int Wxpos = gelFileName.find("Wx");
+//       int kclpos = gelFileName.find("kcl");
+//       int nempos = gelFileName.find("S");
+//       int gelNumpos = gelFileName.find("gelnum");
+//       int endPos = gelFileName.find(".gelsave");
+//       std::string Lstr;
+//       Lstr.assign(gelFileName,Lpos,l_Cpos-1-Lpos);
+//       pm["L"] = Lstr;
+//       L = atof(Lstr.data());
+//       std::string l_Cstr;
+//       l_Cstr.assign(gelFileName,l_Cpos+4,dLpos-5-l_Cpos);
+//       tmpratio = L/atof(l_Cstr.data());
+//       std::ostringstream tm;
+//       tm << setprecision(16) << tmpratio;
+//       pm["L/l_c"] = tm.str();
+//       std::string dLstr;
+//       dLstr.assign(gelFileName,dLpos+3,Wxpos-4-dLpos);
+//       if(!adaptiveMeshing) {
+//         pm["dL"] = dLstr;
+//         dL = atof(dLstr.data());
+//       }
+//       else dL = -1.0;
+//       std::string kclStr;
+//       kclStr.assign(gelFileName,kclpos+4,nempos-5-kclpos);
+//       kcl = atof(kclStr.data());
+//       pm["crosslink stiffness"] = kclStr;
+//       std::string nemstr;
+//       nemstr.assign(gelFileName,nempos+2,gelNumpos-nempos-3);
+//       nematicOP = atof(nemstr.data());
+//       std::string GNstr;
+//       GNstr.assign(gelFileName,gelNumpos+7,endPos-gelNumpos-7);
+//       curGelNum = atoi(GNstr.data());
+      
       gelFileName.insert(0,gelDirectory);
       lambda = (tmpratio/L)*pow(tmpratio/(L*l_B),1.0/3.0);
       std::ostringstream lambstr;
       lambstr << setprecision(16) << lambda;
       pm["lambda"] = lambstr.str();
-      if(adaptiveMeshing) {
-        double mu = kC/sqr(l_B);
-        std::ostringstream mustream;
-        mustream << setprecision(16) << mu;
-	pm["bond stiffness"] = mustream.str();
-      }
+      
+      double mu = kC/sqr(l_B);
+      std::ostringstream mustream;
+      mustream << setprecision(16) << mu;
+      pm["bond stiffness"] = mustream.str();
+      
       
       if(!adaptiveMeshing) {
         gel = new SemiflexibleGel<2>(gelFileName,nodes,bondType,cutOffEnds,pm,0.0);
+	gel->compute(true,true,false);
+	std::cout << "Sanity check: gel's energy at 0 shear = " << gel->energy() << std::endl;
       }
       else {
         gel = new SemiflexibleGel<2>(gelFileName,nodes,bondType,cutOffEnds,minLength,pm);
@@ -665,6 +736,8 @@ int main(int argc, char* argv[]) {
     // create body //
     if(!adaptiveMeshing) {
       gel = new SemiflexibleGel<2>(nodes,box,filDens,nNodesPerFilament,dL,bondType,cutOffEnds,pm);
+      gel->compute(true,true,false);
+      std::cout << "Sanity check: gel energy at zero shear = " << gel->energy() << std::endl;
     }
     else {
       gel = new SemiflexibleGel<2>(nodes,box,filDens,L,bondType,cutOffEnds,minLength,pm);
@@ -760,6 +833,18 @@ int main(int argc, char* argv[]) {
   // check to make sure filaments aren't multiply crosslinked //
   // gel->checkCrosslinks();
 
+  if(motorDens > 0.0 && adaptiveMeshing) {
+    gel->addPinches(motorDens,startMotorSep,annulusTol,maxMotorForce,false);
+  }
+
+  if(linearizedentropic) {
+    // print out list of stiffened segments //
+    char stiffFileName[256];
+    sprintf(stiffFileName,"Run%d/stiffsegs-%d.dat",runNum,runNum);
+    std::string stiffFN(stiffFileName);
+    gel->printStiffenedSegments(stiffFN,0.0);
+  }
+
   if(shearXtest || shearYtest || expXYtest || expXtest || expYtest) {
     actuall_c = gel->getMeanCLsep();
     actualnemOP = gel->getNematicOP();
@@ -794,27 +879,51 @@ int main(int argc, char* argv[]) {
 		  << "Input pgtol: " << pgtol << std::endl
 		  << "Input m: " << m << std::endl;
       }
+
+    }
+    else {
+      ifstream lbfgsinp("lbfgs.inp");
+      lbfgsinp >> iprint >> gtol >> m ;
+      if(verbose) {
+	std::cout << "Input iprint: " << iprint << std::endl
+		  << "Input gtol: " << gtol << std::endl
+		  << "Input m: " << m << std::endl;
+      }
+ 
+    }
+
+    ViscousRegularizer* vReg;
+    double vRegTol = nodes.size()*viscReg*(1.0e-12);
+    if(viscReg > 0.0) {
+      gel->setViscReg(viscReg);
+      vReg = gel->viscReg();
+      ifstream viscreginp("viscreg.inp");
+      viscreginp >> vRegTol >> maxiter;
+
+      std::cout << "Viscous regularizer parameters: " << std::endl
+		<< "Input visc. reg. energy tol: " << vRegTol << std::endl
+		<< "Input solver iters between resets: " << maxiter << std::endl;
+    }
+
+    if(solverType.find("LBFGSB")!=string::npos) {
       solver = new Lbfgsb(model.dof(),m,factr,pgtol,iprint,maxiter);
     }
-    //else {
-    //  ifstream lbfgsinp("lbfgs.inp");
-    //  lbfgsinp >> iprint >> gtol >> m ;
-    //  if(verbose) {
-    //	std::cout << "Input iprint: " << iprint << std::endl
-    //		  << "Input gtol: " << gtol << std::endl
-    //		  << "Input m: " << m << std::endl;
-    //  }
-    //  solver = new Lbfgs(m,gtol,iprint,maxiter);
-    // }
+
+    else {
+      solver = new Lbfgs(m,gtol,iprint,maxiter);
+    }
+
     //    Lbfgsb solver(model.dof(), m, factr, pgtol, iprint, maxiter );
-    box->setShear(0.0);
-    std::cout << "Relaxing gel with no shear/stretching." << std::endl;
-    solver->solve(&model);
+//     box->setShear(0.0);
+//     std::cout << "Relaxing gel with no shear/stretching." << std::endl;
+//     solver->solve(&model);
 
     InitPositionMap ipmap;
     for(SemiflexibleGel<2>::DefNodeIterator n=nodes.begin(); n!=nodes.end(); n++) {
       ipmap[*n] = (*n)->point();
     }
+
+
 
     if(zeroReturn) {
       box->setShear(.0025);
@@ -863,7 +972,22 @@ int main(int argc, char* argv[]) {
 //       std::cout << "Gel energy before rotation = " << olden << "; gel energy after rotation = " << newen << "; gel energy after new minimization = " << gel->energy() << "." << std::endl;
 //     }
 
+
+    if(checkConsist) {
+      double perturbScale = minLength/100.0;
+      //double perturbScale = 0.0;
+      ranlib::Normal<double> perturbRNG(0.0,perturbScale);
+      perturbRNG.seed((unsigned int)time(0));
+      for(SemiflexibleGel<2>::DefNodeIterator n=nodes.begin(); n!=nodes.end(); n++) {
+	tvmet::Vector<double,2> oldPoint = (*n)->point();
+	for(int ido=0; ido<2; ido++) oldPoint[ido] += perturbRNG.random();
+	(*n)->setPoint(oldPoint);
+      }
+      model.checkConsistency(true,false);
+    }
+
     if(shearXtest) {
+
       std::cout << std::endl << "Shearing gel in X direction." << std::endl;
       std::string shearXFileName = nematicFileName + "-ShearX.dat";
       std::string shearXAffineFileName = nematicFileName + "-affine-ShearX.dat";
@@ -872,34 +996,68 @@ int main(int argc, char* argv[]) {
       }
       output.printParamHeader(shearXFileName,paramstring.str());
       output.printParamHeader(shearXAffineFileName,paramstring.str());
-      std::string fieldString = "ShearX\tE_tot\tE_cl\tE_bend\tE_strc";
+      std::string fieldString = "ShearX\tE_tot\tE_gel\tE_bend\tE_strc\tE_cl\tE_mot\tE_pnch\tE_vreg";
       output.printFieldLabels(shearXFileName,fieldString);
       output.printFieldLabels(shearXAffineFileName,fieldString);
-      nShrSteps = (int)(abs(shrEnd)/shrStep);
+      nShrSteps = (int)(abs(shrEnd-shrStart)/shrStep);
       for(int sx=0; sx<=nShrSteps; sx++) {
-	std::cout << "Shear X = " << shrStep*sx << std::endl;
-	box->setShearX(shrStep*sx);
-	guessAffineShearX(gel,shrStep*sx);
+	//gel->turnOffPinches();
+	std::cout << "Shear X = " << shrStart + shrStep*sx << std::endl;
+	box->setShearX(shrStart + shrStep*sx);
+	guessAffineShearX(gel,shrStart + shrStep*sx);
 	gel->compute(true,true,false);
 	output.printEnergies(gel,shearXAffineFileName,shrStep*sx);
-	solver->solve(&model);
+	if(viscReg > 0.0) {
+	  vReg->step();
+	  solver->solve(&model);
+	  vReg->compute(true,true,false);
+	  double viscEng = vReg->energy();
+	  std::cout << "Viscous regularizer energy = " << viscEng << std::endl;
+	  while(viscEng > vRegTol) {
+	    vReg->step();
+	    solver->solve(&model);
+	    vReg->compute(true,true,false);
+	    viscEng = vReg->energy();
+	    std::cout << "Viscous regularizer energy = " << viscEng << std::endl;
+	  }
+	  vReg->step();
+	}
+	else {
+	  solver->solve(&model);
+	}
 	gel->compute(true,true,false);
-	//gel->printBigBends();
-	output.printEnergies(gel,shearXFileName,shrStep*sx);
-	
+	output.printEnergies(gel,shearXFileName,shrStart+(shrStep*sx));
+	char affXname[128];
+	sprintf(affXname,"Run%d/afftest-shearX=%f.dat",runNum,shrStart+(shrStep*sx));
+	std::string affXFN(affXname);
+	gel->storeGel(affXFN);
+	//if(motorDens > 0.0) {
+	//  double motForceStep = maxMotorForce/5.0;
+	//  for(int mi=1; mi<=5; mi++) {
+	//    double motForce = motForceStep*mi;
+	//    std::cout << "Motor force = " << motForce << "." << std::endl;
+	//    gel->turnOnPinches(motForce);
+	//    solver->solve(&model);
+	//  }
+	//  gel->compute(true,true,false);
+	//  //gel->printBigBends();
+	//  output.printEnergies(gel,shearXFileName,shrStart+(shrStep*sx));
+
+	  //char affXname[128];
+	  //sprintf(affXname,"Run%d/afftest-motors-shearX=%f.dat",runNum,shrStart+(shrStep*sx));
+	  //std::string affXFN(affXname);
+	  //gel->storeGel(affXFN);
+	//}
+
 	//output.printSolverData(gel,solver,shearXSolverFN);
 	if(writeStates) {
 	  fname2print.clear();
 	  char shearXname[128];
-	  sprintf(shearXname,"Run%d/shearX=%f",runNum,shrStep*sx);
+	  sprintf(shearXname,"Run%d/shearX=%f",runNum,shrStart+(shrStep*sx));
 	  fname2print.assign(shearXname);
-	  gel->print(fname2print);
+	  //gel->print(fname2print);
+	  output.printGel(gel,fname2print);
 	}
-       
-	char affXname[128];
-	sprintf(affXname,"Run%d/afftest-shearX=%f.dat",runNum,shrStep*sx);
-	std::string affXFN(affXname);
-	gel->storeGel(affXFN);
         
       }
     }
@@ -915,8 +1073,9 @@ int main(int argc, char* argv[]) {
       std::string shearYFileName = nematicFileName + "-ShearY.dat";
       std::string shearYAffineFileName = nematicFileName + "-affine-ShearY.dat";
       output.printParamHeader(shearYFileName,paramstring.str());
-      output.printParamHeader(shearYAffineFileName,paramstring.str());		
-      std::string fieldString = "ShearY\tE_tot\tE_cl\tE_bend\tE_strc";
+      output.printParamHeader(shearYAffineFileName,paramstring.str());	
+      std::string fieldString = "ShearY\tE_tot\tE_gel\tE_bend\tE_strc\tE_cl\tE_mot\tE_pnch";
+      //std::string fieldString = "ShearY\tE_tot\tE_cl\tE_bend\tE_strc";
       output.printFieldLabels(shearYFileName,fieldString);
       output.printFieldLabels(shearYAffineFileName,fieldString);
       nShrSteps = (int)(abs(shrEnd)/shrStep);
@@ -935,7 +1094,8 @@ int main(int argc, char* argv[]) {
 	  char shearYname[128];
 	  sprintf(shearYname,"Run%d/shearY=%f",runNum,shrStep*sy);
 	  fname2print.assign(shearYname);
-	  gel->print(fname2print);
+// 	  gel->print(fname2print);
+	  output.printGel(gel,fname2print);
 	}
 
         char affYname[128];
@@ -957,7 +1117,8 @@ int main(int argc, char* argv[]) {
       std::string expXYAffineFileName = nematicFileName + "-affine-ExpXY.dat";
       output.printParamHeader(expXYFileName,paramstring.str());
       output.printParamHeader(expXYAffineFileName,paramstring.str());
-      std::string fieldString = "ExpXY\tE_tot\tE_cl\tE_bend\tE_strc";
+      //std::string fieldString = "ExpXY\tE_tot\tE_cl\tE_bend\tE_strc";
+      std::string fieldString = "ExpXY\tE_tot\tE_gel\tE_bend\tE_strc\tE_cl\tE_mot\tE_pnch";
       output.printFieldLabels(expXYFileName,fieldString);
       output.printFieldLabels(expXYAffineFileName,fieldString);
       
@@ -980,7 +1141,8 @@ int main(int argc, char* argv[]) {
 	  char expXYname[128];
 	  sprintf(expXYname,"Run%d/expXY=%f",runNum,strtchFactor);
 	  fname2print.assign(expXYname);
-	  gel->print(fname2print);
+	  //gel->print(fname2print);
+	  output.printGel(gel,fname2print);
 	}
 
 	char affExpXYname[128];
@@ -1003,7 +1165,8 @@ int main(int argc, char* argv[]) {
       std::string expXAffineFileName = nematicFileName + "-affine-ExpX.dat";
       output.printParamHeader(expXFileName,paramstring.str());
       output.printParamHeader(expXAffineFileName,paramstring.str());
-      std::string fieldString = "StrX\tE_tot\tE_cl\tE_bend\tE_strc";
+      //std::string fieldString = "StrX\tE_tot\tE_cl\tE_bend\tE_strc";
+      std::string fieldString = "StrX\tE_tot\tE_gel\tE_bend\tE_strc\tE_cl\tE_mot\tE_pnch";
       output.printFieldLabels(expXFileName,fieldString);
       output.printFieldLabels(expXAffineFileName,fieldString);
       
@@ -1026,7 +1189,8 @@ int main(int argc, char* argv[]) {
 	  char expXname[128];
 	  sprintf(expXname,"Run%d/expX=%f",runNum,strtchFactor);
 	  fname2print.assign(expXname);
-	  gel->print(fname2print);
+	  //gel->print(fname2print);
+	  output.printGel(gel,fname2print);
 	}
 
 	char affExpXname[128];
@@ -1049,7 +1213,8 @@ int main(int argc, char* argv[]) {
       std::string expYAffineFileName = nematicFileName + "-affine-ExpY.dat";
       output.printParamHeader(expYFileName,paramstring.str());
       output.printParamHeader(expYAffineFileName,paramstring.str());
-      std::string fieldString = "StrY\tE_tot\tE_cl\tE_bend\tE_strc";
+      //std::string fieldString = "StrY\tE_tot\tE_cl\tE_bend\tE_strc";
+      std::string fieldString = "StrY\tE_tot\tE_gel\tE_bend\tE_strc\tE_cl\tE_mot\tE_pnch";
       output.printFieldLabels(expYFileName,fieldString);
       output.printFieldLabels(expYAffineFileName,fieldString);
       
@@ -1072,7 +1237,8 @@ int main(int argc, char* argv[]) {
 	  char expYname[128];
 	  sprintf(expYname,"Run%d/expY=%f",runNum,strtchFactor);
 	  fname2print.assign(expYname);
-	  gel->print(fname2print);
+	  //gel->print(fname2print);
+	  output.printGel(gel,fname2print);
 	}
 
 	char affExpYname[128];

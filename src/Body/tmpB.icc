@@ -1,0 +1,174 @@
+    for(int nSS = 1; nSS<nFiles; nSS++) {
+      
+      double curShear = fileIt->first;
+      double dgamma = curShear - lastShear;
+      int nBoxes = grid->nBoxes();
+      double boxVol = grid->boxVol();
+      map<DefNode*,double> buckleOP;
+      std::vector<int> nUnbuckled(nBoxes);
+      std::vector<int> nTotal(nBoxes);
+      std::vector<double> ldUnbuckled(nBoxes);
+      std::vector<double> ldTotal(nBoxes);
+      //std::vector<double> buckMeasures(nBoxes);
+      for(int nb=0; nb<nBoxes; nb++) {
+	int nTotalSegments = 0;
+	int nUnbuckledSegments = 0;
+	double ldUnbuck = 0.0;
+	double ldTot = 0.0;
+	std::set<Segment*> boxSegs = grid->getBoxElems(nb);
+	std::vector<VectorND> boxCorners;
+	boxCorners = grid->gridCorners(nb);
+	VectorND cellCenter(0.0);
+	int nCorners = boxCorners.size();
+	for(int nc=0; nc<nCorners; nc++) {
+	  cellCenter += (boxCorners[nc]/nCorners);
+	}
+	double buckMeasure = 0.0;
+	typename std::set<Segment*>::iterator segi;
+	int nSegsinBox = boxSegs.size();
+	for(segi=boxSegs.begin(); segi!=boxSegs.end(); segi++) {
+	  if((*segi)->critStrain > 0.0) {
+	    nTotalSegments++;
+	    ldTot += (*segi)->length;
+// 	    if((*segi)->buckleStrain > 0.0) {
+// 	      //buckMeasure += ((*segi)->critStrain-(*segi)->buckleStrain)/(*segi)->critStrain;
+// 	    }
+	    if(((*segi)->buckleStrain >= 0.0 && (*segi)->buckleStrain > curShear) || (*segi)->buckleStrain < 0.0) {
+	      nUnbuckledSegments++;
+	      ldUnbuck += (*segi)->length;
+	    }
+// 	    else {
+// 	      nUnbuckledSegments++;
+// 	      //buckMeasure += (critStrain-maxShear)/critStrain;
+// 	    }
+	  }
+	}
+	nUnbuckled[nb] = nUnbuckledSegments;
+	nTotal[nb] = nTotalSegments;
+	ldUnbuckled[nb] = ldUnbuck/boxVol;
+	ldTotal[nb] = ldTot/boxVol;
+ 	if(nTotalSegments > 0) {
+	  //buckMeasure /= nTotalSegments;
+	  //buckMeasures[nb] = buckMeasure;
+	  double numFracBuck = 1.0 - (((double)nUnbuckled[nb])/((double)nTotal[nb]));
+	  NodeBase::DofIndexMap idx(N);
+	  for(int j=0; j<N; j++) idx[j] = nb*N + j;
+	  if(N==2) {
+	    DefNode* newNode = new BrownianNode<2>(nb,idx,cellCenter,cellCenter);
+	    //std::pair<double,double> dpr = pair<double,double>(compressedFD[k],buckledFD[k]);
+	    dataLength.insert(std::pair<DefNode*,double>(newNode,ldTotal[nb]-ldUnbuckled[nb]));
+	    dataLengthFraction.insert(std::pair<DefNode*,double>(newNode,1.0-(ldUnbuckled[nb]/ldTotal[nb])));
+	    dataNumber.insert(std::pair<DefNode*,double>(newNode,(double)(nTotal[nb]-nUnbuckled[nb])));
+	    dataNumberFraction.insert(std::pair<DefNode*,double>(newNode,numFracBuck));
+	  }
+	}
+	//else buckMeasures[nb] = -1.0e10;
+      }
+      // now we have box measures and data; first make vtk map //
+
+      double maxdim = 0.0;
+      for(int dim=0; dim<N; dim++) {
+	if(curGridSize[dim] > maxdim) maxdim = curGridSize[dim];
+      }
+      
+      // now write vtk file with box data
+      
+      char tmpFName[256];
+      sprintf(tmpFName,"bucklemap-shear=%f",curShear);
+      std::string fileName(tmpFName);
+      std::string fName = fileName + ".vtk";
+      fName.insert(0,buckDir);
+      std::ofstream ofs(fName.c_str());
+      if (!ofs) {
+	std::cout << "Error: can not open paraview output file "
+		  << fName
+		  << std::endl;
+	return;
+      }
+      
+      tvmet::Vector<int,N> nBox = grid->nBoxesDim();
+      
+      int nPts = 1;
+      for(int n=0; n<N; n++) {
+	nPts *= (nBox[n]+1);
+      }
+      
+      ofs << "# vtk DataFile Version 2.0\n"
+	  << "Test example" << std::endl
+	  << "ASCII" << std::endl
+	  << "DATASET POLYDATA" << std::endl
+	  << "POINTS  " << nPts << "  double" << std::endl;
+      
+      if(N==2) {
+	for(int p=0; p<=nBox[0]; p++) {
+	  for(int q=0; q<=nBox[1]; q++) {
+	    ofs << std::setprecision(16) 
+		<< p*curGridSize[0] << "  "
+		<< 0.0 << "  "
+		<< q*curGridSize[1] << std::endl;
+	  }
+	}
+	
+	ofs << "POLYGONS  " << nBoxes << "  "
+	    << 5*nBoxes << std::endl;
+	
+	for(int p=0; p<nBox[0]; p++) {
+	  for(int q=0; q<nBox[1]; q++) {
+	    int lowerCorner = p*(nBox[1]+1) + q;
+	    ofs << 4 << "  "
+		<< std::setw(10) << lowerCorner
+		<< std::setw(10) << lowerCorner+1
+		<< std::setw(10) << lowerCorner+nBox[1]+2
+		<< std::setw(10) << lowerCorner+nBox[1]+1
+		<< std::endl;
+	  }
+	}
+	
+	ofs << "CELL_DATA    " << nBoxes << std::endl;
+	ofs << "SCALARS    nBucklableSegments    int    1" << std::endl;
+	ofs << "LOOKUP_TABLE default" << std::endl;
+	for(int p=0; p<nBoxes; p++) ofs << nTotal[p] << std::endl;
+	
+	ofs << std::endl;
+	
+	ofs << "SCALARS    nBuckledSegments    int    1" << std::endl;
+	ofs << "LOOKUP_TABLE default" << std::endl;
+	for(int p=0; p<nBoxes; p++) ofs << nTotal[p]-nUnbuckled[p] << std::endl;
+	
+	ofs << std::endl;
+	
+	ofs << "SCALARS    BucklableLengthDensity    double    1" << std::endl;
+	ofs << "LOOKUP_TABLE default" << std::endl;
+	for(int p=0; p<nBoxes; p++) ofs << ldTotal[p] << std::endl;    
+
+	ofs << std::endl;
+	
+	ofs << "SCALARS    BuckledLengthDensity    double    1" << std::endl;
+	ofs << "LOOKUP_TABLE default" << std::endl;
+	for(int p=0; p<nBoxes; p++) ofs << ldTotal[p]-ldUnbuckled[p] << std::endl;  
+	
+      }
+      
+      ofs.close();
+
+      if(doCorrs) {
+	if(N==2) {
+	  std::vector< pair<double,double> > corrData = computeCorrelationFunction(dataLength,maxdim,min(_box->size()[0],_box->size()[1])/4.0,maxdim,maxdim/4.0);
+	  
+	  std::cout << "Please input a file name in which to output the buckling strain correlation data: ";
+	  char buckCorrFN[256];
+	  std::cin >> buckCorrFN;
+	  std::ofstream buckCorrFile(buckCorrFN);
+	  buckCorrFile << "#r\tcorr\n";
+	  //typename vector< pair<double,double> >::iterator pi2 = corrDataNormal.begin();
+	  for(typename vector< pair<double,double> >::iterator pi=corrData.begin(); pi!=corrData.end(); pi++) {
+	    buckCorrFile << pi->first << "\t" << pi->second << "\n";
+	    //pi2++;
+	  }
+	  buckCorrFile.close();
+	  
+	  
+	}
+      }
+      
+    }

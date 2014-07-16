@@ -91,10 +91,7 @@ namespace voom
     NodeContainer & nodes() {return _nodes;}
 
     //! Add an element to the list
-    virtual void addElement( Element * e ) { 
-      _elements.push_back( e ); 
-      activate(_elements.size()-1);
-    }
+    virtual void addElement( Element * e ) { _elements.push_back( e ); }
 
     //! Add a node to the list
     virtual void addNode( NodeBase * n ) { 
@@ -123,8 +120,6 @@ namespace voom
 
     //! Print input file for Paraview
     virtual void printParaview(std::string name) const = 0;
-
-    virtual void checkConsistency();
 
   protected:
 

@@ -73,7 +73,10 @@ namespace voom
 	       const NodeContainer & nodes,
 	       MultiplierNode * pressureNode = 0,
 	       MultiplierNode * tensionNode = 0,
-               MultiplierNode * totalCurvatureNode = 0
+               MultiplierNode * totalCurvatureNode = 0,
+	       GlobalConstraint volumeConstraint = noConstraint,
+	       GlobalConstraint areaConstraint = noConstraint,
+               GlobalConstraint totalCurvatureConstraint = noConstraint
 	       )
 
   {
@@ -89,6 +92,9 @@ namespace voom
       _pressureNode = pressureNode;
       _tensionNode = tensionNode;
       _totalCurvatureNode = totalCurvatureNode;
+      _areaConstraint = areaConstraint;
+      _volumeConstraint = volumeConstraint;   
+      _totalCurvatureConstraint = totalCurvatureConstraint;   
 
       _volume = 0.0;
       _area = 0.0;
@@ -171,6 +177,13 @@ namespace voom
     MultiplierNode * _tensionNode;
 
     MultiplierNode * _totalCurvatureNode;
+
+    //! enum for area constraint choice
+    GlobalConstraint _areaConstraint;
+    //! enum for volume constraint choice
+    GlobalConstraint _volumeConstraint;
+
+    GlobalConstraint _totalCurvatureConstraint;
 
     //! strain energy
     double _strainEnergy;

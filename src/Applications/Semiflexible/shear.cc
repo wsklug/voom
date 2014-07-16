@@ -484,7 +484,11 @@ int main(int argc, char* argv[]) {
       sprintf(fname,"shear-%d",step);
       output(gel, fname);
       gel->print(fname);
-      output.printEnergies(gel,shearFileName,shear);      
+      output.printEnergies(gel,shearFileName,shear);
+      char gelStoreName[128];
+      sprintf(gelStoreName,"gel-shear=%f.gelsave",shear);
+      std::string gStNm(gelStoreName);
+      gel->storeGel(gStNm);
     }
   }
 

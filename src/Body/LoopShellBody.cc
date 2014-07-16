@@ -98,34 +98,52 @@ namespace voom
 
     HalfEdgeMesh * mesh = new HalfEdgeMesh(connectivities, _shellNodes.size());
     
-    // add a boundary layer of ghost faces and vertices for each boundary loop
+    // add a boundary layer of ghost faces and vertices
 
-    std::cout << "Adding ghost vertices and faces along " 
-	      << mesh->boundaryLoops.size() << " boundary loops..." 
+    // step 1: assuming a single boundary, walk around it starting
+    // from one edge
+
+    // find a boundary edge to start
+    HalfEdge * Hstart=0;
+    for(int h=0; h<mesh->halfEdges.size(); h++) {
+      HalfEdge * H = mesh->halfEdges[h];
+      if( H->opposite == 0 ) {
+	Hstart = H; 
+	break;
+      }
+    }
+
+    // found one, now walk around boundary, storing boundary edges in
+    // order
+    std::vector< HalfEdge * > boundaryEdges;
+    if( Hstart !=0 ) {
+      HalfEdge * H = Hstart; 
+      do {
+	boundaryEdges.push_back( H );
+	// find next boundary edge (CCW around the boundary) by
+	// walking around H's vertex CW
+	H = H->next;
+	while ( H->opposite != 0 ) {
+	  H = H->opposite->next;
+	}
+      } while ( H != Hstart );
+    }
+
+    std::cout << "Identified " << boundaryEdges.size() << " boundary edges." 
 	      << std::endl;
-    int numberGhostVertices=0;
-    int numberGhostFaces=0;
-    for( int L=0; L<mesh->boundaryLoops.size(); L++ ) {
-//       std::cout << "Loop " << L << " of " << mesh->boundaryLoops.size() 
-// 		<< std::endl;
-
-      std::vector<HalfEdge*> & boundaryEdges = mesh->boundaryLoops[L];
-
-      // step 1: add a ghost node and face for each boundary edge,
+    
+    if( boundaryEdges.size() > 0 ) {
+      // step 2: add a ghost node and face for each boundary edge,
       // also create ghostBC for each boundary edge
       for(int h=0; h<boundaryEdges.size(); h++) {
-
 	HalfEdge * H = boundaryEdges[h];
 	
-// 	std::cout << "\tH=" << H->id ;
-
 	// add new ghost node
 	int V = _shellNodes.size();
 	NodeBase::DofIndexMap idx(3,-1);
 	Vector3D X(0.0);
 	FeNode_t * N = new FeNode_t(V, idx, X, X);
 	_shellNodes.push_back(N);
-	numberGhostVertices++;
 	
 	// Create ghost triangle V0 V2 V and ghostBC for adjacent faces
 	//      
@@ -148,21 +166,13 @@ namespace voom
 	ElementConnectivity c;
 	c = V0, V2, V;
 	connectivities.push_back(c);
-	numberGhostFaces++;
-	
-// 	std::cout << "\tF=" << connectivities.size()-1 
-// 		  << "\t(" << V0 
-// 		  << ", "  << V2
-// 		  << ", "  << V
-// 		  << ")" << std::endl;
-
 
 	LoopGhostBC * bc = new LoopGhostBC(N0,N1,N2,N);
 	_constraints.push_back( bc );
       
       }
 
-      // step 2: add ghost faces
+      // step 3: add ghost faces
       // connecting neighboring ghost vertices
       for(int h=0; h<boundaryEdges.size(); h++) {
 	//            
@@ -176,133 +186,18 @@ namespace voom
 	HalfEdge * HH = boundaryEdges[(h+1) % boundaryEdges.size()];
 
 	int V = H->vertex->id;
-	int VH = _shellNodes.size() - boundaryEdges.size() + h;
-	int VHH = _shellNodes.size() - boundaryEdges.size() + (h+1) % boundaryEdges.size();
-// 	int VH = mesh->vertices.size() + h;
-// 	int VHH = mesh->vertices.size() + (h+1) % boundaryEdges.size();
+	int VH = mesh->vertices.size() + h;
+	int VHH = mesh->vertices.size() + (h+1) % boundaryEdges.size();
 
 	ElementConnectivity c;
 	c = V, VH, VHH;
 	connectivities.push_back(c);
-	numberGhostFaces++;
-// 	std::cout << "\t\tF=" << connectivities.size()-1 
-// 		  << "\t(" << V 
-// 		  << ", "  << VH
-// 		  << ", "  << VHH
-// 		  << ")" << std::endl;
       }
+
+      // rebuild halfedge mesh
+      delete mesh;
+      mesh = new HalfEdgeMesh(connectivities, _shellNodes.size());
     }
-
-    std::cout << "Added " << numberGhostVertices << " ghost vertices and " 
-	      << numberGhostFaces << " ghost faces." << std::endl;
-
-    std::cout << "Rebuilding halfedge mesh";
-    std::cout.flush();
-
-    // rebuild halfedge mesh
-    delete mesh;
-    mesh = new HalfEdgeMesh(connectivities, _shellNodes.size());
-    
-    std::cout << "." << std::endl;
-
-//     // step 1: assuming a single boundary, walk around it starting
-//     // from one edge
-
-//     // find a boundary edge to start
-//     HalfEdge * Hstart=0;
-//     for(int h=0; h<mesh->halfEdges.size(); h++) {
-//       HalfEdge * H = mesh->halfEdges[h];
-//       if( H->opposite == 0 ) {
-// 	Hstart = H; 
-// 	break;
-//       }
-//     }
-
-//     // found one, now walk around boundary, storing boundary edges in
-//     // order
-//     std::vector< HalfEdge * > boundaryEdges;
-//     if( Hstart !=0 ) {
-//       HalfEdge * H = Hstart; 
-//       do {
-// 	boundaryEdges.push_back( H );
-// 	// find next boundary edge (CCW around the boundary) by
-// 	// walking around H's vertex CW
-// 	H = H->next;
-// 	while ( H->opposite != 0 ) {
-// 	  H = H->opposite->next;
-// 	}
-//       } while ( H != Hstart );
-//     }
-
-//     std::cout << "Identified " << boundaryEdges.size() << " boundary edges." 
-// 	      << std::endl;
-    
-//     if( boundaryEdges.size() > 0 ) {
-//       // step 2: add a ghost node and face for each boundary edge,
-//       // also create ghostBC for each boundary edge
-//       for(int h=0; h<boundaryEdges.size(); h++) {
-// 	HalfEdge * H = boundaryEdges[h];
-	
-// 	// add new ghost node
-// 	int V = _shellNodes.size();
-// 	NodeBase::DofIndexMap idx(3,-1);
-// 	Vector3D X(0.0);
-// 	FeNode_t * N = new FeNode_t(V, idx, X, X);
-// 	_shellNodes.push_back(N);
-	
-// 	// Create ghost triangle V0 V2 V and ghostBC for adjacent faces
-// 	//      
-// 	//          V
-// 	//         / \
-// 	//       /     \
-// 	//     V0-------V2
-// 	//       \  H  /
-// 	// H->next \ /  H->prev
-// 	//          V1
-// 	//
-// 	int V0 = H->vertex->id;
-// 	int V1 = H->next->vertex->id;
-// 	int V2 = H->prev->vertex->id;
-
-// 	FeNode_t * N0 = _shellNodes[ V0 ];
-// 	FeNode_t * N1 = _shellNodes[ V1 ];
-// 	FeNode_t * N2 = _shellNodes[ V2 ];
-
-// 	ElementConnectivity c;
-// 	c = V0, V2, V;
-// 	connectivities.push_back(c);
-
-// 	LoopGhostBC * bc = new LoopGhostBC(N0,N1,N2,N);
-// 	_constraints.push_back( bc );
-      
-//       }
-
-//       // step 3: add ghost faces
-//       // connecting neighboring ghost vertices
-//       for(int h=0; h<boundaryEdges.size(); h++) {
-// 	//            
-// 	//      VHH-------VH
-// 	//       / \ Add / \  
-// 	//     /     \ /     \
-// 	//    *-------V-------*
-// 	//        HH      H
-// 	//
-// 	HalfEdge * H = boundaryEdges[h];
-// 	HalfEdge * HH = boundaryEdges[(h+1) % boundaryEdges.size()];
-
-// 	int V = H->vertex->id;
-// 	int VH = mesh->vertices.size() + h;
-// 	int VHH = mesh->vertices.size() + (h+1) % boundaryEdges.size();
-
-// 	ElementConnectivity c;
-// 	c = V, VH, VHH;
-// 	connectivities.push_back(c);
-//       }
-
-//       // rebuild halfedge mesh
-//       delete mesh;
-//       mesh = new HalfEdgeMesh(connectivities, _shellNodes.size());
-//     }
        
     for(int f=0; f<mesh->faces.size(); f++) {
       Face * F = mesh->faces[f];

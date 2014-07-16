@@ -241,7 +241,7 @@ namespace voom
 
 
   template<class Material_t>
-  void LoopShell<Material_t>::updateRefConfiguration(double edgeLength) {
+  void LoopShell<Material_t>::updateRefConfiguration() {
     for(QuadPointIterator p=_quadPoints.begin(); 
 	p!=_quadPoints.end(); p++){
       //
@@ -256,9 +256,11 @@ namespace voom
       a = zero, zero;
       aPartials = zero, zero, zero, zero;
 
-      if( edgeLength > 0.0 ) {
+      bool flat=false;
+      if( flat ) {
 	// this is a hack to treat the reference geometry as if the
-	// element were and equilateral triangle in a flat sheet.
+	// element were its current shape but embedded locally within
+	// a flat sheet.
 	//
 	//     ^ s^2
 	//    /
@@ -270,10 +272,9 @@ namespace voom
 	// G_1 = X_{,1} = X_1-X_0
 	// G_2 = X_{,2} = X_2-X_0
 	//
-
-	a(0) = edgeLength, 0.0, 0.0;
-	a(1) = edgeLength*cos(M_PI/3.0), edgeLength*sin(M_PI/3.), 0.0;
-
+	a(0) = _nodes[1]->position() - _nodes[0]->position();
+	a(1) = _nodes[2]->position() - _nodes[0]->position();
+	
       } else {
 	// compute reference geometry correctly by interpolation from
 	// the reference coordinates of the nodes

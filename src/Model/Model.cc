@@ -77,6 +77,9 @@ namespace voom
   bool Model::checkConsistency(bool f1, bool f2) {
 
     bool verbose=false;
+    //bool verbose=true;
+
+    std::cout << "Model: checking consistency" << std::endl;
 
     if(verbose) std::cout << "Model::checkConsistency()" << std::endl;
     Storage solver;
@@ -108,6 +111,7 @@ namespace voom
     for( int i = 0 ; i < _dof; i++) {
 
       if(verbose) std::cout << "i = " << i;
+      else if(i%1000 == 0) std::cout << "i = " << i << std::endl;
       x(i) += h; 
       putField(solver);
       computeAndAssemble(solver, f1, f2, false);
@@ -127,7 +131,8 @@ namespace voom
     if(f1) f_n /= 2.0*h;
     if(f2) k_n /= 2.0*h;
 
-    computeAndAssemble(solver,true, true, true);
+    //computeAndAssemble(solver,true, true, true);
+    computeAndAssemble(solver,true,f1,f2);
 
     double Ferror=0.0;
     double Fnorm =0.0;
