@@ -1,0 +1,6 @@
+# vtk DataFile Version 2.0
+Test example
+ASCII
+DATASET POLYDATA
+POINTS  0  double
+POLYGONS 0  0 

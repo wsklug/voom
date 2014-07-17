@@ -1,0 +1,194 @@
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                         William S. Klug
+//                University of California Los Angeles
+//                   (C) 2010 All Rights Reserved
+//
+//----------------------------------------------------------------------
+//
+
+#include "RigidPlane.h"
+
+namespace voom
+{
+
+  template<int dim>
+  RigidPlane<dim>::RigidPlane( const std::vector< DeformationNode<dim> *> & nodes, 
+			       double k, 
+			       double Z, const VectorND & normal,
+			       double friction ) {
+    _defNodes = nodes;
+    _active.resize(nodes.size());
+    for(int a=0; a<nodes.size(); a++) {
+      _baseNodes.push_back(nodes[a]);
+    }
+    _k = k;
+    _Z = Z;
+    _FZ = 0.0;
+    _n = normal/norm2(normal);
+
+    _penetration = 0.0;
+
+    _mu = friction;
+    _penetration = 0.0;
+    _active.resize(nodes.size());
+    _x_stick.resize(_defNodes.size());
+    _x_stick = VectorND(0.0);
+    _forces.resize(_defNodes.size());
+    _forces = VectorND(0.0);
+    _pressureMultipliers.resize(_defNodes.size());
+    _pressureMultipliers = 0.0;
+    _frictionMultipliers.resize(_defNodes.size());
+    _frictionMultipliers = VectorND(0.0);
+    updateContact();
+  }
+
+  template<int dim>
+  int RigidPlane<dim>::active() const { 
+    int n=0; 
+    for(int i=0; i<_active.size(); i++) {
+      if (_active[i]) n++;
+    }
+    return n; 
+  }
+
+  template<int dim>
+  void RigidPlane<dim>::updateContact() {
+
+     
+    // Now update surface normals and check for
+    // active contacts
+    for(int a=0; a<_defNodes.size(); a++) {
+      const VectorND & x = _defNodes[a]->point();
+      double z = dot(x,_n);
+	
+      // save projection of current point on surface as frictional
+      // ``stick'' point
+      _x_stick(a) = x;
+      _x_stick(a) += (_Z - z)*_n;
+
+      // check for active contacts
+      if( z < _Z ) {	
+	_active[a] = true;
+      } else {
+	_active[a] = false;
+      }
+	
+      // Uzawa update: set multipliers equal to most recently computed
+      // forces
+      _pressureMultipliers(a) = dot(_forces(a), _n);
+      _frictionMultipliers(a) = _forces(a) 
+	- _pressureMultipliers(a)*_n;
+	
+
+    }
+
+    return;
+  }
+
+  template<int dim>
+  void RigidPlane<dim>::compute( bool f0, bool f1, bool f2 ) {
+    //std::cout << "RigidPlane::compute()" << std::endl;
+
+    if(f0) _energy = 0.0;
+      
+    if(f1) {
+      _FZ = 0.0;
+      _forces = VectorND(0.0);
+    }
+
+    _penetration = 0.0;
+
+
+    for(int a=0; a<_defNodes.size(); a++) {
+	
+      DeformationNode<dim> * nd = _defNodes[a];
+      VectorND x;
+      x = nd->point();
+	
+      // Do normal contact first
+	
+      // normal gap function
+      double gn = dot(x - _x_stick(a), _n);
+      _penetration = std::max(_penetration, -gn);
+
+      // pressure multiplier and force
+      double pn = _pressureMultipliers(a);
+      double fn = pn + _k*gn;
+      if( fn > 0 ) { // case 1: no contact 
+	if(f0) {
+	  _energy -= 0.5*sqr(pn)/_k; 
+	}	  
+	  
+      } else { // case 2: contact
+
+	if(f0) {
+	  _energy += (pn+0.5*_k*gn)*gn; 
+	}
+	if(f1) {
+	  _forces(a) += fn*_n;
+	}
+      }
+	
+      // now frictional contact 
+
+      // previous contact point = xc + radius times previous normal
+
+      // compute vector from previous contact point to current point
+      VectorND dx;
+      dx = x - _x_stick(a);
+
+      // tangential gap, (I-n^t n)*dx
+      VectorND gt;
+      gt = dx - dot(_n,dx)*_n;
+
+      // friction multiplier and force
+      const VectorND pt = _frictionMultipliers(a);
+      double norm_pt = norm2(pt);
+
+      VectorND ft; 
+      ft = pt + _k*gt;
+	
+      double norm_ft = norm2(ft);
+
+      if( pn > 0 ) { // case 1: no contact 
+	if(f0) {
+	  _energy -= 0.5*sqr(norm_pt)/_k; 
+	}	  
+	  
+      } else if( norm_ft <= _mu*std::abs(pn) ) { // case 2: contact, stick
+
+	if(f0) {
+	  _energy += dot(pt+0.5*_k*gt, gt); 
+	}
+	if(f1) {
+	  _forces(a) += ft - dot(ft, _n)*_n;
+	}
+
+      } else { // case 3: contact, slip
+	  
+	if(f0) {
+	  _energy -= 
+	    0.5*( sqr(norm_pt) - 2.0*_mu*std::abs(pn)*norm_ft + sqr(_mu*pn) )/_k; 
+	}
+	if(f1) {
+	  _forces(a) += 
+	    _mu*std::abs(pn)*( ft-dot(ft,_n)*_n )/norm_ft;
+	}
+
+      }
+
+      if(f1) {
+	const VectorND & f = _forces(a); 
+	_FZ += f(dim-1);
+	for(int i=0; i<dim; i++) nd->addForce(i,f(i)); 
+      }
+
+    }
+
+    return;
+  }
+  
+  
+} // namespace voom

@@ -53,12 +53,18 @@ int main(int argc, char * argv[]) {
   // look for the *Node card
   while ( getline( ifs, line ) ) {
     if ( line.substr(0,5) == "*Node" ) break;
+    if ( line.substr(0,5) == "*NODE" ) break;
+
   }
   
   // read in nodes until *Element card is found
   while ( getline( ifs, line ) ) {
 
+
+
     if( line.substr(0,8) == "*Element" ) break;
+    if( line.substr(0,8) == "*ELEMENT" ) break;
+
 
     // replace any commas with spaces
     for( string::size_type pos=line.find(","); 
@@ -86,6 +92,11 @@ int main(int argc, char * argv[]) {
   // first figure out what type of elements we have
   string::size_type pos = line.find("type=");
   if( pos == string::npos ) {
+    pos = line.find("TYPE=");
+  }
+
+  if( pos == string::npos ) {
+
     cout << "Cannot determine element type.  Exiting." << endl;
     return 0; 
   }

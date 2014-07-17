@@ -1,4 +1,4 @@
-bin_PROGRAMS    = axi domain shock
+bin_PROGRAMS    = axi domain shock indent
 INCLUDES        =-I$(srcdir)/../../       		\
 		-I$(srcdir)/../../Body/		\
 		-I$(srcdir)/../../Model/		\
@@ -14,6 +14,7 @@ INCLUDES        =-I$(srcdir)/../../       		\
 axi_SOURCES    = axi.cc
 domain_SOURCES    = domain.cc
 shock_SOURCES	= shock.cc
+indent_SOURCES	= indent.cc
 LDFLAGS    = -L$(blitz_libraries) \
         -L../                          \
         -L../../VoomMath/                  \
