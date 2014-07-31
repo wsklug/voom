@@ -60,6 +60,9 @@ namespace voom {
 		static void MFITest();
 	        static void IsotropyTest();
 
+	        //copy function is pure virtual
+	        Material * copy() {};
+
 	  //void operator=(const StVenant &){;}
 
 	private:

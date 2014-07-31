@@ -97,7 +97,13 @@ namespace voom
 	GlobalConstraint areaConstraint = noConstraint) ;
     
     //! virtual destructor
-    virtual ~C0MembraneBody() {;}
+    ~C0MembraneBody()
+    {
+      delete _pressureNode;
+      delete _tensionNode;
+      for (MembraneElementIterator mem = _membranes.begin(); mem != _membranes.end(); mem++)
+	delete *mem;
+    }
     
 //     void setMaterialY(double Y) {
 //       for(int si=0; si<_membranes.size(); si++) {
@@ -108,6 +114,12 @@ namespace voom
 
     //! Do mechanics on Body
     void compute( bool f0, bool f1, bool f2 );
+
+    //! Set the reference configuration to an equilateral triangle in XY plane    
+    void SetRefConfiguration(double edge);
+
+    //! return the deformation invariantst for elements
+    void cal_inv(std::vector<double>& I1, std::vector<double>& J);
     
     double volume() const{ return _volume; }
     
@@ -128,6 +140,9 @@ namespace voom
 
     //! set constraint area
     void setConstraintArea(double A) { _prescribedArea = A;}
+
+    //! return the elements container
+    const MembraneElementContainer & elements() {return _membranes;}
 
     //! loop over elements and add up the strain energy of each one
     double totalStrainEnergy() const {
@@ -161,7 +176,11 @@ namespace voom
       _penaltyArea = pA;
     }
 
-    void printParaview(std::string fileName) const ;
+    void printParaview(const std::string fileName) const ;
+
+    void printParaview2(const std::string fileName) const ;
+    
+    void printParaviewEigVec(const std::string fileName) const ;
 
     void printObj(const std::string fileName) const ;
     
@@ -169,44 +188,15 @@ namespace voom
     void createInputFile(const std::string& filename);
     
     void resetReference() {
-      // reset node ref config to current config and update elements
-      // from there
       for(MembraneNodeIterator n = _membraneNodes.begin(); 
 	  n != _membraneNodes.end(); n++) {
 	(*n)->resetPosition();
       }
-      
+
       for(MembraneElementIterator e=_membranes.begin(); 
 	  e!=_membranes.end(); e++) {
 	(*e)->updateRefConfiguration();
       }	
-      return;
-    }
-
-    //! Reset element ref configs to equilateral with average edge length.
-    void resetEquilateral() {
-      // compute average element edge length
-      double hAve = 0.0;
-      for(int e = 0; e<_membranes.size(); e++) {
-	double h=0.0;
-	const MembraneNodeContainer & nds = _membranes[e]->nodes();
-	for(int a=0; a<nds.size(); a++) {
-	  h += norm2( nds[a]->position() - nds[(a+1) % nds.size()]->position() );
-	}
-	h /= nds.size();
-	hAve += h;
-      }
-      hAve /= _membranes.size();
-
-      std::cout << "Reseting all elements to be equilateral with element edge length " << hAve << std::endl; 
-      
-      // reset all elements to be equilalateral with average edge
-      // length in ref config.
-      for(MembraneElementIterator e=_membranes.begin(); 
-	  e!=_membranes.end(); e++) {
-	(*e)->updateRefConfiguration( hAve );
-      }	
-
       return;
     }
 
@@ -220,16 +210,6 @@ namespace voom
 
     //! Mark an element as inactive so it will not be computed
     void deactivate(int e) { _active[e] = false; }
-    
-    void checkElementConsistency() {
-      for(int e=0; e<_membranes.size(); e++) {
-	_membranes[e]->checkConsistency();
-      }
-    }
-
-    void addStressDirection(const Vector3D & N) {
-      _stressDirections.push_back(N);
-    }
 
   private:
 
@@ -264,9 +244,6 @@ namespace voom
     MultiplierNode * _pressureNode;
 
     ConstraintContainer _constraints;
-
-    //! Reference Normal vectors to compute stresses along
-    std::vector<Vector3D> _stressDirections;
 
 #ifdef WITH_MPI
     int _processorRank;

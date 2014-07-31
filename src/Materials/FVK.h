@@ -35,12 +35,6 @@ namespace voom
     double _mu;
     double _Ws;
     
-    // Covariant components of Green Strain
-    Tensor2D _strain;
-
-    // Contravariant components of 2nd P-K Stress
-    Tensor2D _stress;
-    
   public:
 
     FVK(const double kC, const double kG, const double C0, const double E,
@@ -48,19 +42,6 @@ namespace voom
     {
       _lambda = E*nu/( (1.0-nu)*(1.0+nu) );
       _mu = 0.5*E/(1.0+nu);
-
-      _W = 0.0;
-      Vector3D zero(0.0);
-      _n(0) = zero;
-      _n(1) = zero;
-      _n(2) = zero;
-      _nTC(0) = zero;
-      _nTC(1) = zero;
-      _nTC(2) = zero;
-      _m(0) = zero;
-      _m(1) = zero;
-      _stretch = 0.0;
-
     };
 
     void updateState(bool f0, bool f1, bool f2 );
@@ -69,12 +50,10 @@ namespace voom
 
     double poissonRatio() const { return _nu; }
 
+    void setSpontaneousCurvature( double C0 ) { _C0 = C0; }
+
     virtual double bendingEnergy() const {return _W - _Ws;}
     virtual double stretchingEnergy() const {return _Ws;}
-
-    const Tensor2D & strain() const {return _strain;}
-    const Tensor2D & stress() const {return _stress;}
-
   };
   
 } //namespace voom

@@ -56,7 +56,6 @@ namespace voom
 		_metricTensorInverse(1,0) =   _metricTensorInverse(0,1);
 
 		_metric = sqrt(_metric);
-		_metricInverse = 1.0/_metric;
 	}
 
 

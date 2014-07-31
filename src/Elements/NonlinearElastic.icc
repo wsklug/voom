@@ -118,6 +118,20 @@ namespace voom
     
   }
 
+
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  void NonlinearElastic<Quadrature_t, Material_t, Shape_t>::setYoungsModulus(double value)
+  {
+    for(QuadPointIterator p=_quadPoints.begin(); 
+	p!=_quadPoints.end(); p++){
+        
+      Material_t& material = p->material;
+      // update Youngs Modulus
+      material.setYoungsModulus(value);
+    }
+    }
+
+
   template<class Quadrature_t, class Material_t, class Shape_t>
   double NonlinearElastic<Quadrature_t, Material_t, Shape_t>::CalcMisesStress()
   {	

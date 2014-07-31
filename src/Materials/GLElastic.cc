@@ -44,6 +44,8 @@ namespace voom
     const BasisVectors & rbasis = _referenceGeometry.a();
     const BasisVectors & rdual = _referenceGeometry.aDual();
     
+    _H = - 0.5 * ( dot(dual(0), dPartials(0)) + dot(dual(1), dPartials(1)) );
+    
     const Tensor2D& metricInv = 
       _deformedGeometry.metricTensorInverse();
     const Tensor2D& refMetricInv =
@@ -52,15 +54,40 @@ namespace voom
     const Tensor2D& metric = _deformedGeometry.metricTensor();
     const Tensor2D& refMetric = _referenceGeometry.metricTensor();
 
-    // Previously we'd considered the GL energy as defined per unit
-    // reference area.  Since shell materials are defined per unit
-    // deformed area (who knows why), we needed a Jacobian, the ratio
-    // between referenced and deformed areas.  Now we have changed
-    // this energy to be per unit deformed area, so we no longer need
-    // the jacobian.
-    
-    //double jacobian = _referenceGeometry.metric()/_deformedGeometry.metric();
+    double jacobian = _referenceGeometry.metric()/_deformedGeometry.metric();
+
+    Tensor2D strain(0.0);
+
+    strain = 0.5*(metric-refMetric);
+//     if (strain(0,1) != strain(1,0)){
+//       double xx=strain(0,1);
+//       std::cout<<"xx="<<xx<<std::endl;
+//       double yy=strain(1,0);
+//       std::cout<<"yy="<<yy<<std::endl;
+//       std::cout<<"xx-yy="<<xx-yy<<std::endl;
+//     }
+    assert(std::abs(strain(0,1)-strain(1,0))<1.0e-8);
+    if (std::abs(strain(0,1) - strain(1,0))>1.0e-8){
+      double xx=strain(0,1);
+      std::cout<<"xx="<<xx<<std::endl;
+      double yy=strain(1,0);
+      std::cout<<"yy="<<yy<<std::endl;
+      std::cout<<"xx-yy="<<xx-yy<<std::endl;
+    }
+    double traceStrain = 0.0;
+    for(int alpha=0; alpha<2; alpha++) {
+      for(int beta=0; beta<2; beta++) {
+	traceStrain   += refMetricInv(alpha,beta)*strain(alpha,beta);
+      }
+    }
+
 		
+    double twoHminusC0 = 2.0*_H - _C0;
+
+
+//     double g = _gDoublePrime*_eta*_eta*(_eta*_eta - 2.0*_eta + _c)/2.0/_c;
+//     double dg = _gDoublePrime*_eta*(2.0*_eta*_eta - 3.0*_eta + _c)/_c;
+    
     double g=0.0, dg=0.0;
     if(_formulation==0) {
       // g is a simple quartic with curvature g0 at eta=0 and g(1)=g(0)+_deltag
@@ -91,70 +118,56 @@ namespace voom
     double strainEnergy=0.0;
     if(f1) strainEnergy = _W;
 
-    double W_GL = 0.0;
-    if(f0||f1) {
-      // now add GL energy
-      W_GL += g;//*jacobian;
-
-      for (int alpha = 0; alpha < 2; alpha++){
-	for (int beta =0; beta <2; beta++){
-
-	  // if gradient is defined on reference configuration
-	  //W_GL += 0.5*_Gamma*_deta(alpha)*_deta(beta)*refMetricInv(alpha, beta);
-
-	  // if gradient is defined on deformed configuration
-	  W_GL += 0.5*_Gamma*_deta(alpha)*_deta(beta)*metricInv(alpha, beta);
-	}
-      }
-    }
-
     if (f0){
-      // scale elastic terms by order parameter for linear coupling
       _W *= _eta;
 
       _Ws *= _eta;
 
-      _stress *= _eta;
+      _W += g*jacobian;
 
-      _W += W_GL;
+      //_W += -_gammaZero*_eta*traceStrain*jacobian;
+      
+      for (int alpha = 0; alpha < 2; alpha++){
+	for (int beta =0; beta <2; beta++){
+
+	  _W += 0.5*_Gamma*_deta(alpha)*_deta(beta)*refMetricInv(alpha, beta)*jacobian;
+
+	}
+      }
+
     }
 
 
-    // Compute stress & chemical potential resultants
 
     if (f1){
-      // stress resultants
       for (int alpha = 0; alpha < 2; alpha++){
-	// scale elastic term by order parameter for linear coupling
+// 	_n(alpha) = 0.0, 0.0, 0.0;
 	_n(alpha) *= _eta;
 
-	// variation of deformed area metric
-	_n(alpha) += W_GL*dual(alpha);
+// 	for (int mu = 0; mu < 2; mu++){
+	  //_n(alpha) += -_gammaZero*_eta*refMetricInv(alpha, mu)*basis(mu)*jacobian;
+
+	// This only when integrating over deformed shape
+// 	  for (int beta = 0; beta < 2; beta ++){
+// 	    _n(alpha) += - _Gamma*refMetricInv(alpha, mu)*_deta(mu)*_deta(beta)*dual(beta)*jacobian;
+
+// 	  }
+// 	}
       }
 
       _n(2)= 0.0, 0.0, 0.0;
 
 
-      // chemical potential resultants
-      _mu = strainEnergy;
-      _mu += dg;
+//       _mu = (dg - _gammaZero*traceStrain)*jacobian;
+      _mu = dg*jacobian;
 
+      _mu += strainEnergy;
 
-      // chemical potential gradient resultants
-      for (int alpha = 0; alpha < 2; alpha++){
-	_lambda(alpha) = 0.0;
+      for (int beta = 0; beta < 2; beta++){
+	_lambda(beta) = 0.0;
 
-	for (int beta = 0; beta < 2; beta++){
-	  // if gradient is defined on reference configuration
-	  //_lambda(alpha) += _Gamma*refMetricInv(alpha, beta)*_deta(beta);
-	  
-	  // if gradient is defined on deformed configuration
-	  _lambda(alpha) += _Gamma*metricInv(alpha, beta)*_deta(beta);
-
-	  for (int mu=0; mu<2; mu++){
-	    _n(alpha) += 
-	      - _Gamma*metricInv(alpha, mu)*_deta(mu)*_deta(beta)*dual(beta);
-	  }
+	for (int alpha = 0; alpha < 2; alpha++){
+	  _lambda(beta) += _Gamma*refMetricInv(alpha, beta)*_deta(alpha)*jacobian;
 
 	}
       }

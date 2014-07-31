@@ -115,11 +115,11 @@ namespace voom
       exit(0);
     }
     
-    double field(int i) const {return _x(i);}
-    double function() const {return _f;}
-    double gradient(int i) const {return _g(i);}
-    double hessian(int i) const { return _h(i);}
-    double hessian(int i, int j) const {
+    const double field(int i) const {return _x(i);}
+    const double function() const {return _f;}
+    const double gradient(int i) const {return _g(i);}
+    const double hessian(int i) const { return _h(i);}
+    const double hessian(int i, int j) const {
       std::cerr << "No stiffness in ConjugateGradient solver." << std::endl;
       exit(0);
     };

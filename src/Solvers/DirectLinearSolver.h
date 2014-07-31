@@ -47,11 +47,11 @@ public:
   double & hessian(int i, int j) {return _DDf(i,j);}
   double & hessian(int i) {return _DDf(i,i);}
 
-  double field(int i) const {return _x(i);}
-  double function() const {return _f;}
-  double gradient(int i) const {return _Df(i);}
-  double hessian(int i, int j) const {return _DDf(i,j);}
-  double hessian(int i) const {return _DDf(i,i);}
+  double const field(int i) const {return _x(i);}
+  double const function() const {return _f;}
+  double const gradient(int i) const {return _Df(i);}
+  double const hessian(int i, int j) const {return _DDf(i,j);}
+  double const hessian(int i) const {return _DDf(i,i);}
 
 //   const blitz::Array<double,1> & gradient() const {return _Df;}
 //   const blitz::Array<double,2> & hessian() const {return _DDf;}

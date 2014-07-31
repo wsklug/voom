@@ -128,6 +128,8 @@ namespace voom
     //! Do mechanics on element; compute energy, forces, and/or stiffness.
     virtual void compute(bool f0, bool f1, bool f2);
     
+    //! Calculate and return the two surface deformation invariants  
+    void invariants(double& I1,double& J);
     double strainEnergy() const { return _strainEnergy; }
 
     //! Accessor for element work done by pressure
@@ -145,7 +147,18 @@ namespace voom
     void checkPositions();
 		
     //! recompute the reference geometry and send it to materials
-    void updateRefConfiguration(double edgeLength=-1.0);
+    void updateRefConfiguration();
+
+    //! set the reference configuration in xy plane explicitly
+    void SetRefConfiguration(double edgelen);
+
+    const Tensor3D cauchyStress();
+    const std::vector<double > matInvariants();
+
+
+
+    //! set the edgelength of reference configuration triangle
+//    static void setRefLength(double e){_edgelen=e;}
 
     //
     //   data
@@ -177,6 +190,9 @@ namespace voom
 
     //! area enclosed by the current element
     double _area;
+
+    //! edge length of the reference configuration triangle
+    //static double _edgelen;
 
   };  // end of class
 } // namespace voom

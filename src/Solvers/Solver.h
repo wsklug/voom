@@ -59,13 +59,13 @@ public:
   virtual double & gradient(int i) = 0;
   virtual double & hessian(int i, int j) = 0;
 
-  virtual double field(int i) const = 0;
-  virtual double function() const = 0;
-  virtual double gradient(int i) const = 0;
-  virtual double hessian(int i, int j) const = 0;
+  virtual const double field(int i) const = 0;
+  virtual const double function() const = 0;
+  virtual const double gradient(int i) const = 0;
+  virtual const double hessian(int i, int j) const = 0;
 
   virtual double & hessian(int i) { return hessian(i,i);}
-  virtual double hessian(int i) const { return hessian(i,i);}
+  virtual const double hessian(int i) const { return hessian(i,i);}
 
   virtual void zeroOutData(bool f0, bool f1, bool f2) = 0;
 
@@ -87,11 +87,11 @@ struct Storage : public Solver {
   double & hessian(int i, int j) {return _DDE(i,j);}
   double & hessian(int i) {return _DDE(i,i);}
 
-  double field(int i) const {return _x(i);}
-  double function() const {return _E;}
-  double gradient(int i) const {return _DE(i);}
-  double hessian(int i, int j) const {return _DDE(i,j);}
-  double hessian(int i) const {return _DDE(i,i);}
+  double const field(int i) const {return _x(i);}
+  double const function() const {return _E;}
+  double const gradient(int i) const {return _DE(i);}
+  double const hessian(int i, int j) const {return _DDE(i,j);}
+  double const hessian(int i) const {return _DDE(i,i);}
 
   double * field() {return _x.data();}
   double * gradient() {return _DE.data();}

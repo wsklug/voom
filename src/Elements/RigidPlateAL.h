@@ -65,6 +65,14 @@ namespace voom
     //! count up how many nodes are being constrained
     int active() const;
 
+    //! return whether a node is penetrating or not
+    bool active_node(int i) { 
+     if(i>_active.size()){
+       std::cout<<"RgidiPlateAL::active_node::Error Node number out of range"<<std::endl;
+       exit(0);}
+     return _active[i];
+    }
+
     //! check for active contacts, and update multipliers
     void updateContact();
 

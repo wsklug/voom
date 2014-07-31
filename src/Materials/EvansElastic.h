@@ -63,6 +63,9 @@ namespace voom
     double stretchingModulus() const {return _kS;}
     double J() const {return _J;}
     double trC() const {return _trC;}
+    const Tensor3D DefGradient();
+    const Tensor3D & cauchyStress();
+    const std::vector<double > invariants();
 
     void setShearModulus(double new_mu) {
       _mu = new_mu;

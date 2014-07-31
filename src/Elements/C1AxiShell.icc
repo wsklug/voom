@@ -146,18 +146,15 @@ namespace voom
 	const tvmet::Vector< Vector3D, 2 >& mr = material.momentResultants();
 
 	double pressure = 0.0;
-	//if(_volumeConstraint!=noConstraint) 
-	if( _pressureNode != 0 )
+	if(_volumeConstraint!=noConstraint) 
 	  pressure = _pressureNode->point();
 
 	double tension = 0.0;
-	//if(_areaConstraint!=noConstraint) 
-	if(_tensionNode != 0)
+	if(_areaConstraint!=noConstraint) 
 	  tension = _tensionNode->point();
 
 	double totalCurvatureForce = 0.0;
-	//if(_totalCurvatureConstraint!=noConstraint) 
-	if( _totalCurvatureNode != 0 )
+	if(_totalCurvatureConstraint!=noConstraint) 
 	  totalCurvatureForce = _totalCurvatureNode->point();
 
 	// loop for all nodes to compute forces 

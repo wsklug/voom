@@ -121,6 +121,22 @@ namespace voom
       return angABC;
     }
 
+    double meanCurrentLength() {
+      const VectorND & xA = _nodeA->point();
+      const VectorND & xB = _nodeB->point();
+      const VectorND & xC = _nodeC->point();
+      double dAB = norm2(xA-xB);
+      double dBC = norm2(xC-xB);
+      return 0.5*(dAB+dBC);
+    }
+
+    double getCurvature() {
+      double angle = getAngleABC();
+      double meanL = meanCurrentLength();
+      double curvature = 2.0/meanL*abs(sin(angle/2.0));
+      return curvature;
+    }
+
   private:
     
     Node_t * _nodeA;

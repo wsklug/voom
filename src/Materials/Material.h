@@ -44,11 +44,11 @@ class Material
       //std::cout << "The determinant of deformation gradient tensor is not greater than zero!" << " J = " << determinant(F) << std::endl;
     }
   };
-  virtual void updateState(bool f0, bool f1, bool f2)=0;
+  virtual void updateState(bool f0, bool f1, bool f2) = 0;
   virtual double energyDensity() const { return _W; }
   virtual const Tensor3D & deformationGradient() const { return _F; }
   virtual const Tensor3D & piolaStress() const { return _P; }
-  virtual const Tensor3D & cauchyStress() const { return _C; }
+  virtual const Tensor3D & cauchyStress() { return _cauchy; }
   virtual double vonMisesStress() const { return _vMises; }
 
   virtual Material * copy() = 0;
@@ -57,7 +57,7 @@ class Material
   double _W; // Energy Density
   Tensor3D _F; // Deformation Gradient
   Tensor3D _P; // 1st Piola-Kirchhoff Stress Tensor
-  Tensor3D _C; // Cauchy Stress Tensor
+  Tensor3D _cauchy; // Cauchy Stress Tensor
   double _vMises; // von Mises stress
   blitz::Array<double,1> _Fp; // Internal (history) variables
 

@@ -22,6 +22,9 @@ libSolvers_a_SOURCES=		\
 	lbfgsb-routines.f	\
 	CGfast.cc 		\
 	SimulatedAnnealing.cc	\
+	MontecarloTwoStages.cc	\
 	CgDescent.cc		\
 	cg_descent.c		\
-	BrownianDynamics.cc
+	BrownianDynamics.cc	\
+	BrownianDynamics3D.cc	\
+	MontecarloProtein.cc

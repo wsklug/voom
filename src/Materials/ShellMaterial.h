@@ -34,14 +34,6 @@ namespace voom
   class ShellMaterial
   {
   public:
-    // ShellMaterial() {
-    //   _W = 0.0;
-    //   _n(0) = _n(1) = _n(2) =
-    // 	_nTC(0) = _nTC(1) = _nTC(2) = Vector3D(0.0);
-    //   _m(1) = _m(2) = Vector3D(0.0);
-    //   _stretch = 0.0;
-    // }
-
     //! virtual destructor
     virtual ~ShellMaterial() { ; }
     //! initialize the geometry in reference coords
@@ -66,7 +58,10 @@ namespace voom
     const double& stretch() const { return _stretch; }
 
     const ShellGeometry& shellGeometry() const { return _deformedGeometry; }
-    const ShellGeometry& refShellGeometry() const { return _referenceGeometry; }	  
+    const ShellGeometry& refShellGeometry() const { return _referenceGeometry; }
+
+    virtual const Tensor3D & cauchyStress() { return _cauchy; }	 
+    virtual const std::vector<double > invariants() { return std::vector<double >(2, 0.0); }	 
 
   protected:
     double _W; // Energy Density 
@@ -81,6 +76,7 @@ namespace voom
     ShellGeometry _referenceGeometry;
     double _stretch;
 
+    Tensor3D _cauchy; // Cauchy Stress Tensor
   };
 
 } //namespace voom

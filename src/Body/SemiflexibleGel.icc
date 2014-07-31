@@ -326,7 +326,35 @@ namespace voom {
     //     computeCDStr.assign(p->second);
     //     if(computeCDStr.find("true") != string::npos) computeCD = true;
     //     else computeCD = false;
-    
+
+    //need to read in stiffratio because it's not stored
+    double stretchstiffratio = 1.0;
+    double bendstiffratio = 1.0;
+    double lsfrac = -1.0;
+    std::string polydispStr;
+    bool longshort = false;
+    p = properties.find("polydispersity");
+    if(p != properties.end()) {
+      polydispStr.assign(p->second);
+      if(polydispStr.find("LongShort") != string::npos) {
+	longshort = true;
+	p = properties.find("longfraction");
+	assert(p != properties.end());
+	lsfrac = atof(p->second.data());
+	assert(lsfrac <= 1.0);
+	p = properties.find("stretchstiffratio");
+	assert(p != properties.end());
+	stretchstiffratio = atof(p->second.data());
+	p = properties.find("bendstiffratio");
+	assert(p != properties.end());
+        bendstiffratio = atof(p->second.data());
+      }
+      else if(polydispStr.find("Exponential") != string::npos){
+	//need to fill in content
+	std::cout << "ERROR: not implemented yet !!!!" << std::endl;
+      }
+    }
+
     // get size (in bytes) of ints and doubles on this machine //
     int intSize = sizeof(int);
     int doubleSize = sizeof(double);
@@ -392,8 +420,17 @@ namespace voom {
       //add the filament to the gel //
 //       dL = norm2(tmpDNC[0]->position()-tmpDNC[1]->position());
 //       kAngle = kC/dL;
+      double filstrestiff, filbendstiff;
       if(bondType == "Spring") {
-	addFilament(tmpDNC,kC,mu,visc,kT,dt,minLength);
+	if(j < lsfrac*nFils) {//make long filament stiffer
+	  filstrestiff = stretchstiffratio*mu;
+	  filbendstiff = bendstiffratio*kC;
+	}
+	else {
+	  filstrestiff = mu;
+	  filbendstiff = kC;
+	}
+	addFilament(tmpDNC,filbendstiff,filstrestiff,visc,kT,dt,minLength);
       }
       else {
 	p = properties.find("fit order");
@@ -530,9 +567,12 @@ namespace voom {
     std::map< int, int > filLens;
     std::string polydispStr;
     bool longshort = false;
+    bool removeLngCross = false;
     bool exponential = false;
     double lsratio = 1.0; 
     double lsfrac = 0.0;
+    double stretchstiffratio = 1.0;
+    double bendstiffratio = 1.0;
     double expmnl = 0.0;
     double expmin = 0.0;
     p = properties.find("polydispersity");
@@ -548,11 +588,21 @@ namespace voom {
 	assert(p != properties.end());
 	lsfrac = atof(p->second.data());
 	assert(lsfrac <= 1.0);
+	p = properties.find("stretchstiffratio");
+	assert(p != properties.end());
+	stretchstiffratio = atof(p->second.data());
+	p = properties.find("bendstiffratio");
+	assert(p != properties.end());
+	bendstiffratio = atof(p->second.data());
+	p = properties.find("removelongcrosslink");
+	assert(p != properties.end());
+	if(atof(p->second.data())> 0.5) removeLngCross = true;
+	else removeLngCross = false;
       }
       else if(polydispStr.find("Exponential") != string::npos){
 	//insert here for exponential distributed length network
 	exponential = true;
-	expmnl = filLength;
+	expmnl = filLength;//filLength becomes the mean length for exponential polydisperse
 	p = properties.find("minlength");
 	assert(p != properties.end());
 	expmin = atof(p->second.data());
@@ -737,141 +787,294 @@ namespace voom {
 
     storeSparseGel(storageFileName,tmpFils);
 	
+    //Disable crosslinks between two long filaments for polydispersity networks
+    if(longshort && removeLngCross) {
+      int deletedCrosslinks = 0;
+      deletedCrosslinks = removeLongFilCrosslinks(tmpFils,filLength);
+      std::cout << "Removed " << deletedCrosslinks << " crosslinks between long filaments " << std::endl;
+      double averageLongFilCrosslinks;
+      averageLongFilCrosslinks = computeLongFilCrosslinks(tmpFils,filLength);
+      std::cout << "Average number of crosslinks on long filaments: " << averageLongFilCrosslinks << std::endl;
+    }
+
     // we now have a list of crosslinks for each filament; we can now create the gel //
     int id = 0;
     NodeBase::DofIndexMap idx(N);
-    DefNode * newNode;	
-    for(int k=0; k<nFils; k++) {
-      DefNodeContainer tmpDNC;
-      TempFilament * curFil = tmpFils[k];
-      int nCLs = curFil->crossFils.size();
-      typename multimap<double,TempCrosslink*>::iterator clIter = curFil->crossFils.begin();
-      int i = 0;
-      VectorND segStart;
-      segStart = curFil->start;
-
-      // create first node //
-      for(int m=0; m<N; m++) {
-        idx[m] = N*id + m;
-      }
-      newNode = new BrownianNode<N>(id,idx,segStart,segStart);
-      newNode->setId(id);
-      tmpDNC.push_back(newNode);
-      dNodes.push_back(newNode);
-      id++;
-
-      // create nodes between start and first crosslink and between all crosslink pairs //
-      for(clIter; clIter!=curFil->crossFils.end(); clIter++) {
-	if(clIter->second->active) {
-	  VectorND sep;
-	  sep = clIter->second->otherFils[k] - segStart;
-	  //_box->mapDistance(sep);
-	  double dist = norm2(sep);
-	  int nNodesBetween;
-          if(targetSegLength > 0.0) {
-            nNodesBetween = (int)(std::floor((dist/targetSegLength)) -.5);
-          }
-          else {
-            if(dist > 2.0*minLength) {
-              int tmpNNB = (int)(std::floor((dist/fabs(targetSegLength))) -.5);
-	      nNodesBetween = max(1,tmpNNB);
-            }
-            else nNodesBetween = 0;
-          }
-      	  double segLength = dist/(nNodesBetween+1.0);
-          for(int nn=1; nn<=nNodesBetween; nn++) {
-            for(int m=0; m<N; m++) {
-	      idx[m] = N*id + m;
-            }
-	    VectorND nodePos;
-	    nodePos = segStart + nn*sep*(segLength/dist);
-            newNode = new BrownianNode<N>(id,idx,nodePos,nodePos);
-	    newNode->setId(id);
-	    tmpDNC.push_back(newNode);
-	    dNodes.push_back(newNode);
-	    id++;
-          }
-	  if(k == clIter->second->baseFil) {
-            for(int m=0; m<N; m++) {
-	      idx[m] = N*id + m;
-            }
-	    VectorND nodePos;
-	    nodePos = segStart + sep;
-	    newNode = new BrownianNode<N>(id,idx,nodePos,nodePos);
-	    newNode->setId(id);
-	    tmpDNC.push_back(newNode);
-	    dNodes.push_back(newNode);
-	    id++;
-	    clIter->second->clNode = newNode;
-	    //_crosslinkNodes.insert(newNode);
-	    _crossNodeMap.insert(pair<DefNode*,DefNode*>(newNode,newNode));
-            PeriodicTie<N> * newTie = new PeriodicTie<N>(newNode,_box);
-	    addConstraint(newTie);
-	    clIter->second->ptie = newTie;
-	    int nSlaves = clIter->second->otherFils.size() - 1;
-	    _nSlavesMap.insert(pair<DefNode*,int>(newNode,nSlaves));
-	  }
-	  else {
-	    //newNode = clIter->second->clNode;
-	    //tmpDNC.push_back(newNode);
-	    //for(int m=0; m<N; m++) {
-	    //  idx[m] = N*id + m;
-            //}
-	    DefNode* mastNode = clIter->second->clNode;
-	    VectorND nodePos;
-	    nodePos = segStart + sep;
-	    newNode = new BrownianNode<N>(mastNode->id(),mastNode->index(),nodePos,nodePos);
-	    newNode->setId(mastNode->id());
-	    tmpDNC.push_back(newNode);
-            //dNodes.push_back(newNode);
-	    //id++;
-	    //_crosslinkNodes.insert(newNode);
-	    _crossNodeMap.insert(pair<DefNode*,DefNode*>(newNode,mastNode));
-	    PeriodicTie<N> * pt = clIter->second->ptie;
-            pt->addSlave(newNode);
-
-	  }
-	  
-	  segStart += sep;
-	}
-      }
-
-      // create nodes between last crosslink and end //	
-      VectorND sep;
-      sep = curFil->end - segStart;
-      //_box->mapDistance(sep);
-      double dist = norm2(sep);
-      int nNodesBetween;
-      if(targetSegLength > 0.0) {
-	nNodesBetween = (int)(std::floor((dist/targetSegLength)) -.5);
-      }
-      else {
-	if(dist > 2.0*minLength) {
-	  int tmpNNB = (int)(std::floor((dist/fabs(targetSegLength))) -.5);
-	  nNodesBetween = max(1,tmpNNB);
-	}
-	else nNodesBetween = 0;
-      }
-      double segLength = dist/(nNodesBetween+1.0);
-      for(int nn=1; nn<=nNodesBetween+1; nn++) {
-        for(int m=0; m<N; m++) {
+    DefNode * newNode;
+    if(bondType == "Spring") {
+      for(int k=0; k<nFils; k++) {
+	DefNodeContainer tmpDNC;
+	TempFilament * curFil = tmpFils[k];
+	int nCLs = curFil->crossFils.size();
+	typename multimap<double,TempCrosslink*>::iterator clIter = curFil->crossFils.begin();
+	int i = 0;
+	VectorND segStart;
+	segStart = curFil->start;
+	
+	// create first node //
+	for(int m=0; m<N; m++) {
 	  idx[m] = N*id + m;
-        }
-	VectorND nodePos;
-	nodePos = segStart + nn*sep*(segLength/dist);
-        newNode = new BrownianNode<N>(id,idx,nodePos,nodePos);
+	}
+	newNode = new BrownianNode<N>(id,idx,segStart,segStart);
 	newNode->setId(id);
 	tmpDNC.push_back(newNode);
 	dNodes.push_back(newNode);
 	id++;
+
+	// create nodes between start and first crosslink and between all crosslink pairs //
+	for(clIter; clIter!=curFil->crossFils.end(); clIter++) {
+	  if(clIter->second->active) {
+	    VectorND sep;
+	    sep = clIter->second->otherFils[k] - segStart;
+	    //_box->mapDistance(sep);
+	    double dist = norm2(sep);
+	    int nNodesBetween;
+	    if(targetSegLength > 0.0) {
+	      nNodesBetween = (int)(std::floor((dist/targetSegLength)) -.5);
+	    }
+	    else {
+	      if(dist > 2.0*minLength) {
+		int tmpNNB = (int)(std::floor((dist/fabs(targetSegLength))) -.5);
+		nNodesBetween = max(1,tmpNNB);
+	      }
+	      else nNodesBetween = 0;
+	    }
+	    double segLength = dist/(nNodesBetween+1.0);
+	    for(int nn=1; nn<=nNodesBetween; nn++) {
+	      for(int m=0; m<N; m++) {
+		idx[m] = N*id + m;
+	      }
+	      VectorND nodePos;
+	      nodePos = segStart + nn*sep*(segLength/dist);
+	      newNode = new BrownianNode<N>(id,idx,nodePos,nodePos);
+	      newNode->setId(id);
+	      tmpDNC.push_back(newNode);
+	      dNodes.push_back(newNode);
+	      id++;
+	    }
+	    if(k == clIter->second->baseFil) {
+	      for(int m=0; m<N; m++) {
+		idx[m] = N*id + m;
+	      }
+	      VectorND nodePos;
+	      nodePos = segStart + sep;
+	      newNode = new BrownianNode<N>(id,idx,nodePos,nodePos);
+	      newNode->setId(id);
+	      tmpDNC.push_back(newNode);
+	      dNodes.push_back(newNode);
+	      id++;
+	      clIter->second->clNode = newNode;
+	      //_crosslinkNodes.insert(newNode);
+	      _crossNodeMap.insert(pair<DefNode*,DefNode*>(newNode,newNode));
+	      PeriodicTie<N> * newTie = new PeriodicTie<N>(newNode,_box);
+	      addConstraint(newTie);
+	      clIter->second->ptie = newTie;
+	      int nSlaves = clIter->second->otherFils.size() - 1;
+	      _nSlavesMap.insert(pair<DefNode*,int>(newNode,nSlaves));
+	    }
+	    else {
+	      //newNode = clIter->second->clNode;
+	      //tmpDNC.push_back(newNode);
+	      //for(int m=0; m<N; m++) {
+	      //  idx[m] = N*id + m;
+	      //}
+	      DefNode* mastNode = clIter->second->clNode;
+	      VectorND nodePos;
+	      nodePos = segStart + sep;
+	      newNode = new BrownianNode<N>(mastNode->id(),mastNode->index(),nodePos,nodePos);
+	      newNode->setId(mastNode->id());
+	      tmpDNC.push_back(newNode);
+	      //dNodes.push_back(newNode);
+	      //id++;
+	      //_crosslinkNodes.insert(newNode);
+	      _crossNodeMap.insert(pair<DefNode*,DefNode*>(newNode,mastNode));
+	      PeriodicTie<N> * pt = clIter->second->ptie;
+	      pt->addSlave(newNode);
+	      
+	    }
+	    
+	    segStart += sep;
+	  }
+	}
+
+	// create nodes between last crosslink and end //	
+	VectorND sep;
+	sep = curFil->end - segStart;
+	//_box->mapDistance(sep);
+	double dist = norm2(sep);
+	int nNodesBetween;
+	if(targetSegLength > 0.0) {
+	  nNodesBetween = (int)(std::floor((dist/targetSegLength)) -.5);
+	}
+	else {
+	  if(dist > 2.0*minLength) {
+	    int tmpNNB = (int)(std::floor((dist/fabs(targetSegLength))) -.5);
+	    nNodesBetween = max(1,tmpNNB);
+	  }
+	  else nNodesBetween = 0;
+	}
+	double segLength = dist/(nNodesBetween+1.0);
+	for(int nn=1; nn<=nNodesBetween+1; nn++) {
+	  for(int m=0; m<N; m++) {
+	    idx[m] = N*id + m;
+	  }
+	  VectorND nodePos;
+	  nodePos = segStart + nn*sep*(segLength/dist);
+	  newNode = new BrownianNode<N>(id,idx,nodePos,nodePos);
+	  newNode->setId(id);
+	  tmpDNC.push_back(newNode);
+	  dNodes.push_back(newNode);
+	  id++;
+	}
+	
+	double filstrestiff = mu;
+	double filbendstiff = kappa;
+	
+	if(longshort){
+	  if(k < lsfrac*nFils) {//make long filament stiffer
+	    filstrestiff = stretchstiffratio*mu;
+	    filbendstiff = bendstiffratio*kappa;
+	  }
+	  else {
+	    filstrestiff = mu;
+	    filbendstiff = kappa;
+	  }
+	}
+	addFilament(tmpDNC,filbendstiff,filstrestiff,visc,kT,dt,minLength);
+	
       }
+    }
+
+    else if(bondType == "EntropicSpring") {
       
-      if(bondType == "Spring") {
+      for(int k=0; k<nFils; k++) {
+	DefNodeContainer tmpDNC;
+	TempFilament * curFil = tmpFils[k];
+	int nCLs = curFil->crossFils.size();
+	typename multimap<double,TempCrosslink*>::iterator clIter = curFil->crossFils.begin();
+	int i = 0;
+	VectorND segStart;
+	segStart = curFil->start;
+	
+	// create first node //
+	for(int m=0; m<N; m++) {
+	  idx[m] = N*id + m;
+	}
+	newNode = new BrownianNode<N>(id,idx,segStart,segStart);
+	newNode->setId(id);
+	tmpDNC.push_back(newNode);
+	dNodes.push_back(newNode);
+	id++;
+	
+	// create nodes between start and first crosslink and between all crosslink pairs //
+	for(clIter; clIter!=curFil->crossFils.end(); clIter++) {
+	  if(clIter->second->active) {
+	    VectorND sep;
+	    sep = clIter->second->otherFils[k] - segStart;
+	    //_box->mapDistance(sep);
+	    double dist = norm2(sep);
+	    int nNodesBetween;
+	    if(targetSegLength > 0.0) {
+	      nNodesBetween = (int)(std::floor((dist/targetSegLength)) -.5);
+	    }
+	    else {
+	      if(dist > 2.0*minLength) {
+		int tmpNNB = (int)(std::floor((dist/fabs(targetSegLength))) -.5);
+		nNodesBetween = max(1,tmpNNB);
+	      }
+	      else nNodesBetween = 0;
+	    }
+	    double segLength = dist/(nNodesBetween+1.0);
+	    for(int nn=1; nn<=nNodesBetween; nn++) {
+	      for(int m=0; m<N; m++) {
+		idx[m] = N*id + m;
+	      }
+	      VectorND nodePos;
+	      nodePos = segStart + nn*sep*(segLength/dist);
+	      newNode = new BrownianNode<N>(id,idx,nodePos,nodePos);
+	      newNode->setId(id);
+	      tmpDNC.push_back(newNode);
+	      dNodes.push_back(newNode);
+	      id++;
+	    }
+	    if(k == clIter->second->baseFil) {
+	      for(int m=0; m<N; m++) {
+		idx[m] = N*id + m;
+	      }
+	      VectorND nodePos;
+	      nodePos = segStart + sep;
+	      newNode = new BrownianNode<N>(id,idx,nodePos,nodePos);
+	      newNode->setId(id);
+	      tmpDNC.push_back(newNode);
+	      dNodes.push_back(newNode);
+	      id++;
+	      clIter->second->clNode = newNode;
+	      //_crosslinkNodes.insert(newNode);
+	      _crossNodeMap.insert(pair<DefNode*,DefNode*>(newNode,newNode));
+	      PeriodicTie<N> * newTie = new PeriodicTie<N>(newNode,_box);
+	      addConstraint(newTie);
+	      clIter->second->ptie = newTie;
+	      int nSlaves = clIter->second->otherFils.size() - 1;
+	      _nSlavesMap.insert(pair<DefNode*,int>(newNode,nSlaves));
+	    }
+	    else {
+	      //newNode = clIter->second->clNode;
+	      //tmpDNC.push_back(newNode);
+	      //for(int m=0; m<N; m++) {
+	      //  idx[m] = N*id + m;
+	      //}
+	      DefNode* mastNode = clIter->second->clNode;
+	      VectorND nodePos;
+	      nodePos = segStart + sep;
+	      newNode = new BrownianNode<N>(mastNode->id(),mastNode->index(),nodePos,nodePos);
+	      newNode->setId(mastNode->id());
+	      tmpDNC.push_back(newNode);
+	      //dNodes.push_back(newNode);
+	      //id++;
+	      //_crosslinkNodes.insert(newNode);
+	      _crossNodeMap.insert(pair<DefNode*,DefNode*>(newNode,mastNode));
+	      PeriodicTie<N> * pt = clIter->second->ptie;
+	      pt->addSlave(newNode);
+	      
+	    }
+	    
+	    segStart += sep;
+	  }
+	}
+	
+	// create nodes between last crosslink and end //	
+	VectorND sep;
+	sep = curFil->end - segStart;
+	//_box->mapDistance(sep);
+	double dist = norm2(sep);
+	int nNodesBetween;
+	if(targetSegLength > 0.0) {
+	  nNodesBetween = (int)(std::floor((dist/targetSegLength)) -.5);
+	}
+	else {
+	  if(dist > 2.0*minLength) {
+	    int tmpNNB = (int)(std::floor((dist/fabs(targetSegLength))) -.5);
+	    nNodesBetween = max(1,tmpNNB);
+	  }
+	  else nNodesBetween = 0;
+	}
+	double segLength = dist/(nNodesBetween+1.0);
+	for(int nn=1; nn<=nNodesBetween+1; nn++) {
+	  for(int m=0; m<N; m++) {
+	    idx[m] = N*id + m;
+	  }
+	  VectorND nodePos;
+	  nodePos = segStart + nn*sep*(segLength/dist);
+	  newNode = new BrownianNode<N>(id,idx,nodePos,nodePos);
+	  newNode->setId(id);
+	  tmpDNC.push_back(newNode);
+	  dNodes.push_back(newNode);
+	  id++;
+	}
+		
 	addFilament(tmpDNC,kappa,mu,visc,kT,dt,minLength);
+	
       }
-
-      else std::cout << "Adaptive meshing with nonlinear springs not implemented yet!" << std::endl;
-
     }
 
     // now that gel is set up, compute various quantities //
@@ -879,6 +1082,10 @@ namespace voom {
     computeCrossDistro(-1.0);
 
     computeFilLenDistro();
+
+    computeFilStreStiffDistro();
+
+    computeFilBendStiffDistro();
 
     computeNematicDistro(nemAngle);
 
@@ -921,7 +1128,7 @@ namespace voom {
 	      << nBonds << " bonds, and "
 	      << nRods << " brownian rods."
 	      << std::endl;
- 
+
   }
 
   template<int N>
@@ -946,6 +1153,11 @@ namespace voom {
     assert( p != properties.end() );
     double dt = atof(p->second.data());
 
+    p = properties.find("L");
+    assert( p != properties.end() );
+    double filLength = atof(p->second.data());
+
+
     // removalMethod key: 0 = stretch short segments; 1 = delete one in each pair; 2 = collapse nodes //
     int removalMethod = 0;	
 
@@ -961,6 +1173,39 @@ namespace voom {
     double nemAngle = 0.0;
     p = properties.find("nematic direction angle");
     if(p != properties.end()) nemAngle = atof(p->second.data());
+    
+    //need to read in stiffratio because it's not stored
+    double stretchstiffratio = 1.0;
+    double bendstiffratio = 1.0;
+    double lsfrac = -1.0;
+    std::string polydispStr;
+    bool longshort = false;
+    bool removeLngCross = false;
+    p = properties.find("polydispersity");
+    if(p != properties.end()) {
+      polydispStr.assign(p->second);
+      if(polydispStr.find("LongShort") != string::npos) {
+	longshort = true;
+	p = properties.find("longfraction");
+	assert(p != properties.end());
+	lsfrac = atof(p->second.data());
+	assert(lsfrac <= 1.0);
+	p = properties.find("stretchstiffratio");
+	assert(p != properties.end());
+	stretchstiffratio = atof(p->second.data());
+	p = properties.find("bendstiffratio");
+	assert(p != properties.end());
+        bendstiffratio = atof(p->second.data());
+	p = properties.find("removelongcrosslink");
+	assert(p != properties.end());
+	if(atof(p->second.data())> 0.5) removeLngCross = true;
+	else removeLngCross = false;
+      }
+      else if(polydispStr.find("Exponential") != string::npos){
+	//Don't have to do anything, all fil info are to be read in
+	std::cout << "Exponential polydispersity: Filaments info will be read in ......" << std::endl;
+      }
+    }
 
     int intSize = sizeof(int);
     int doubleSize = sizeof(double);
@@ -1047,6 +1292,16 @@ namespace voom {
     inFile.close();
     std::cout << "Finished reading data on " << nFils << " filaments and " << nCLs << " crosslinks from file " << fileName << "; creating gel." << std::endl;
 
+    //Disable crosslinks between two long filaments for polydispersity networks
+    if(longshort && removeLngCross) {
+      int deletedCrosslinks = 0;
+      deletedCrosslinks = removeLongFilCrosslinks(tmpFils,filLength);
+      std::cout << "Removed " << deletedCrosslinks << " crosslinks between long filaments " << std::endl;
+      double averageLongFilCrosslinks;
+      averageLongFilCrosslinks = computeLongFilCrosslinks(tmpFils,filLength);
+      std::cout << "Average number of crosslinks on long filaments: " << averageLongFilCrosslinks << std::endl;
+    }
+
     // we now have a list of crosslinks for each filament; we can now create the gel //
     int id = 0;
     NodeBase::DofIndexMap idx(N);
@@ -1078,7 +1333,7 @@ namespace voom {
 	  //_box->mapDistance(sep);
 	  double dist = norm2(sep);
 	  int nNodesBetween;
-          if(targetSegLength > 0.0) {
+	  if(targetSegLength > 0.0) {
             nNodesBetween = (int)(std::floor((dist/targetSegLength)) -.5);
           }
           else {
@@ -1162,6 +1417,7 @@ namespace voom {
 	}
 	else nNodesBetween = 0;
       }
+
       double segLength = dist/(nNodesBetween+1.0);
       for(int nn=1; nn<=nNodesBetween+1; nn++) {
         for(int m=0; m<N; m++) {
@@ -1176,8 +1432,20 @@ namespace voom {
 	id++;
       }
       
+      double filstrestiff = mu;
+      double filbendstiff = kappa;
       if(bondType == "Spring") {
-	addFilament(tmpDNC,kappa,mu,visc,kT,dt,minLength);
+	if(longshort) {
+	  if(k < lsfrac*nFils) {//make long filament stiffer
+	    filstrestiff = stretchstiffratio*mu;
+	    filbendstiff = bendstiffratio*kappa;
+	  }
+	  else {
+	    filstrestiff = mu;
+	    filbendstiff = kappa;
+	  }
+	}
+	addFilament(tmpDNC,filbendstiff,filstrestiff,visc,kT,dt,minLength);
       }
 
       else std::cout << "Adaptive meshing with nonlinear springs not implemented yet!" << std::endl;
@@ -1189,6 +1457,10 @@ namespace voom {
     computeCrossDistro(-1.0);
 
     computeFilLenDistro();
+
+    computeFilStreStiffDistro();
+
+    computeFilBendStiffDistro();
 
     computeNematicDistro(nemAngle);
 
@@ -1450,6 +1722,65 @@ namespace voom {
   }
 
   template<int N>
+  int SemiflexibleGel<N>::removeLongFilCrosslinks(TempFilamentContainer & tmpFils, double L) {
+    int deletedCrosslinks = 0;
+    //ranlib::Uniform<double> rnguni;
+    //rnguni.seed((unsigned int)time(0));
+    int nf;
+    for(nf=tmpFils.size()-1;nf>-1 ;nf--) {
+      TempFilament* fil = tmpFils[nf];
+      double filLen = norm2((fil->end)-(fil->start));
+      if(filLen > 1.2*L) {
+	typename multimap<double,TempCrosslink*>::iterator clIter = fil->crossFils.begin();
+	vector<TempCrosslink*> cls;
+	for(clIter; clIter!=fil->crossFils.end(); clIter++) {
+	  if(clIter->second->active) {
+	    cls.push_back(clIter->second);
+	  }
+	}
+	for(int i=0;i<cls.size();i++) {
+	  int j=cls[i]->baseFil;
+	  if(j<nf) { //a untested filament
+	    TempFilament* fil2 = tmpFils[j];
+	    double filLen2 = norm2((fil2->end)-(fil2->start));
+	    if (filLen2 > 1.2*L) {
+	      cls[i]->active = false;
+	      deletedCrosslinks++;
+	    }
+	  }
+	}
+      }
+    }
+    //output long filaments average crosslinks
+    return deletedCrosslinks;  
+  }
+
+  template<int N>
+  double SemiflexibleGel<N>::computeLongFilCrosslinks(TempFilamentContainer & tmpFils, double L) {
+    //output long filaments average crosslinks
+    int averageCrosslinks = 0;
+    int nf;
+    int numberofLong = 0;
+    int numberofLongCL = 0;
+    for(nf=tmpFils.size()-1;nf>-1 ;nf--) {
+      TempFilament* fil = tmpFils[nf];
+      double filLen = norm2((fil->end)-(fil->start));
+      if(filLen > 1.2*L) {
+	numberofLong++;
+	typename multimap<double,TempCrosslink*>::iterator clIter = fil->crossFils.begin();
+	vector<TempCrosslink*> cls;
+	for(clIter; clIter!=fil->crossFils.end(); clIter++) {
+	  if(clIter->second->active) {
+	    numberofLongCL++;
+	  }
+	}
+      }
+    }
+    double averageLongFilCL = double(numberofLongCL)/double(numberofLong);
+    return averageLongFilCL;
+  }
+
+  template<int N>
   int SemiflexibleGel<N>::collapseCrosslinks(TempFilamentContainer & tmpFils, double minLength) {
 //     // collapse crosslinks to avoid short segments //
 //     VectorND size;
@@ -1653,9 +1984,10 @@ namespace voom {
 	for( BondIterator b = f->bonds.begin(); b!= f->bonds.end(); b++ ) {
 	  (*b)->compute(f0,f1,f2);
 	}
-// 	for( RodIterator r = f->rods.begin(); r!= f->rods.end(); r++ ) {
-// 	  (*r)->compute(f0,f1,f2);
-// 	}
+	// No brownian rod implemented in the semiflexible gel simulation
+//	for( RodIterator r = f->rods.begin(); r!= f->rods.end(); r++ ) {
+//        (*r)->compute(f0,f1,f2);
+//      }
 	for( AngleIterator a = f->angles.begin(); a!= f->angles.end(); a++ ) {
 	  (*a)->compute(f0,f1,f2);
 	}
@@ -1742,143 +2074,332 @@ namespace voom {
   template<int N>
   void SemiflexibleGel<N>::printParaview(const std::string name) const {
 
-    //     std::cout << "SemiflexibleGel<N>::printParaview()." << std::endl;
-    //
-    // open file
-    //
-    std::string fileName = name + ".vtk";
-    std::ofstream ofs(fileName.c_str());
-    if (!ofs) {
-      std::cout << "Error: can not open paraview output file "
-		<< fileName
-		<< std::endl;
-      return;
-    }
+//     //     std::cout << "SemiflexibleGel<N>::printParaview()." << std::endl;
+//     //
+//     // open file
+//     //
+//     std::string fileName = name + ".vtk";
+//     std::ofstream ofs(fileName.c_str());
+//     if (!ofs) {
+//       std::cout << "Error: can not open paraview output file "
+// 		<< fileName
+// 		<< std::endl;
+//       return;
+//     }
     
-    //
-    //    Node position data
-    //
+//     //
+//     //    Node position data
+//     //
     
-    // count up all filament nodes
-    int nNodes = 0;
-    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
-      nNodes += (*f)->nodes.size();
-    }
-    nNodes += _motors.size()*2;
+//     std::map<DefNode*,int> nodeIDMap;
+//     std::vector<DefNode*> printNodes;
+//     std::set<DefNode*> imageNodes;
+//     std::vector< std::pair<DefNode*,DefNode*> > mainPairs;
+//     std::vector< std::pair<DefNode*,DefNode*> > imgPairs;
+//     int nodeCount = 0;
 
-    //Mo
-    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
-      const DefNodeContainer & crosslinknodes = (*c)-> getNodes();
-      nNodes += crosslinknodes.size();
-    }
+//     //double shear = _box->shear();
+//     double shear = 0.0;
+//     _box->setShear(0.0);
+//     int nodeID = 0;
+//     for(FilamentIterator fi=_filaments.begin(); fi!=_filaments.end(); fi++) {
+//       Filament* f1 = *fi;
+//       int nfNodes = f1->nodes.size();
+//       for(int nn=0; nn<nfNodes-1; nn++) {
+// 	VectorND mapPos1;
+// 	mapPos1 = f1->nodes[nn]->position();
+// 	_box->mapPoint(mapPos1);
+// // 	VectorND def1;
+// // 	def1 = f1->nodes[nn]->point() - mapPos1;
+// // 	_box->setShear(shear);
+// // 	_box->mapDistance(def1);
+// // 	_box->setShear(0.0);
+// // 	def1 += mapPos1;
+// // 	DefNode* newNode1 = new BrownianNode<2>(nodeID,f1->nodes[nn]->index(),mapPoint,def1);
+// 	nodeIDMap.insert(pair<DefNode*,int>(f1->nodes[nn],nodeID));
+// 	nodeID++;
+// 	nodeCount++;
+// 	printNodes.push_back(f1->nodes[nn]);
+// 	VectorND mapPos2;
+// 	mapPos2 = f1->nodes[nn+1]->position();
+// 	_box->mapPoint(mapPos2);
+// 	VectorND diff;
+// 	diff = mapPos2 - mapPos1;
+// 	double candist = norm2(diff);
+// 	_box->mapDistance(diff);
+// 	double dist = norm2(diff);
+// 	// if bond crosses boundary, make image nodes //
+// 	if(fabs(dist-candist) > 1.0e-6) {
+// 	  VectorND img1pos;
+// 	  img1pos = mapPos2 - diff;
+// 	  VectorND disp;
+// 	  disp = f1->nodes[nn]->point() - img1pos;
+// 	  _box->setShear(shear);
+// 	  _box->mapDistance(disp);
+// 	  _box->setShear(0.0);
+// 	  disp += img1pos;
+// 	  DefNode* imgNode1 = new BrownianNode<2>(nodeID,f1->nodes[nn]->index(),img1pos,disp);
+// 	  nodeIDMap.insert(pair<DefNode*,int>(imgNode1,nodeID));
+// 	  nodeID++;
+// 	  nodeCount++;
+// 	  printNodes.push_back(imgNode1);
+// 	  imageNodes.insert(imgNode1);
+// 	  imgPairs.insert(pair<DefNode*,DefNode*>(imgNode1,f1->nodes[nn+1]));
+// 	  VectorND img2pos;
+// 	  img2pos = mapPos1 + diff;
+// 	  VectorND disp2;
+// 	  disp2 = f1->nodes[nn+1]->point() - img2pos;
+// 	  _box->setShear(shear);
+// 	  _box->mapDistance(disp2);
+// 	  _box->setShear(0.0);
+// 	  disp2 += img2pos;
+// 	  DefNode* imgNode2 = new BrownianNode<2>(f1->nodes[nn+1]->id(),f1->nodes[nn+1]->index(),img2pos,disp2);
+// 	  nodeIDMap.insert(pair<DefNode*,int>(imgNode2,nodeID));
+// 	  nodeID++;
+// 	  nodeCount++;
+// 	  printNodes.push_back(imgNode2);
+// 	  imageNodes.insert(imgNode2);
+// 	  mainPairs.insert(pair<DefNode*,DefNode*>(f1->nodes[nn],imgNode2));
+// 	}
+// 	// if not, just add node pair //
+// 	else {
+// 	  mainPairs.insert(pair<DefNode*,DefNode*>(f1->nodes[nn],f1->nodes[nn+1]));
+// 	}
+//       }
+//       // now add last node //
+//       nodeIDMap.insert(pair<DefNode*,int>(f1->nodes[nfNodes-1],nodeID));
+//       nodeID++;
+//       nodeCount++;
+//       printNodes.push_back(f1->nodes[nfNodes-1]);
+//     }
+
+//     // count up all filament nodes
+//     int nNodes = nodeCount;
+
+//     // now do same image thingy with motors/pinches... //
+//     //nNodes += _motors.size()*2;
+//     //nNodes += _pinches.size()*2;
+
+//     //Mo
+//     for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+//       const DefNodeContainer & crosslinknodes = (*c)-> getNodes();
+//       nNodes += crosslinknodes.size();
+//     }
+
+//     assert(nNodes == printNodes.size());
     
-    ofs << "# vtk DataFile Version 2.0\n"
-	<< "Test example" << std::endl
-	<< "ASCII" << std::endl
-	<< "DATASET POLYDATA" << std::endl
-	<< "POINTS  " << nNodes << "  double" << std::endl;
+//     ofs << "# vtk DataFile Version 2.0\n"
+// 	<< "Test example" << std::endl
+// 	<< "ASCII" << std::endl
+// 	<< "DATASET POLYDATA" << std::endl
+// 	<< "POINTS  " << nNodes << "  double" << std::endl;
     
 
-    // output nodal postions
-    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
-      ConstDefNodeIterator pn = (*f)->nodes.begin();
-      for ( ; pn!= (*f)->nodes.end(); pn ++) {
-	const Vector2D & nodalPos = (*pn)->position();
-	ofs << std::setprecision(16) 
-	    << nodalPos(0) << "  "
-	    << 0.0 << "  "
-	    << nodalPos(1) << std::endl;
-      }
-    }
+//     // output nodal postions
+//     for(DefNodeIterator nid=printNodes.begin(); nid!=printNodes.end(); nid++ ) {
+//       Vector2D & nodalPos = (*nid)->position();
+//       // if the node is NOT an image node, map its position //
+//       if(imageNodes.find(*nid) == imageNodes.end()) {
+// 	_box->setShear(0.0);
+// 	_box->mapPoint(nodalPos);       
+//       }
+//       ofs << std::setprecision(16) 
+// 	  << nodalPos(0) << "  "
+// 	  << 0.0 << "  "
+// 	  << nodalPos(1) << std::endl;
+//     }
 
-    for (ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++) {
-      const Vector2D & nodalPos1 = (*m)->getStartPoint();
-      const Vector2D & nodalPos2 = (*m)->getStartPoint();
-      ofs << std::setprecision(16)
-	  << nodalPos1(0) << "  "
-	  << 0.0 << "  "
-          << nodalPos1(1) <<std::endl;
-      ofs << std::setprecision(16)
-	  << nodalPos2(0) << "  "
-	  << 0.0 << "  "
-          << nodalPos2(1) <<std::endl;
-    }
+// //     for (ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++) {
+// //       const Vector2D & nodalPos1 = (*m)->getStartPoint();
+// //       const Vector2D & nodalPos2 = (*m)->getStartPoint();
+// //       ofs << std::setprecision(16)
+// // 	  << nodalPos1(0) << "  "
+// // 	  << 0.0 << "  "
+// //           << nodalPos1(1) <<std::endl;
+// //       ofs << std::setprecision(16)
+// // 	  << nodalPos2(0) << "  "
+// // 	  << 0.0 << "  "
+// //           << nodalPos2(1) <<std::endl;
+// //     }
 
-    //Mo
-    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
-      const DefNodeContainer & crosslinknodes = (*c)-> getNodes();
-      ConstDefNodeIterator pn = crosslinknodes.begin();
-      for ( ; pn!= crosslinknodes.end(); pn ++) {
-        const Vector2D & nodalPos = (*pn)->position();
-        ofs << std::setprecision(16) 
-	    << nodalPos(0) << "  "
-	    << 0.0 << "  "
-	    << nodalPos(1) << std::endl;
-      }
-    }
+// //     //Mo
+// //     for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+// //       const DefNodeContainer & crosslinknodes = (*c)-> getNodes();
+// //       ConstDefNodeIterator pn = crosslinknodes.begin();
+// //       for ( ; pn!= crosslinknodes.end(); pn ++) {
+// //         const Vector2D & nodalPos = (*pn)->position();
+// //         ofs << std::setprecision(16) 
+// // 	    << nodalPos(0) << "  "
+// // 	    << 0.0 << "  "
+// // 	    << nodalPos(1) << std::endl;
+// //       }
+// //     }
 
-    //
-    // segment connectivity data
-    //
-    int nSegments=0;
-    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
-      nSegments+=(*f)->bonds.size();
-    }
-    nSegments += _motors.size();
+//     //
+//     // segment connectivity data
+//     //
 
-    //Mo
-    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
-      nSegments++;
-    }
+//     int nSegments = mainPairs.size() + imgPairs.size();
 
-    ofs << "LINES  " << nSegments << "  "
-	<< 3*nSegments << std::endl;
-    int nodeID=0;
-    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
-      for(int a=0; a < (*f)->bonds.size(); a++) {
+//     int nSegsMeas = 0;
+//     for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+//       nSegsMeas += (*f)->bonds.size();
+//     }
+//     assert(nSegsMeas == mainPairs.size());
 
-	ofs << 2 << "  "
-	    << std::setw(10) << nodeID
-	    << std::setw(10) << nodeID+1
-	    << std::endl;
-	nodeID++;
-      }
-      nodeID++;
-    }
-    for( ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++ ) {
-      ofs << 2 << "  "
-	  << std::setw(10) << nodeID
-	  << std::setw(10) << nodeID+1
-	  << std::endl;
-      nodeID += 2;
-    }
+// //     nSegments += _motors.size();
+
+// //     //Mo
+// //     for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+// //       nSegments++;
+// //     }
+
+//     ofs << "LINES  " << nSegments << "  "
+// 	<< 3*nSegments << std::endl;
+//     for( typename std::vector< pair<DefNode*,DefNode*> >::iterator np=mainPairs.begin(); np!=mainPairs.end(); np++ ) {
+//       DefNode* n1 = np->first;
+//       DefNode* n2 = np->second;
+//       int indx1 = nodeIDMap[n1];
+//       int indx2 = nodeIDMap[n2];
+
+//       ofs << 2 << "  "
+// 	  << std::setw(10) << indx1
+// 	  << std::setw(10) << indx2
+// 	  << std::endl;
+     
+//     }
+
+//     for( typename std::vector< pair<DefNode*,DefNode*> >::iterator np=imgPairs.begin(); np!=imgPairs.end(); np++ ) {
+//       DefNode* n1 = np->first;
+//       DefNode* n2 = np->second;
+//       int indx1 = nodeIDMap[n1];
+//       int indx2 = nodeIDMap[n2];
+
+//       ofs << 2 << "  "
+// 	  << std::setw(10) << indx1
+// 	  << std::setw(10) << indx2
+// 	  << std::endl;
+     
+//     }
+// //     for( ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++ ) {
+// //       ofs << 2 << "  "
+// // 	  << std::setw(10) << nodeID
+// // 	  << std::setw(10) << nodeID+1
+// // 	  << std::endl;
+// //       nodeID += 2;
+// //     }
      	
-    //Mo
-    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
-      ofs << 2 << "  "
-	  << std::setw(10) << nodeID
-	  << std::setw(10) << nodeID+1
-	  << std::endl;
-      nodeID+=2;
-    }
+// //     //Mo
+// //     for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+// //       ofs << 2 << "  "
+// // 	  << std::setw(10) << nodeID
+// // 	  << std::setw(10) << nodeID+1
+// // 	  << std::endl;
+// //       nodeID+=2;
+// //     }
 
-    //
-    //  output energy for each segment
-    //
-    ofs << "CELL_DATA    " << nSegments << std::endl;
+//     //
+//     //  output energy for each segment
+//     //
+// //     ofs << "CELL_DATA    " << nSegments << std::endl;
+
+// //     ofs << "SCALARS    Energy    double    1" << std::endl;
+// //     ofs << "LOOKUP_TABLE default" << std::endl;
+// //     for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+// //       int firstAngle=0;
+// //       int lastAngle=(*f)->angles.size()-1;   //What happened to those two variables???  --Mo
+// //       for(int a=0; a < (*f)->bonds.size(); a++) {
+// // 	double energy = (*f)->bonds[a]->energy();
+// // 	// 	energy += 0.5*(*f)->bonds[std::max(a-1,firstAngle)]->energy();
+// // 	// 	energy += 0.5*(*f)->bonds[std::min(a,lastAngle)]->energy();
+// // 	ofs << energy << std::endl;
+// //       }
+// //     }
+// //     for( ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++ ) {
+// //       ofs << (*m)->energy() << std::endl;
+// //     }
+// //     ofs << std::endl;
+
+// //     //Mo
+// //     for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+// //       double energy = (*c)->energy();
+// //       ofs << energy << std::endl;
+// //     }
+      
+// //     ofs << std::endl;
 
 //     ofs << "SCALARS    Energy    double    1" << std::endl;
 //     ofs << "LOOKUP_TABLE default" << std::endl;
 //     for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
-//       int firstAngle=0;
-//       int lastAngle=(*f)->angles.size()-1;   //What happened to those two variables???  --Mo
+//       int nAngles = (*f)->angles.size();   //What happened to those two variables???  --Mo
 //       for(int a=0; a < (*f)->bonds.size(); a++) {
 // 	double energy = (*f)->bonds[a]->energy();
-// 	// 	energy += 0.5*(*f)->bonds[std::max(a-1,firstAngle)]->energy();
-// 	// 	energy += 0.5*(*f)->bonds[std::min(a,lastAngle)]->energy();
+// 	if(a==0 && nAngles>0) energy += .5*(*f)->angles[0]->energy();
+// 	else if(a==(*f)->bonds.size()-1 && nAngles>0) energy += .5*(*f)->angles[nAngles-1]->energy();
+// 	else if(nAngles>0) {
+// 	  energy += 0.5*(*f)->angles[a]->energy();
+// 	  energy += 0.5*(*f)->angles[a-1]->energy();
+// 	}
 // 	ofs << energy << std::endl;
 //       }
 //     }
+
+//     for(int iip=0; iip<imgPairs.size(); iip++) ofs << -1.0 << std::endl;
+ 
+// //     for( ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++ ) {
+// //       ofs << (*m)->energy() << std::endl;
+// //     }
+// //     ofs << std::endl;
+
+// //     //Mo
+// //     for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+// //       double energy = (*c)->energy();
+// //       ofs << energy << std::endl;
+// //     }
+      
+//     ofs << std::endl;
+
+//     ofs << "SCALARS    BendEnergy    double    1" << std::endl;
+//     ofs << "LOOKUP_TABLE default" << std::endl;
+//     for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+//       int nAngles = (*f)->angles.size();   //What happened to those two variables???  --Mo
+//       for(int a=0; a < (*f)->bonds.size(); a++) {
+// 	double energy = 0.0;
+// 	if(a==0 && nAngles>0) energy += .5*((*f)->angles[0]->energy());
+// 	else if(a==(*f)->bonds.size()-1 && nAngles>0) energy += 0.5*((*f)->angles[nAngles-1]->energy());
+// 	else if(nAngles>0) {
+// 	  energy += 0.5*((*f)->angles[a]->energy());
+// 	  energy += 0.5*((*f)->angles[a-1]->energy());
+// 	}
+// 	ofs << energy << std::endl;
+//       }
+//     }
+
+//     for(int iip=0; iip<imgPairs.size(); iip++) ofs << -1.0 << std::endl;
+
+//     for( ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++ ) {
+//       ofs << 0.0 << std::endl;
+//     }
+//     ofs << std::endl;
+
+//     //Mo
+//     for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+//       double energy = (*c)->energy();
+//       ofs << 0.0 << std::endl;
+//     }
+      
+//     ofs << std::endl;
+
+//     ofs << "SCALARS    StretchEnergy    double    1" << std::endl;
+//     ofs << "LOOKUP_TABLE default" << std::endl;
+//     for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+//       for(int a=0; a < (*f)->bonds.size(); a++) {
+// 	double energy = (*f)->bonds[a]->energy();
+// 	ofs << energy << std::endl;
+//       }
+//     }
+//     for(int iip=0; iip<imgPairs.size(); iip++) ofs << -1.0 << std::endl;
+
 //     for( ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++ ) {
 //       ofs << (*m)->energy() << std::endl;
 //     }
@@ -1892,217 +2413,173 @@ namespace voom {
       
 //     ofs << std::endl;
 
-    ofs << "SCALARS    Energy    double    1" << std::endl;
-    ofs << "LOOKUP_TABLE default" << std::endl;
-    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
-      int nAngles = (*f)->angles.size();   //What happened to those two variables???  --Mo
-      for(int a=0; a < (*f)->bonds.size(); a++) {
-	double energy = (*f)->bonds[a]->energy();
-	if(a==0 && nAngles>0) energy += .5*(*f)->angles[0]->energy();
-	else if(a==(*f)->bonds.size()-1 && nAngles>0) energy += .5*(*f)->angles[nAngles-1]->energy();
-	else if(nAngles>0) {
-	  energy += 0.5*(*f)->angles[a]->energy();
-	  energy += 0.5*(*f)->angles[a-1]->energy();
-	}
-	ofs << energy << std::endl;
-      }
-    }
-    for( ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++ ) {
-      ofs << (*m)->energy() << std::endl;
-    }
-    ofs << std::endl;
+//     ofs << "SCALARS    Angle    double    1" << std::endl;
+//     ofs << "LOOKUP_TABLE default" << std::endl;
+//     for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+//       for(int a=0; a < (*f)->bonds.size(); a++) {
+// 	VectorND sep;
+// 	sep = (*f)->nodes[a+1]->position() - (*f)->nodes[a]->position();
+// 	double ang = atan2(sep[1],sep[0]);
+// 	if(ang < -M_PI/2.0) ang += M_PI;
+// 	else if(ang >= M_PI/2.0) ang -= M_PI;
+// 	ofs << ang << std::endl;
+//       }
+//     }
 
-    //Mo
-    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
-      double energy = (*c)->energy();
-      ofs << energy << std::endl;
-    }
+//     for(int iip=0; iip<imgPairs.size(); iip++) ofs << -1.0 << std::endl;
+
+//     for( ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++ ) {
+//       ofs << 0.0 << std::endl;
+//     }
+//     ofs << std::endl;
+
+//     //Mo
+//     for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+//       double energy = (*c)->energy();
+//       ofs << 0.0 << std::endl;
+//     }
       
-    ofs << std::endl;
+//     ofs << std::endl;
 
-    ofs << "SCALARS    BendEnergy    double    1" << std::endl;
-    ofs << "LOOKUP_TABLE default" << std::endl;
-    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
-      int nAngles = (*f)->angles.size();   //What happened to those two variables???  --Mo
-      for(int a=0; a < (*f)->bonds.size(); a++) {
-	double energy = 0.0;
-	if(a==0 && nAngles>0) energy += .5*((*f)->angles[0]->energy());
-	else if(a==(*f)->bonds.size()-1 && nAngles>0) energy += 0.5*((*f)->angles[nAngles-1]->energy());
-	else if(nAngles>0) {
-	  energy += 0.5*((*f)->angles[a]->energy());
-	  energy += 0.5*((*f)->angles[a-1]->energy());
-	}
-	ofs << energy << std::endl;
-      }
-    }
-    for( ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++ ) {
-      ofs << 0.0 << std::endl;
-    }
-    ofs << std::endl;
+//     ofs << "SCALARS    FilLen    double    1" << std::endl;
+//     ofs << "LOOKUP_TABLE default" << std::endl;
+//     for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
+//       VectorND e2e;
+//       int nNodes = (*f)->nodes.size();
+//       e2e = (*f)->nodes[nNodes-1]->position() - (*f)->nodes[0]->position();
+//       double fl = norm2(e2e);
+//       for(int a=0; a < (*f)->bonds.size(); a++) {
+// 	ofs << fl << std::endl;
+//       }
+//     }
 
-    //Mo
-    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
-      double energy = (*c)->energy();
-      ofs << 0.0 << std::endl;
-    }
+//     for(int iip=0; iip<imgPairs.size(); iip++) ofs << -1.0 << std::endl;
+
+//     for( ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++ ) {
+//       ofs << 0.0 << std::endl;
+//     }
+//     ofs << std::endl;
+
+//     //Mo
+//     for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+//       double energy = (*c)->energy();
+//       ofs << 0.0 << std::endl;
+//     }
       
-    ofs << std::endl;
+//     ofs << std::endl;
 
-    ofs << "SCALARS    StretchEnergy    double    1" << std::endl;
-    ofs << "LOOKUP_TABLE default" << std::endl;
-    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
-      for(int a=0; a < (*f)->bonds.size(); a++) {
-	double energy = (*f)->bonds[a]->energy();
-	ofs << energy << std::endl;
-      }
-    }
-    for( ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++ ) {
-      ofs << (*m)->energy() << std::endl;
-    }
-    ofs << std::endl;
+//     ofs << std::endl << "POINT_DATA " << nNodes << std::endl
+// 	<< "VECTORS displacements double" << std::endl;
 
-    //Mo
-    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
-      double energy = (*c)->energy();
-      ofs << energy << std::endl;
-    }
+//     // output nodal displacements
+//     for(DefNodeIterator nid=printNodes.begin(); nid!=printNodes.end(); nid++ ) {
+//       Vector2D & nodalPos = (*nid)->position();
+//       Vector2D nodalDisp;
+//       // if the node is NOT an image node, map its point //
+//       if(imageNodes.find(*nid) == imageNodes.end()) {
+// 	_box->setShear(0.0);
+// 	_box->mapPoint(nodalPos);
+// 	nodalDisp = (*nid)->point() - nodalPos;
+// 	_box->setShear(shear);
+// 	_box->mapDistance(nodalDisp);
+// 	_box->setShear(0.0);
+//       }
+//       else nodalDisp = (*nid)->point() - (*nid)->position();
       
-    ofs << std::endl;
-
-    ofs << "SCALARS    Angle    double    1" << std::endl;
-    ofs << "LOOKUP_TABLE default" << std::endl;
-    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
-      for(int a=0; a < (*f)->bonds.size(); a++) {
-	VectorND sep;
-	sep = (*f)->nodes[a+1]->position() - (*f)->nodes[a]->position();
-	double ang = atan2(sep[1],sep[0]);
-	if(ang < -M_PI/2.0) ang += M_PI;
-	else if(ang >= M_PI/2.0) ang -= M_PI;
-	ofs << ang << std::endl;
-      }
-    }
-    for( ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++ ) {
-      ofs << 0.0 << std::endl;
-    }
-    ofs << std::endl;
-
-    //Mo
-    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
-      double energy = (*c)->energy();
-      ofs << 0.0 << std::endl;
-    }
+//       ofs << std::setprecision(16) 
+// 	  << nodalDisp(0) << '\t' 
+// 	  << 0.0 << '\t' 
+// 	  << nodalDisp(1)  << std::endl;
       
-    ofs << std::endl;
-
-    ofs << "SCALARS    FilLen    double    1" << std::endl;
-    ofs << "LOOKUP_TABLE default" << std::endl;
-    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
-      VectorND e2e;
-      int nNodes = (*f)->nodes.size();
-      e2e = (*f)->nodes[nNodes-1]->position() - (*f)->nodes[0]->position();
-      double fl = norm2(e2e);
-      for(int a=0; a < (*f)->bonds.size(); a++) {
-	ofs << fl << std::endl;
-      }
-    }
-    for( ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++ ) {
-      ofs << 0.0 << std::endl;
-    }
-    ofs << std::endl;
-
-    //Mo
-    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
-      double energy = (*c)->energy();
-      ofs << 0.0 << std::endl;
-    }
-      
-    ofs << std::endl;
-
-    ofs << std::endl << "POINT_DATA " << nNodes << std::endl
-	<< "VECTORS displacements double" << std::endl;
-
-    // output nodal displacements
-    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
-      ConstDefNodeIterator pn = (*f)->nodes.begin();
-      for ( ; pn!= (*f)->nodes.end(); pn ++) {
-	Vector2D nodalDisp;
-	nodalDisp = (*pn)->point() - (*pn)->position();
-	ofs << std::setprecision(16) 
-	    << nodalDisp(0) << '\t' 
-	    << 0.0 << '\t' 
-	    << nodalDisp(1)  << std::endl;
-      }
-    }
-    for (ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++) {
-      Vector2D nodalPos1; 
-      nodalPos1 = (*m)->getEndPoint1()-(*m)->getStartPoint();
-      Vector2D nodalPos2;
-      nodalPos2 = (*m)->getEndPoint2()-(*m)->getStartPoint();
-      ofs << std::setprecision(16)
-	  << nodalPos1(0) << "  "
-	  << 0.0 << "  "
-          << nodalPos1(1) <<std::endl;
-      ofs << std::setprecision(16)
-	  << nodalPos2(0) << "  "
-	  << 0.0 << "  "
-          << nodalPos2(1) <<std::endl;
-    }
+//     }
+//     for (ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++) {
+//       Vector2D nodalPos1; 
+//       nodalPos1 = (*m)->getEndPoint1()-(*m)->getStartPoint();
+//       Vector2D nodalPos2;
+//       nodalPos2 = (*m)->getEndPoint2()-(*m)->getStartPoint();
+//       ofs << std::setprecision(16)
+// 	  << nodalPos1(0) << "  "
+// 	  << 0.0 << "  "
+//           << nodalPos1(1) <<std::endl;
+//       ofs << std::setprecision(16)
+// 	  << nodalPos2(0) << "  "
+// 	  << 0.0 << "  "
+//           << nodalPos2(1) <<std::endl;
+//     }
     
-    //Mo
-    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
-      const DefNodeContainer & crosslinknodes = (*c)-> getNodes();
-      ConstDefNodeIterator pn = crosslinknodes.begin();
-      for ( ; pn!= crosslinknodes.end(); pn ++) {
-        Vector2D nodalDisp;
-        nodalDisp = (*pn)->point() - (*pn)->position();
-        ofs << std::setprecision(16) 
-	    << nodalDisp(0) << '\t'
-	    << 0.0 << '\t'
-	    << nodalDisp(1) << std::endl;
-	//cout << " semiflexible " << (*pn) <<' ' << (*pn)->point() <<endl;
-      }
+//     //Mo
+//     for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+//       const DefNodeContainer & crosslinknodes = (*c)-> getNodes();
+//       ConstDefNodeIterator pn = crosslinknodes.begin();
+//       for ( ; pn!= crosslinknodes.end(); pn ++) {
+//         Vector2D nodalDisp;
+//         nodalDisp = (*pn)->point() - (*pn)->position();
+//         ofs << std::setprecision(16) 
+// 	    << nodalDisp(0) << '\t'
+// 	    << 0.0 << '\t'
+// 	    << nodalDisp(1) << std::endl;
+// 	//cout << " semiflexible " << (*pn) <<' ' << (*pn)->point() <<endl;
+//       }
       
-    }
+//     }
 
-    ofs << std::endl << "VECTORS forces double" << std::endl;
-    // output nodal forces
-    for( ConstFilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++ ) {
-      ConstDefNodeIterator pn = (*f)->nodes.begin();
-      for ( ; pn!= (*f)->nodes.end(); pn ++) {
-	const Vector2D & nodalForce = (*pn)->force();
-	ofs << std::setprecision(16) 
-	    << nodalForce(0) << '\t' 
-	    << 0.0 << '\t' 
-	    << nodalForce(1) << std::endl;
-      }
-    }
+//     ofs << std::endl << "VECTORS forces double" << std::endl;
+//     // output nodal forces
+//     for(DefNodeIterator nid=printNodes.begin(); nid!=printNodes.end(); nid++ ) {
+// //       Vector2D & nodalPos = (*nid)->position();
+// //       Vector2D nodalDisp;
+// //       // if the node is NOT an image node, map its point //
+// //       if(imageNodes.find(*nid) == imageNodes.end()) {
+// // 	_box->setShear(0.0);
+// // 	_box->mapPoint(nodalPos);
+// // 	nodalDisp = (*nid)->point() - nodalPos;
+// // 	_box->setShear(shear);
+// // 	_box->mapDistance(nodalDisp);
+// // 	_box->setShear(0.0);
+// //       }
+// //       else nodalDisp = (*nid)->point() - (*nid)->position();
 
-    for (ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++) {
-      ofs << std::setprecision(16)
-	  << 0.0 << '\t'
-	  << 0.0 << '\t'
-	  << 0.0 << std::endl;
-      ofs << std::setprecision(16)
-	  << 0.0 << '\t'
-	  << 0.0 << '\t'
-	  << 0.0 << std::endl;
-    }
+//       const Vector2D & nodalForce = (*nid)->force();
+      
+//       ofs << std::setprecision(16) 
+// 	  << nodalForce(0) << '\t' 
+// 	  << 0.0 << '\t' 
+// 	  << nodalForce(1)  << std::endl;
+      
+//     }
+
+//     for (ConstMotorIterator m=_motors.begin(); m!=_motors.end(); m++) {
+//       ofs << std::setprecision(16)
+// 	  << 0.0 << '\t'
+// 	  << 0.0 << '\t'
+// 	  << 0.0 << std::endl;
+//       ofs << std::setprecision(16)
+// 	  << 0.0 << '\t'
+// 	  << 0.0 << '\t'
+// 	  << 0.0 << std::endl;
+//     }
 
 
-    //Mo
-    for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
-      const DefNodeContainer & crosslinknodes = (*c)-> getNodes();
-      ConstDefNodeIterator pn = crosslinknodes.begin();
-      for ( ; pn!= crosslinknodes.end(); pn ++) {
-        const Vector2D & nodalForce = (*pn)->force();
-        ofs << std::setprecision(16) 
-	    << nodalForce(0) << '\t'
-	    << 0.0 << '\t'
-	    << nodalForce(1) << std::endl;
-      }
-    }
+//     //Mo
+//     for( ConstCrosslinkIterator c=_crosslinks.begin(); c!=_crosslinks.end(); c++ ) {
+//       const DefNodeContainer & crosslinknodes = (*c)-> getNodes();
+//       ConstDefNodeIterator pn = crosslinknodes.begin();
+//       for ( ; pn!= crosslinknodes.end(); pn ++) {
+//         const Vector2D & nodalForce = (*pn)->force();
+//         ofs << std::setprecision(16) 
+// 	    << nodalForce(0) << '\t'
+// 	    << 0.0 << '\t'
+// 	    << nodalForce(1) << std::endl;
+//       }
+//     }
     
-    ofs.close();
+//     ofs.close();
+
+//     printNodes.clear();
+//     imageNodes.clear();
+//     mainPairs.clear();
+//     imgPairs.clear();
+//     nodeIDMap.clear();
 
     return;
 
@@ -2355,7 +2832,7 @@ namespace voom {
       node1_offset = node_jump1 - ((rad-1)/2) + curRadCounter/rad;
     }
   }
-  
+
   template<int N>
   void SemiflexibleGel<N>::addPinch(DefNode* node1, DefNode* node2, double f0) {
     Pinch * newPinch = new PinchForce<N>(node1,node2,f0,_box);
@@ -2416,6 +2893,7 @@ namespace voom {
     addPinches(nPinches,a,tol,f0);
   }
 
+  
   //   template<int N>
   //   void SemiflexibleGel<N>::addPinch(DefNode * n1, DefNode * n2, double f0, bool springy) {
   //     Pinch * newPinch = new PinchForce<N>(n1,n2,f0,_box,springy);
@@ -3164,7 +3642,6 @@ namespace voom {
 	      << nNodesBefore-nNodesCutOff << "; actual size of container = " << dNodes.size() << "." << std::endl;
   }
 
-
   template<int N>
   std::map< std::pair<double,double>, std::pair<double,double> > SemiflexibleGel<N>::getAngularEnergyDistro() {
     compute(true,false,false);
@@ -3465,6 +3942,7 @@ namespace voom {
     return enCorrs;
   }
 
+
   template<int N>
   void SemiflexibleGel<N>::computeCrossDistro(double kcl) {
     _meanCLsep = 0.0;
@@ -3588,6 +4066,95 @@ namespace voom {
     }
 
     assert(filLengths.size()==0);
+  }
+
+  template<int N>
+  void SemiflexibleGel<N>::computeFilStreStiffDistro() {
+    _filStreStiffFreqs.clear();
+    _meanFilStreStiff = 0.0;
+    double stdd = 0.0;
+    double mins = 1.0e30;
+    double maxs = -1.0;
+    int nFils = _filaments.size();
+    std::multiset<double> filStiffs;
+    for(int i=0; i<nFils; i++) {
+      Filament * fil = filament(i);
+      double mu = 0.0;
+      for(BondIterator bi=fil->bonds.begin(); bi!=fil->bonds.end(); bi++) {
+	mu += (*bi)->getLength()*(*bi)->stiffness();
+      }
+      mu /= fil->bonds.size();
+      filStiffs.insert(mu);
+      if(mu < mins) mins = mu;
+      if(mu > maxs) maxs = mu;
+      _meanFilStreStiff += mu/nFils;
+      stdd += sqr(mu)/nFils;
+    }
+    stdd = stdd - sqr(_meanFilStreStiff);
+    if ( stdd < 1.0e-4){//stiffnesses are same, just output the mean stiffness
+      _filStreStiffFreqs.insert(pair<double,int>(_meanFilStreStiff,filStiffs.size()));
+      filStiffs.erase(filStiffs.begin(),filStiffs.end());
+    }
+    else {
+      stdd = sqrt(stdd);
+      double binwidth = 3.49*stdd/pow(nFils,1.0/3.0);
+      int nBins = (int)((maxs-mins)/binwidth) + 2;
+      double minVal = mins-.5*binwidth;
+      for(int i=0; i<nBins; i++) {
+	multiset<double>::iterator lenItHigh;
+	double curHigh = minVal + (i+1.0)*binwidth;
+	lenItHigh = filStiffs.lower_bound(curHigh);
+	int numPts = filStiffs.size();
+	filStiffs.erase(filStiffs.begin(),lenItHigh);
+	_filStreStiffFreqs.insert(pair<double,int>(curHigh-.5*binwidth,numPts-filStiffs.size()));
+      }
+    }
+
+    assert(filStiffs.size()==0);
+  }
+
+  template<int N>
+  void SemiflexibleGel<N>::computeFilBendStiffDistro() {
+    _filBendStiffFreqs.clear();
+    _meanFilBendStiff = 0.0;
+    double stdd = 0.0;
+    double mins = 1.0e30;
+    double maxs = -1.0;
+    int nFils = _filaments.size();
+    std::multiset<double> filStiffs;
+    for(int i=0; i<nFils; i++) {
+      Filament * fil = filament(i);
+      double kappa = 0.0;
+      for(AngleIterator ai=fil->angles.begin(); ai!=fil->angles.end(); ai++) {
+	kappa += (*ai)->meanSegmentLength()*(*ai)->stiffness();
+      }
+      kappa /= fil->angles.size();
+      filStiffs.insert(kappa);
+      if(kappa < mins) mins = kappa;
+      if(kappa > maxs) maxs = kappa;
+      _meanFilBendStiff += kappa/nFils;
+      stdd += sqr(kappa)/nFils;
+    }
+    stdd = stdd - sqr(_meanFilBendStiff);
+    if ( stdd < 1.0e-4){//stiffnesses are same, just output the mean stiffness
+      _filBendStiffFreqs.insert(pair<double,int>(_meanFilBendStiff,filStiffs.size()));
+      filStiffs.erase(filStiffs.begin(),filStiffs.end());
+    }
+    else {
+      stdd = sqrt(stdd);
+      double binwidth = 3.49*stdd/pow(nFils,1.0/3.0);
+      int nBins = (int)((maxs-mins)/binwidth) + 2;
+      double minVal = mins-.5*binwidth;
+      for(int i=0; i<nBins; i++) {
+	multiset<double>::iterator lenItHigh;
+	double curHigh = minVal + (i+1.0)*binwidth;
+	lenItHigh = filStiffs.lower_bound(curHigh);
+	int numPts = filStiffs.size();
+	filStiffs.erase(filStiffs.begin(),lenItHigh);
+	_filBendStiffFreqs.insert(pair<double,int>(curHigh-.5*binwidth,numPts-filStiffs.size()));
+      }
+    }
+    assert(filStiffs.size()==0);
   }
 
   template<int N>
@@ -3747,7 +4314,7 @@ namespace voom {
     angFile.close();
   }
 
-  template<int N>
+    template<int N>
   std::vector< pair<double,double> > SemiflexibleGel<N>::affineMeasurement(double minLength, double stepSize, double maxLength, double shear, std::string measureType) {
     double affrot = shear/2.0;
     double affshear = shear/2.0;
@@ -4176,8 +4743,7 @@ namespace voom {
   }
   
   template<int N>
-  
-  std::vector< std::pair<double, std::pair< double, double > > > SemiflexibleGel<N>::affineMeasurementHeadLevine(double minLength, double stepSize, double maxLength, double shear, double largestFil, bool getAngularDist=false) {
+  std::vector< std::pair<double, std::pair< double, double > > > SemiflexibleGel<N>::affineMeasurementHeadLevine(double minLength, double stepSize, double maxLength, double shear, double smallestFil, double largestFil, bool getAngularDist=false) {
     std::cout << "Beginning Head/Levine affine measurement." << std::endl;
 
     doublePairWErrorsContainer affdata;
@@ -4196,11 +4762,11 @@ namespace voom {
 
     for(FilamentIterator fi=_filaments.begin(); fi!=_filaments.end(); fi++) {
       bool itNodes = true;
-      if(largestFil > 0.0) {
+      if(largestFil > 0.0 && smallestFil > 0.0) {
 	int nNds = (*fi)->nodes.size();
 	VectorND e2e;
 	e2e = (*fi)->nodes[nNds-1]->position() - (*fi)->nodes[0]->position();
-	if(norm2(e2e) > largestFil) itNodes = false;
+	if(norm2(e2e) > largestFil || norm2(e2e) < smallestFil ) itNodes = false;
       } 
       if(itNodes) {
 	for(DefNodeIterator dni=(*fi)->nodes.begin(); dni!=(*fi)->nodes.end(); dni++) {
@@ -4449,9 +5015,8 @@ namespace voom {
     
     return affdata;
   }
-
-  template<int N>
   
+  template<int N>
   std::vector< std::pair<double, std::pair< double, double > > > SemiflexibleGel<N>::affineMeasurementHeadLevineInterpolated(double minLength, double stepSize, double maxLength, double shear, double largestFil) {
     std::cout << "Beginning Head/Levine affine measurement with node interpolation." << std::endl;
     
@@ -4949,7 +5514,54 @@ namespace voom {
     ofs.close();
 
     if(doCorrTest) {
+      
+      //Mo
+      std::cout << "Do you want to compute the nonaffinity-nonaffinity correlation function?\n(1) yes\n(2) no\n:";
+      int nanacorr;
+      std::cin >> nanacorr;
+
+      std::cout << "Do you also want to compute the long filament length density/Head-Levine nonaffinity correlation function?\n(1) yes\n(2) no\n:";
+      int ldnacorr;
+      std::cin >> ldnacorr;
+      std::vector<double> longld(nBoxes,0.0);
+      double maxdist;
+      if(ldnacorr==1) {
+	std::cout << "Please input a maximum distance on which to compute correlations: ";
+	std::cin >> maxdist;
+	_box->setShear(0.0);
+	for(FilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++) {
+	  int nNodes = (*f)->nodes.size();
+	  bool isLong = false;
+	  VectorND fe2e;
+	  fe2e = (*f)->nodes[nNodes-1]->position() - (*f)->nodes[0]->position();
+	  double fillen = norm2(fe2e);
+	  if(fillen > largestFil) isLong = true;
+	  if(isLong) {
+	    for(int b=0; b<nNodes-1; b++) {
+	      VectorND com;
+	      com = .5*((*f)->nodes[b]->position() + (*f)->nodes[b+1]->position());
+	      _box->mapPoint(com);
+	      tvmet::Vector<int,N> coords;
+	      int idx = 0;
+	      for(int i=0; i<N; i++) {
+		coords[i] = (int)(com[i]/actualGridSize[i]);
+		coords[i] = coords[i]%nBoxesDim[i];
+	      }
+	      if(N==2) idx = nBoxesDim[1]*coords[0] + coords[1];
+	      VectorND e2e;
+	      e2e = (*f)->nodes[b]->position() - (*f)->nodes[b+1]->position();
+	      double len = norm2(e2e);
+	      longld[idx] += len;
+	    }
+	  }
+	}
+	double boxVol = 1.0;
+	for(int dim=0; dim<N; dim++) boxVol *= actualGridSize[dim];
+	for(int nb=0; nb<nBoxes; nb++) longld[nb] /= boxVol;
+      }
+ 
       std::map<DefNode*,double> dataPts;
+      std::map< DefNode*, std::pair<double,double> > lendensNonaffData;
       for(int k=0; k<nBoxes; k++) {
 	if(affMeasures[k] > 0.0) {
 	  NodeBase::DofIndexMap idx(N);
@@ -4962,21 +5574,47 @@ namespace voom {
 	    cellCenter[1] = (column+0.5)*actualGridSize[1];
 	    DefNode* newNode = new BrownianNode<2>(k,idx,cellCenter,cellCenter);
 	    dataPts.insert(pair<DefNode*,double>(newNode,affMeasures[k]));
+	    if(ldnacorr==1) {
+	      std::pair<double,double> newPair = pair<double,double>(affMeasures[k],longld[k]);
+	      lendensNonaffData.insert(pair< DefNode*, pair<double,double> >(newNode,newPair));
+	    }
 	  }
 	}
       }
       if(N==2) {
-	std::vector< pair<double,double> > corrData = computeCorrelationFunction(dataPts,max(actualGridSize[0],actualGridSize[1]),min(_box->size()[0],_box->size()[1])/3.0,max(actualGridSize[0],actualGridSize[1]),min(actualGridSize[0],actualGridSize[1])/2.0);
-	std::cout << "Please input a file name in which to output the nonaffinity correlation data: ";
-	char affCorrFN[256];
-	std::cin >> affCorrFN;
-	std::ofstream affCorrFile(affCorrFN);
-	affCorrFile << "#r\tcorr\n";
-	for(typename vector< pair<double,double> >::iterator pi=corrData.begin(); pi!=corrData.end(); pi++) {
-	  affCorrFile << pi->first << "\t" << pi->second << "\n";
+	if(nanacorr==1) {
+	  std::vector< pair<double,double> > corrData = computeCorrelationFunction(dataPts,max(actualGridSize[0],actualGridSize[1]),min(_box->size()[0],_box->size()[1])/3.0,max(actualGridSize[0],actualGridSize[1]),min(actualGridSize[0],actualGridSize[1])/2.0);
+	  std::cout << "Please input a file name in which to output the nonaffinity correlation data: ";
+	  char affCorrFN[256];
+	  std::cin >> affCorrFN;
+	  std::ofstream affCorrFile(affCorrFN);
+	  affCorrFile << "#r\tcorr\n";
+	  for(typename vector< pair<double,double> >::iterator pi=corrData.begin(); pi!=corrData.end(); pi++) {
+	    affCorrFile << pi->first << "\t" << pi->second << "\n";
+	  }
+	  affCorrFile.close();
 	}
-	affCorrFile.close();
+	
+	if(ldnacorr==1) {
+	  std::cout << "Please enter a file name in which to store the long filament lengt density/Head-Levine nonaffinity correlaion data: ";
+	  char naldf[256];
+	  std::cin >> naldf;
+	  
+	  double maxdim = max(actualGridSize[0],actualGridSize[1]);
+	  //double maxdist = min(_box->size()[0],_box->size()[1])/3.0;
+	  std::vector< std::pair<double,double> > corr = computeCrossCorrelationFunction(lendensNonaffData,2.0*maxdim,maxdist,2.0*maxdim,maxdim/2.0);
+	  
+	  std::ofstream nonAffLD(naldf);
+	  nonAffLD << "#r\tcorr" << std::endl;
+	  
+	  for(typename vector< pair<double,double> >::iterator datait=corr.begin(); datait!=corr.end(); datait++) {
+	    nonAffLD << datait->first << "\t" << datait->second << std::endl;
+	  }
+	  
+	  nonAffLD.close();
+	}
       }
+  
     }
   }
 
@@ -5611,5 +6249,166 @@ namespace voom {
     }
     
     return en2return;
+  }
+
+  template<int N>
+  void SemiflexibleGel<N>::printLongShortStats(double shear, double L, double longshortratio) {
+    double shortAffDiff, shortStretchEnergy, shortBendEnergy, shortDistDiff;
+    double longAffDiff, longStretchEnergy, longBendEnergy, longDistDiff;
+    //Fil based affinity measure:
+    // sum((sum((theta-thetaAffine)^2)/nSeg))/nFil
+    shortAffDiff = 0.0;
+    shortStretchEnergy = 0.0;
+    shortBendEnergy = 0.0;
+    shortDistDiff = 0.0;
+    longAffDiff = 0.0;
+    longStretchEnergy = 0.0;
+    longBendEnergy = 0.0;
+    longDistDiff = 0.0;
+    int nshort = 0;
+    int nlong = 0;
+
+    //Bill's method: average angle over filament and then calculate nonaffinity
+    // sum((sum(theta)/nSeg - thetaAffine)^2)/nFil
+    double shortAffDiffBill, longAffDiffBill;
+    shortAffDiffBill = 0.0;
+    longAffDiffBill = 0.0;
+
+    for(FilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++) {
+      double AffDiff = 0.0;
+      double thetaActual2 = 0.0;//Bill's method
+      double StretchEnergy = 0.0;
+      double BendEnergy = 0.0;
+      double DistDiff = 0.0;
+
+      int nNodes = (*f)->nodes.size();
+      for(int a=0; a<nNodes-1; a++) {
+	DefNode* n1 = (*f)->nodes[a];
+	DefNode* n2 = (*f)->nodes[a+1];
+	const VectorND & p1 = n1->point();
+	const VectorND & p2 = n2->point();
+	const VectorND & P1 = n1->position();
+	const VectorND & P2 = n2->position();
+	VectorND d0,d1;
+	d0 = P2 - P1;
+	d1 = p2 - p1;
+	//d0 = d0/norm2(d0);
+	//d1 = d1/norm2(d1);
+	//double angle = dot(d0,d1);
+
+	double thetaAff = atan2(d0[1],d0[0]+(shear*d0[1]));
+	double thetaActual = atan2(d1[1],d1[0]);
+	double angle = fabs(thetaActual-thetaAff) < M_PI ? thetaActual-thetaAff : 2.0*M_PI-fabs(thetaActual-thetaAff);
+	angle = fabs(angle);
+	AffDiff +=  angle * angle;
+      }
+      AffDiff /= (nNodes-1);
+
+      //Bill's affinity measure
+      for(int a=0; a<nNodes-1; a++) {
+	DefNode* n1 = (*f)->nodes[a];
+	DefNode* n2 = (*f)->nodes[a+1];
+	const VectorND & p1 = n1->point();
+	const VectorND & p2 = n2->point();
+	const VectorND & P1 = n1->position();
+	const VectorND & P2 = n2->position();
+	VectorND d0,d1;
+	d0 = P2 - P1;
+	d1 = p2 - p1;
+
+	//double thetaAff = atan2(d0[1],d0[0]+(shear*d0[1]));
+	double thetaActual = atan2(d1[1],d1[0]);
+	thetaActual2 += thetaActual;
+      }
+      thetaActual2 /= (nNodes-1);
+      DefNode* n1 = (*f)->nodes[0];
+      DefNode* n2 = (*f)->nodes[nNodes-1];
+      const VectorND & P1 = n1->position();
+      const VectorND & P2 = n2->position();
+      VectorND d0;
+      d0 = P2 - P1;
+      double thetaAff2 = atan2(d0[1],d0[0]+(shear*d0[1]));
+      double AffDiff2 = fabs(thetaActual2-thetaAff2) < M_PI ? thetaActual2-thetaAff2 : 2.0*M_PI-fabs(thetaActual2-thetaAff2);
+      AffDiff2 = fabs(AffDiff2);
+
+      for(int a=0; a<nNodes; a++) {
+	DefNode* n1 = (*f)->nodes[a];
+	const VectorND & p1 = n1->point();
+	const VectorND & P1 = n1->position();
+	VectorND Aff;
+	Aff = P1[0]+(shear*P1[1]) , P1[1];
+	VectorND diff;
+	diff = Aff - p1;
+	double dist = norm2(diff);
+	DistDiff += dist;
+      }
+      DistDiff /= nNodes;
+
+      for(int a=0; a < (*f)->bonds.size(); a++) {
+	double energy = (*f)->bonds[a]->energy();
+	StretchEnergy += energy;
+      }
+      //StretchEnergy /= (*f)->bonds.size();
+
+      for(int a=0; a < (*f)->angles.size(); a++) {
+	double energy = (*f)->angles[a]->energy();
+	BendEnergy += energy;
+      }
+      //BendEnergy /= (*f)->angles.size();
+
+      n1 = (*f)->nodes[0];
+      n2 = (*f)->nodes[(*f)->nodes.size()-1];
+      const VectorND & p1 = n1->point();
+      const VectorND & p2 = n2->point();
+      VectorND diff;
+      diff = p2 - p1;
+      double dist = norm2(diff);
+      if (dist > 0.5*L*longshortratio){
+	//long filament
+	longAffDiff += AffDiff;
+	longStretchEnergy += StretchEnergy;
+	longBendEnergy += BendEnergy;
+	longDistDiff += DistDiff;
+	nlong++;
+	longAffDiffBill += AffDiff2 * AffDiff2;
+      }
+      else {
+	//short filament
+	shortAffDiff += AffDiff;
+	shortStretchEnergy += StretchEnergy;
+	shortBendEnergy += BendEnergy;
+	shortDistDiff += DistDiff;
+	nshort++;
+	shortAffDiffBill += AffDiff2 * AffDiff2;
+      }
+    }
+
+    shortAffDiff /= nshort;
+    //shortStretchEnergy /= nshort;
+    //shortBendEnergy /= nshort;
+    shortDistDiff /= nshort;
+    shortAffDiffBill /= nshort;
+
+    longAffDiff /= nlong;
+    //longStretchEnergy /= nlong;
+    //longBendEnergy /= nlong;
+    longDistDiff /= nlong;
+    longAffDiffBill /= nlong;
+    double totalEnergy;
+    totalEnergy = longStretchEnergy + longBendEnergy + shortStretchEnergy + shortBendEnergy;
+    std::cout << std::endl << "Number of long filaments: " << nlong << std::endl
+              << "Long: Averaged (per filament) angle difference between actual and affine: " << longAffDiff << std::endl
+              << "Long: Total stretching energy: " << longStretchEnergy << "Percentage(over total energy): " << longStretchEnergy/totalEnergy << std::endl
+              << "Long: Total bending energy: " << longBendEnergy << "Percentage(over total energy): " << longBendEnergy/totalEnergy <<  std::endl
+              << "Long: Averaged (per filament) distance between actual and affine node: " << longDistDiff << std::endl
+              << "Long: Averaged (per filament) angle difference between actual and affine (Bill's method)" << longAffDiffBill << std::endl
+	      << std::endl << "Number of short filaments: " << nshort << std::endl
+              << "Short: Averaged (per filament) angle difference between actual and affine: " << shortAffDiff << std::endl
+              << "Short: Total stretching energy: " << shortStretchEnergy << "Percentage(over total energy): " << shortStretchEnergy/totalEnergy << std::endl
+              << "Short: Total bending energy: " << shortBendEnergy << "Percentage(over total energy): " << shortBendEnergy/totalEnergy <<  std::endl
+              << "Short: Stretching energy percentage: " << shortStretchEnergy/(shortStretchEnergy+shortBendEnergy) << std::endl
+              << "Short: Averaged (per filament) distance between actual and affine node: " << shortDistDiff << std::endl
+              << "Short: Averaged (per filament) angle difference between actual and affine (Bill's method)" << shortAffDiffBill << std::endl;
+
   }
 };

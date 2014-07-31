@@ -127,6 +127,8 @@ namespace voom
    
     //! Do mechanics on element; compute energy, forces, and/or stiffness.
     virtual void compute(bool f0, bool f1, bool f2);
+
+    void SetRefConfiguration(double edgelen);
     
     double strainEnergy() const { return _strainEnergy; }
 
@@ -151,6 +153,8 @@ namespace voom
     void setPrescribedVolume(double V) {_prescribedVolume = V;}
     void setPrescribedArea(double A) {_prescribedArea = A;}
 
+    //! calculate and return mean curvature
+    double meancurvature();
 
     //! compute positions
     Vector3D computePosition(const double s1, const double s2);
@@ -159,7 +163,9 @@ namespace voom
     void checkPositions();
 		
     //! recompute the reference geometry and send it to materials
-    void updateRefConfiguration(double edgeLength=-1.0);
+    void updateRefConfiguration();
+
+    Vector3D PushForwardOperator(Vector3D & Nbar);
 
 //     void setCytoSpring(double new_mu, double new_kS, double new_kSpring){
 //       for(QuadPointIterator p=_quadPoints.begin(); p!=_quadPoints.end(); p++){
