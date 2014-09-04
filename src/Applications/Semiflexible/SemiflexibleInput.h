@@ -1,3 +1,4 @@
+// -*- C++ -*-
 // Semiflexible Gel Input Class Header
 
 #ifndef SEMIFLEXIBLEINPUT_H
@@ -24,36 +25,43 @@
 #include "Node.h"
 #include "Lbfgsb.h"
 
-   
-typedef std::map< std::string, std::string > ParamMap; 
-
 
 class SemiflexibleInput{
+  
+ public:
 
-public:
+  // Constructor
+  SemiflexibleInput(std::string paramFileName);
+  
+  // Accessors
+  double getReal(std::string name) const;
+  int getInt(std::string name) const;
+  std::string getStr(std::string name) const;
+  
+  SemiflexibleGel<2> * gel() const {return _gel;}
 
-	// Constructor
-    SemiflexibleInput(std::string);
-    
-    // Accessors
-	double getReal(std::string);
-    int getInt(std::string);
-    std::string getStr(std::string);
-    
-    // Mutators
-    void setReal(std::string, double);
-    void setInt(std::string, int);
-    void setStr(std::string, std::string);
-    
-    // Destructor 
-    // ~SemiflexibleInput();
-    
-    double qq;
+  PeriodicBox * box() const {return _box;}
 
-    
-private:
+  // Mutators
+  void setReal(std::string name, double value);
+  void setInt(std::string name, int value);
+  void setStr(std::string name, std::string value);
+  
+  // Destructor 
+  // ~SemiflexibleInput();
+  
+  double qq;
+  
+  
+ private:
 
-	ParamMap pm;
+  typedef std::map< std::string, std::string > ParamMap; 
+  
+  ParamMap _pm;
+
+  SemiflexibleGel<2> * _gel;
+
+  PeriodicBox * _box;
     
 };
 

@@ -19,39 +19,39 @@ typedef ParamMap::iterator PMIter;
 #endif
 
 // Accessors ----------------------------------------------
-double SemiflexibleInput::getReal(std::string tmpReal)
+double SemiflexibleInput::getReal(std::string name)
 {
-	return atof(pm[tmpReal].data());
+	return atof(_pm[name].data());
 }
 
-int SemiflexibleInput::getInt(std::string tmpInt)
+int SemiflexibleInput::getInt(std::string name)
 {
-	return atoi(pm[tmpInt].data());
+	return atoi(_pm[name].data());
 }
 
-std::string SemiflexibleInput::getStr(std::string tmpStr)
+std::string SemiflexibleInput::getStr(std::string name)
 {
-	return pm[tmpStr].data();
+	return _pm[name].data();
 }
 
 // Mutators ----------------------------------------------- 
-void SemiflexibleInput::setReal(std::string tmpStrReal, double tmpSetReal)
+void SemiflexibleInput::setReal(std::string nameReal, double valueReal)
 {
 	std::ostringstream tmpVal;
-	tmpVal << setprecision(16) << tmpSetReal;
-	pm[tmpStrReal] = tmpVal.str();
+	tmpVal << setprecision(16) << valueReal;
+	_pm[nameReal] = tmpVal.str();
 }	
 
-void SemiflexibleInput::setInt(std::string tmpStrInt, int tmpSetInt)
+void SemiflexibleInput::setInt(std::string nameInt, int valueInt)
 {
 	std::ostringstream tmpVal;
-	tmpVal << tmpSetInt;
-	pm[tmpStrInt] = tmpVal.str();
+	tmpVal << valueInt;
+	_pm[nameInt] = tmpVal.str();
 }	
 
-void SemiflexibleInput::setStr(std::string tmpStrStr, std::string tmpSetStr)
+void SemiflexibleInput::setStr(std::string nameStr, std::string valueStr)
 {
-	pm[tmpStrStr] = tmpSetStr;
+	_pm[nameStr] = valueStr;
 }
 
 // Previous Code ------------------------------------------
@@ -258,7 +258,7 @@ std::string pfn(paramFileName);
             else if(parName.find("GelDirectory") != std::string::npos) gelDirectory.assign(parValStr);
             else if(parName.find("kT")!=std::string::npos) {
                 kT = atof(parValStr.data());
-                pm.insert(pair< std::string, std::string>("kT",parValStr));
+                _pm.insert(pair< std::string, std::string>("kT",parValStr));
             }
             else if(parName.find("L_p")!=std::string::npos) L_p = atof(parValStr.data());
             else if(parName.find("kC")!=string::npos) kC = atof(parValStr.data());
@@ -267,58 +267,58 @@ std::string pfn(paramFileName);
             }
             else if(parName.find("visc")!=string::npos) {
                 visc = atof(parValStr.data());
-                pm.insert(pair< std::string, std::string >("viscosity",parValStr));
+                _pm.insert(pair< std::string, std::string >("viscosity",parValStr));
             }
             else if(parName.find("SolverType")!=string::npos) solverType = parValStr.data();
             // else if(parName.find("r")!=string::npos) r = parVal;
             else if(parName.find("k_max")!=string::npos) {
                 k_max = atof(parValStr.data());
-                pm.insert(pair< std::string, std::string >("k_max",parValStr));
+                _pm.insert(pair< std::string, std::string >("k_max",parValStr));
                 bondType = "EntropicSpring";
             }
             else if(parName.find("Entropic_lin")!=string::npos) {
                 if(atof(parValStr.data()) > 0.5) {
                     linearizedentropic = true;
-                    pm.insert(pair< std::string, std::string >("Entropic_lin_springs","1"));
+                    _pm.insert(pair< std::string, std::string >("Entropic_lin_springs","1"));
                 }
             }
             else if(parName.find("Entr_lin_frac")!=string::npos) {
-                pm.insert(pair< std::string, std::string >("Entropic_lin_stiff_frac",parValStr.data()));
+                _pm.insert(pair< std::string, std::string >("Entropic_lin_stiff_frac",parValStr.data()));
                 linentfrac = atof(parValStr.data());
             }
             else if(parName.find("Entr_lin_mult")!=string::npos) {
-                pm.insert(pair< std::string, std::string >("Entropic_lin_stiff_mult",parValStr.data()));
+                _pm.insert(pair< std::string, std::string >("Entropic_lin_stiff_mult",parValStr.data()));
                 linentmult = atof(parValStr.data());
             }
             else if(parName.find("Entropic_k")!=string::npos) {
                 entropic_k = atof(parValStr.data());
-                pm.insert(pair< std::string, std::string >("Entropic_k",parValStr));
+                _pm.insert(pair< std::string, std::string >("Entropic_k",parValStr));
             }
             else if(parName.find("Entropic_Lp")!=string::npos) {
                 entropic_Lp = atof(parValStr.data());
-                pm.insert(pair< std::string, std::string >("Entropic_Lp",parValStr));
+                _pm.insert(pair< std::string, std::string >("Entropic_Lp",parValStr));
             }
             else if(parName.find("NodesPerCL")!=string::npos) {
                 nodesPerCL = atof(parValStr.data());
             }
             else if(parName.find("dt")!=string::npos) {
                 dt = atof(parValStr.data());
-                pm.insert(pair< std::string, std::string >("time step",parValStr));
+                _pm.insert(pair< std::string, std::string >("time step",parValStr));
             }
             else if(parName.find("L/l_C")!=string::npos) tmpratio = atof(parValStr.data());
             else if(parName.find("Wx")!=string::npos) syssize[0] = atof(parValStr.data());
             else if(parName.find("Wy")!=string::npos) syssize[1] = atof(parValStr.data());
             else if(parName.find("kcl")!=string::npos) {
                 kcl = atof(parValStr.data());
-                pm.insert(pair< std::string, std::string >("crosslink stiffness",parValStr));
+                _pm.insert(pair< std::string, std::string >("crosslink stiffness",parValStr));
             }
             else if(parName.find("l_B")!=string::npos) {
                 l_B = atof(parValStr.data());
-                pm.insert(pair< std::string, std::string >("l_B",parValStr));
+                _pm.insert(pair< std::string, std::string >("l_B",parValStr));
             }
             else if(parName.find("fit")!=string::npos) {
                 //fitOrder = atoi(parValStr.data());
-                pm.insert(pair< std::string, std::string >("fit order",parValStr));
+                _pm.insert(pair< std::string, std::string >("fit order",parValStr));
             }
             else if(parName.find("Shear_start")!=string::npos) shrStart = atof(parValStr.data());
             else if(parName.find("Shear_final")!=string::npos) shrEnd = atof(parValStr.data());
@@ -337,31 +337,31 @@ std::string pfn(paramFileName);
             else if(parName.find("FilDens")!=string::npos) filDens = atof(parValStr.data());
             else if(parName.find("NemPDF_param")!=string::npos) {
                 nemPDFparam = parValStr;
-                pm.insert(pair< std::string, std::string >("nematic PDF param",nemPDFparam));
+                _pm.insert(pair< std::string, std::string >("nematic PDF param",nemPDFparam));
             }
             else if(parName.find("NemPDF_type")!=string::npos) {
                 nemPDFtype = parValStr;
-                pm.insert(pair< std::string, std::string >("orientational PDF",nemPDFtype));
+                _pm.insert(pair< std::string, std::string >("orientational PDF",nemPDFtype));
             }
             else if(parName.find("NematicOP")!=string::npos) {
-                pm.insert(pair< std::string, std::string >("nematic order parameter",parValStr));
+                _pm.insert(pair< std::string, std::string >("nematic order parameter",parValStr));
                 nematicOP = atof(parValStr.data());
             }
             else if(parName.find("NemDirAngle")!=string::npos) {
-                pm.insert(pair< std::string, std::string >("nematic direction angle",parValStr));
+                _pm.insert(pair< std::string, std::string >("nematic direction angle",parValStr));
                 nemDirectorAngle = atof(parValStr.data());
             }
             else if(parName.find("MaxPrestress")!=string::npos) {
                 if(atof(parValStr.data()) > 1.0e-6) {
-                    pm.insert(pair< std::string, std::string >("maximum prestress",parValStr));
+                    _pm.insert(pair< std::string, std::string >("maximum prestress",parValStr));
                 }
             }
             else if(parName.find("RelaxPrestress")!=string::npos) {
                 if(atof(parValStr.data()) >= .5) relaxPrestress = true;
             }
             else if(parName.find("Prestress")!=string::npos) {
-                if(atof(parValStr.data()) < 0.5) pm.insert(pair< std::string, std::string >("prestress","false"));
-                else pm.insert(pair< std::string, std::string >("prestress","true"));
+                if(atof(parValStr.data()) < 0.5) _pm.insert(pair< std::string, std::string >("prestress","false"));
+                else _pm.insert(pair< std::string, std::string >("prestress","true"));
             }
             else if(parName.find("Retrieve")!=string::npos) {
                 if(atof(parValStr.data()) < 0.5) retrieveGel = false;
@@ -371,10 +371,10 @@ std::string pfn(paramFileName);
                 if(atof(parValStr.data()) >= .5) adaptiveMeshing = true;
             }
             else if(parName.find("ShortSegRelief")!=string::npos) {
-                pm.insert(pair< std::string, std::string >("nearby pair removal method",parValStr.data()));
+                _pm.insert(pair< std::string, std::string >("nearby pair removal method",parValStr.data()));
             }
             else if(parName.find("TargetSegLength")!=string::npos) {
-                pm.insert(pair< std::string, std::string >("target segment length", parValStr.data()));
+                _pm.insert(pair< std::string, std::string >("target segment length", parValStr.data()));
             }
             else if(parName.find("MinSegLength")!=string::npos) {
                 minLength = atof(parValStr.data());
@@ -405,25 +405,25 @@ std::string pfn(paramFileName);
             }
             else if(parName.find("Polydispersity")!=string::npos) {
                 polydisp = parValStr;
-                pm.insert(pair< std::string, std::string >("polydispersity",polydisp));
+                _pm.insert(pair< std::string, std::string >("polydispersity",polydisp));
             }
             else if(parName.find("Long/short")!=string::npos) {
-                pm.insert(pair< std::string, std::string >("longshortratio",parValStr));
+                _pm.insert(pair< std::string, std::string >("longshortratio",parValStr));
             }
             else if(parName.find("Long fraction")!=string::npos) {
-                pm.insert(pair< std::string, std::string >("longfraction",parValStr));
+                _pm.insert(pair< std::string, std::string >("longfraction",parValStr));
             }
             else if(parName.find("Long stiffness")!=string::npos) {
-                pm.insert(pair< std::string, std::string >("longstiffness",parValStr));
+                _pm.insert(pair< std::string, std::string >("longstiffness",parValStr));
             }
             else if(parName.find("Long bend_stiff")!=string::npos) {
-                pm.insert(pair< std::string, std::string >("longbendstiffness",parValStr));
+                _pm.insert(pair< std::string, std::string >("longbendstiffness",parValStr));
             }
             else if(parName.find("Long cutoff")!=string::npos) {
-                pm.insert(pair< std::string, std::string >("longcutoff",parValStr));
+                _pm.insert(pair< std::string, std::string >("longcutoff",parValStr));
             }
             else if(parName.find("Min. length")!=string::npos) {
-                pm.insert(pair< std::string, std::string >("minlength",parValStr));
+                _pm.insert(pair< std::string, std::string >("minlength",parValStr));
             }
             else if(parName.find("Check_consist")!=string::npos) {
                 if(atof(parValStr.data()) >= .5) checkConsist = true;
@@ -433,7 +433,7 @@ std::string pfn(paramFileName);
             }
             else if(parName.find("Max_Motor_force")!=string::npos) {
                 maxMotorForce = atof(parValStr.data());
-                pm.insert(pair< std::string, std::string >("motor force",parValStr));
+                _pm.insert(pair< std::string, std::string >("motor force",parValStr));
             }
             else if(parName.find("Motor_sep_tol")!=string::npos) {
                 annulusTol = atof(parValStr.data());
@@ -443,7 +443,7 @@ std::string pfn(paramFileName);
             }
             else if(parName.find("L")!=string::npos) {
                 L = atof(parValStr.data());
-                pm.insert(pair< std::string, std::string >("L",parValStr));
+                _pm.insert(pair< std::string, std::string >("L",parValStr));
             }
             // add polydispersity stuff //
         }
@@ -474,8 +474,8 @@ std::string pfn(paramFileName);
     if(kC > 0.0 && l_B > 0.0) {
       std::ostringstream tmpStr;
       tmpStr << setprecision(16) << kC;
-      if(!adaptiveMeshing) pm.insert(pair< std::string, std::string>("bending modulus",tmpStr.str()));
-      else pm.insert(pair< std::string, std::string>("angle stiffness",tmpStr.str()));
+      if(!adaptiveMeshing) _pm.insert(pair< std::string, std::string>("bending modulus",tmpStr.str()));
+      else _pm.insert(pair< std::string, std::string>("angle stiffness",tmpStr.str()));
       // get nominal l_c and L from gel file name //
      //  int Lpos = gelFileName.find("L=") + 2;
 //       int l_Cpos = gelFileName.find("l_C");
@@ -517,36 +517,36 @@ std::string pfn(paramFileName);
       lambda = (tmpratio/L)*pow(tmpratio/(L*l_B),1.0/3.0);
       std::ostringstream lambstr;
       lambstr << setprecision(16) << lambda;
-      pm["lambda"] = lambstr.str();
+      _pm["lambda"] = lambstr.str();
       
       double mu = kC/sqr(l_B);
       std::ostringstream mustream;
       mustream << setprecision(16) << mu;
-      pm["bond stiffness"] = mustream.str();
+      _pm["bond stiffness"] = mustream.str();
       
       
       if(!adaptiveMeshing) {
-        gel = new SemiflexibleGel<2>(gelFileName,nodes,bondType,cutOffEnds,pm,0.0);
+        gel = new SemiflexibleGel<2>(gelFileName,nodes,bondType,cutOffEnds,_pm,0.0);
 	gel->compute(true,true,false);
 	std::cout << "Sanity check: gel's energy at 0 shear = " << gel->energy() << std::endl;
       }
       else {
-        gel = new SemiflexibleGel<2>(gelFileName,nodes,bondType,cutOffEnds,minLength,pm);
+        gel = new SemiflexibleGel<2>(gelFileName,nodes,bondType,cutOffEnds,minLength,_pm);
       }
       box = gel->box();
       syssize = box->size();
       std::cout << "Retrieved and set up a gel with the following properties:" << std::endl;
       std::cout << "System size: " << syssize[0] << ", " << syssize[1] << std::endl;
       std::cout << "Bond type: " << bondType << std::endl;
-      for(PMIter pmi=pm.begin(); pmi!=pm.end(); pmi++) {
+      for(PMIter pmi=_pm.begin(); pmi!=_pm.end(); pmi++) {
 	std::cout << pmi->first << ": " << pmi->second << std::endl;
       }
       std::ostringstream ss0;
       ss0 << setprecision(16) << syssize[0];
       std::ostringstream ss1;
       ss1 << setprecision(16) << syssize[1];
-      pm["Wx"] = ss0.str();
-      pm["Wy"] = ss1.str();
+      _pm["Wx"] = ss0.str();
+      _pm["Wy"] = ss1.str();
       
       if(relaxPrestress) {
 	gel->removePrestress();
@@ -561,7 +561,7 @@ std::string pfn(paramFileName);
 
   else {
     if(nematicOP >= 1.0e-6) {
-      pm.insert(pair< std::string, std::string >("nematic PDF param",nemPDFparam));
+      _pm.insert(pair< std::string, std::string >("nematic PDF param",nemPDFparam));
     }
     
     for(int dn=0;dn<2;dn++) {
@@ -579,7 +579,7 @@ std::string pfn(paramFileName);
         kAngle = kC/dL;
         std::ostringstream tmpStr;
         tmpStr << setprecision(16) << kAngle;
-        pm.insert(pair< std::string, std::string>("angle stiffness",tmpStr.str()));
+        _pm.insert(pair< std::string, std::string>("angle stiffness",tmpStr.str()));
       }
       else {
         std::cerr << "Error: input file must have either persistence length L_p or bending modulus kC." << std::endl;
@@ -589,7 +589,7 @@ std::string pfn(paramFileName);
         kBond = kAngle/sqr(l_B);
         std::ostringstream tmpStr;
         tmpStr << setprecision(16) << kBond;
-        pm.insert(pair< std::string, std::string>("bond stiffness",tmpStr.str()));
+        _pm.insert(pair< std::string, std::string>("bond stiffness",tmpStr.str()));
       }
       else {
         std::cerr << "Error: input file must have a value for the bending/stretching length l_B." << std::endl;
@@ -599,55 +599,55 @@ std::string pfn(paramFileName);
       dL = -1.0;
       std::ostringstream tmpStr;
       tmpStr << setprecision(16) << kC;
-      pm.insert(pair< std::string, std::string>("angle stiffness",tmpStr.str()));
+      _pm.insert(pair< std::string, std::string>("angle stiffness",tmpStr.str()));
       double mu = kC/sqr(l_B);
       std::ostringstream tmpStr2;
       tmpStr2 << setprecision(16) << mu;
-      pm.insert(pair< std::string, std::string>("bond stiffness",tmpStr2.str()));
+      _pm.insert(pair< std::string, std::string>("bond stiffness",tmpStr2.str()));
     }
 
     lambda = (tmpratio/L)*pow(tmpratio/(L*l_B),1.0/3.0);
     std::ostringstream lambstr;
     lambstr << setprecision(16) << lambda;
-    pm["lambda"] = lambstr.str();
+    _pm["lambda"] = lambstr.str();
     
     std::ostringstream tmpSx;
     tmpSx << setprecision(16) << syssize[0];
-    pm.insert(pair< std::string, std::string >("Wx",tmpSx.str()));
+    _pm.insert(pair< std::string, std::string >("Wx",tmpSx.str()));
     std::ostringstream tmpSy;
     tmpSy << setprecision(16) << syssize[1];
-    pm.insert(pair< std::string, std::string >("Wy",tmpSy.str()));
+    _pm.insert(pair< std::string, std::string >("Wy",tmpSy.str()));
     std::ostringstream tmpLl_c;
     tmpLl_c << setprecision(16) << tmpratio;
-    pm.insert(pair< std::string, std::string >("L/l_c",tmpLl_c.str()));
+    _pm.insert(pair< std::string, std::string >("L/l_c",tmpLl_c.str()));
     std::ostringstream tmpdL;
     tmpdL << setprecision(16) << dL;
-    pm.insert(pair< std::string, std::string >("dL",tmpdL.str()));
+    _pm.insert(pair< std::string, std::string >("dL",tmpdL.str()));
 
     std::cout << "Constructing a gel with the following properties:" << std::endl;
     std::cout << "System size: " << syssize[0] << ", " << syssize[1] << std::endl;
     std::cout << "# nodes/filament: " << nNodesPerFilament << std::endl;
     std::cout << "Bond type: " << bondType << std::endl;
-    for(PMIter pmi=pm.begin(); pmi!=pm.end(); pmi++) {
+    for(PMIter pmi=_pm.begin(); pmi!=_pm.end(); pmi++) {
       std::cout << pmi->first << ": " << pmi->second << std::endl;
     }
 
-    std::string fName = getGelFileName(gelDirectory,pm);
+    std::string fName = getGelFileName(gelDirectory,_pm);
     curGelNum = getCurGelNum(fName);
 
-    if(adaptiveMeshing) pm.insert(pair<std::string, std::string>("storage file name",fName));
+    if(adaptiveMeshing) _pm.insert(pair<std::string, std::string>("storage file name",fName));
 
     // make periodic box //
     box = new LeesEdwards(syssize[0],syssize[1],0.0);
     
     // create body //
     if(!adaptiveMeshing) {
-      gel = new SemiflexibleGel<2>(nodes,box,filDens,nNodesPerFilament,dL,bondType,cutOffEnds,pm);
+      gel = new SemiflexibleGel<2>(nodes,box,filDens,nNodesPerFilament,dL,bondType,cutOffEnds,_pm);
       gel->compute(true,true,false);
       std::cout << "Sanity check: gel energy at zero shear = " << gel->energy() << std::endl;
     }
     else {
-      gel = new SemiflexibleGel<2>(nodes,box,filDens,L,bondType,cutOffEnds,minLength,pm);
+      gel = new SemiflexibleGel<2>(nodes,box,filDens,L,bondType,cutOffEnds,minLength,_pm);
     }
     //gel->addPinch(6.0,false,nodes,kBond,kAngle,visc,kT,dt,kcl);
     
@@ -660,7 +660,7 @@ std::string pfn(paramFileName);
     
     // Write out parameter map
     std::cout << "-----Parameter Map-----" << std::endl;
-    for(ParamMap::const_iterator MapIterator = pm.begin(); MapIterator != pm.end(); ++MapIterator)
+    for(ParamMap::const_iterator MapIterator = _pm.begin(); MapIterator != _pm.end(); ++MapIterator)
     {
         std::cout << "Key: \"" << MapIterator->first << "\" "
         << "Value: " << MapIterator->second << endl;
