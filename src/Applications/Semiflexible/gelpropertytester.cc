@@ -1,3 +1,10 @@
+//
+// WSK and JKP: This driver loads in an parameter input file and a
+// binary gel file, defining the filaments and crosslinks of a gel.
+// It then allows the calculation of various properties of the gel. It
+// looks to us like this works only on a particular instance of the
+// gel, i.e., a single gel file, with fixed node positions etc.
+//
 #include <string>
 #include <iostream>
 #include <vector>
