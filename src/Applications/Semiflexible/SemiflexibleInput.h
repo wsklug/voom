@@ -1,5 +1,11 @@
 // -*- C++ -*-
-// Semiflexible Gel Input Class Header
+//----------------------------------------------------------------------
+//
+//                          
+//                
+//                   
+//
+//----------------------------------------------------------------------
 
 #ifndef SEMIFLEXIBLEINPUT_H
 #define SEMIFLEXIBLEINPUT_H
@@ -38,9 +44,9 @@ class SemiflexibleInput{
   int getInt(std::string name) const;
   std::string getStr(std::string name) const;
   
-  SemiflexibleGel<2> * gel() const {return _gel;}
+  //SemiflexibleGel<2> * gel() const {return _gel;}
 
-  PeriodicBox * box() const {return _box;}
+  //PeriodicBox * box() const {return _box;}
 
   // Mutators
   void setReal(std::string name, double value);
@@ -49,19 +55,16 @@ class SemiflexibleInput{
   
   // Destructor 
   // ~SemiflexibleInput();
-  
-  double qq;
+
   
   
  private:
-
-  typedef std::map< std::string, std::string > ParamMap; 
   
-  ParamMap _pm;
+  std::map< std::string, std::string > _pm;
 
-  SemiflexibleGel<2> * _gel;
+  //SemiflexibleGel<2> * _gel;
 
-  PeriodicBox * _box;
+  //PeriodicBox * _box;
     
 };
 

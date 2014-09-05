@@ -1,4 +1,11 @@
-// Test Input Driver for Semiflexible Class 
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                          
+//                
+//                   
+//
+//----------------------------------------------------------------------
 
 #include <string>
 #include <iostream>
@@ -36,55 +43,55 @@
 using namespace std;
 //using namespace tvmet;
 
-typedef std::map< std::string, std::string > ParamMap;
+//typedef std::map< std::string, std::string > ParamMap;
 
-int main(){
-    
-    SemiflexibleInput inp("SFGel-nematictest12345.in");
-	
+int main(int argc, char* argv[]){
+	cout << "-----Start of program------" << endl;
+
+	SemiflexibleInput inp(argv[1]);
+
 	double numReal = -2.0;
 	int numInt = -2.0;
 	std::string numStr = "Blah blah";
-	std::string okok = "kT";
-	
 
-	
+	std::string testString = "kT";
+
 	// Test accessors
-	numReal = inp.getReal(okok);
-	numInt = inp.getInt(okok);
-	numStr = inp.getStr(okok);
+	numReal = inp.getReal(testString);
+	numInt = inp.getInt(testString);
+	numStr = inp.getStr(testString);
 
 	cout << "\n" << "-----Accessor Testing------" << endl;
 	cout << "This is numReal: " << numReal << endl;
 	cout << "This is numInt: " << numInt << endl;
 	cout << "This is numStr: " << numStr << endl;
-	
+
 	// Test mutators
 	numReal = 3.14;
 	numInt = 3.14;
 	numStr = "3.14e0";	
 
- 	cout << "\n" << "-----Mutator Testing-------" << endl;
- 	inp.setReal(okok, numReal);
- 	numReal = inp.getReal(okok);
+	cout << "\n" << "-----Mutator Testing-------" << endl;
+	inp.setReal(testString, numReal);
+	numReal = inp.getReal(testString);
 	cout << "This is numReal: " << numReal << endl;
-	inp.setInt(okok, numInt);
-	numInt = inp.getInt(okok);
- 	cout << "This is numInt: " << numInt << endl;
- 	inp.setStr(okok, numStr);
-	numStr = inp.getStr(okok);
- 	cout << "This is numStr: " << numStr << endl;
- 	//ParamMap propMap = inp.pm;
-	
-	
-// 	    for(ParamMap::const_iterator MapIterator = propMap.begin(); MapIterator != propMap.end(); ++MapIterator)
-//     {
-//         std::cout << "Key: \"" << MapIterator->first << "\" "
-//         << "Value: " << MapIterator->second << endl;
-//     }
-// 	
-    cout << "-----End of program-------" << endl;
-    return 0;
+	inp.setInt(testString, numInt);
+	numInt = inp.getInt(testString);
+	cout << "This is numInt: " << numInt << endl;
+	inp.setStr(testString, numStr);
+	numStr = inp.getStr(testString);
+	cout << "This is numStr: " << numStr << endl;
+	// ParamMap propMap = inp.pm;
+
+
+	// for(ParamMap::const_iterator MapIterator = propMap.begin(); MapIterator != propMap.end(); ++MapIterator)
+	//   {
+	//    std::cout << "Key: \"" << MapIterator->first << "\" "
+	//    << "Value: " << MapIterator->second << endl;
+	//   }
+	// 	
+	cout << "\n" << "-----End of program--------" << endl;
+	return 0;
 }
 
 

@@ -1,4 +1,11 @@
-// Semiflexible Gel Input Class cc File
+// -*- C++ -*-
+//----------------------------------------------------------------------
+//
+//                          
+//                
+//                   
+//
+//----------------------------------------------------------------------
 
 
 #include "SemiflexibleInput.h"
@@ -9,7 +16,7 @@ using namespace tvmet;
 using namespace voom;
 
 typedef SemiflexibleGel<2> Gel;
-//typedef std::map< std::string, std::string > ParamMap; // Now included in header file
+typedef std::map< std::string, std::string > ParamMap; 
 typedef ParamMap::iterator PMIter;
 
 #define USEOPENMP 0
@@ -19,19 +26,21 @@ typedef ParamMap::iterator PMIter;
 #endif
 
 // Accessors ----------------------------------------------
-double SemiflexibleInput::getReal(std::string name)
+double SemiflexibleInput::getReal(std::string name) const
 {
-	return atof(_pm[name].data());
+  /* Cannot use map::operator[] to access value since it inserts a new element when no
+  element matches the key */
+  return atof((_pm.find(name)->second).c_str());
 }
 
-int SemiflexibleInput::getInt(std::string name)
+int SemiflexibleInput::getInt(std::string name) const
 {
-	return atoi(_pm[name].data());
+  return atoi((_pm.find(name)->second).c_str());
 }
 
-std::string SemiflexibleInput::getStr(std::string name)
+std::string SemiflexibleInput::getStr(std::string name) const
 {
-	return _pm[name].data();
+  return _pm.find(name)->second;
 }
 
 // Mutators ----------------------------------------------- 
@@ -117,10 +126,6 @@ std::string getGelFileName(std::string gelLibDir, ParamMap & pmap, int gelNum=-1
 
 SemiflexibleInput::SemiflexibleInput(std::string paramFileName)
 {
-
-	qq =24.8;
-
-
     std::ifstream inFile(paramFileName.c_str());
     if(!(inFile.good())) {
         std::cerr << "Error: input file name does not exist!" << std::endl;
@@ -228,10 +233,8 @@ std::string pfn(paramFileName);
     double expandEnd = -1.0;
     int nExpandSteps = -1;
     double expandStep = -1.0;
-    
-	//////////////////////////////////////
 
-    //ParamMap pm;
+    
     std::string curString;
     std::string parName;
     std::string parValStr;
@@ -253,7 +256,6 @@ std::string pfn(paramFileName);
             int pNameBegin = curString.find_first_not_of('\t',pNameEnd);
             pNameEnd = curString.find_first_of('\t',pNameBegin);
             parValStr.assign(curString,pNameBegin,pNameEnd-pNameBegin);
-            // changed to std::string from string on next ~20 lines
             if(parName.find("GelFile") != std::string::npos) gelFileName.assign(parValStr);
             else if(parName.find("GelDirectory") != std::string::npos) gelDirectory.assign(parValStr);
             else if(parName.find("kT")!=std::string::npos) {
@@ -447,29 +449,25 @@ std::string pfn(paramFileName);
             }
             // add polydispersity stuff //
         }
-        ////////////////////////
-        //std::cout << parValStr << std::endl;
-        ////////////////////////
+
         curString.clear();
         parName.clear();
         parValStr.clear();
     }
     inFile.close();
-    //std::cout << "L:" << L << std::endl;
-    // -------------------------------------
-	SemiflexibleGel<2> * gel;
+
+// -----------------------------------------
+	  SemiflexibleGel<2> * gel;
     SemiflexibleGel<2>::DefNodeContainer nodes;
     PeriodicBox * box;
     GelOutput<2> output;
-//     // -------------------------------------
-// 
-    // kC is calculated here??
+// -----------------------------------------
+
+    // kC is calculated here? Why is it a commented out parameter in the input file?
     if(kC < 0.0) {
         kC = kT*L_p;
-    }
-//     
-// 
-	std::cout << kC << " <-- This is kC." << std::endl;
+    }	
+	
    if(retrieveGel) {
     if(kC > 0.0 && l_B > 0.0) {
       std::ostringstream tmpStr;
@@ -659,7 +657,7 @@ std::string pfn(paramFileName);
     
     
     // Write out parameter map
-    std::cout << "-----Parameter Map-----" << std::endl;
+    std::cout << "\n" << "-----Parameter Map---------" << std::endl;
     for(ParamMap::const_iterator MapIterator = _pm.begin(); MapIterator != _pm.end(); ++MapIterator)
     {
         std::cout << "Key: \"" << MapIterator->first << "\" "
