@@ -262,7 +262,7 @@ namespace voom
     void resetGel() {
       for(FilamentIterator f=_filaments.begin(); f!=_filaments.end(); f++) {
 	for(DefNodeIterator n=f->nodes.begin(); n!=f->nodes.end(); n++) {
-	  (*n)->setPoint`((*n)->position());
+	  (*n)->setPoint((*n)->position());
 	}
       }
       _energy = 0.0;
