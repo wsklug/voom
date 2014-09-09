@@ -52,6 +52,8 @@
 #include "LeesEdwards.h"
 #include "PinchForce.h"
 #include "NematicProbTable.h"
+#include "SemiflexibleInput.h"
+
 
 //#include "AffinityElement.h"
 //#include "AffinityMeasure.h"
@@ -238,6 +240,9 @@ namespace voom
     SemiflexibleGel() {
       _output=paraview;
     }
+
+    //! A constructor that uses the SemiflexibleInput class to bring in parameters
+    SemiflexibleGel( SemiflexibleInput * input );
 
     //! Another Constructor
     SemiflexibleGel( DefNodeContainer & dNodes, PeriodicBox * box, 

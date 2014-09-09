@@ -55,7 +55,7 @@ void guessAffineShearX(Gel * gel, double shear) {
       Vector2D diff;
       diff = fil->nodes[j]->position() - cent;
       Vector2D affdef;
-      affdef[1] = 0.0; > 0.0) {
+      affdef[1] = 0.0;
       affdef[0] = shear*diff[1];
       affdef += fil->nodes[j]->position();
       fil->nodes[j]->setPoint(affdef);

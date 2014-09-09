@@ -23,6 +23,36 @@ namespace voom {
 
       
   template<int N>
+  SemiflexibleGel<N>::SemiflexibleGel( SemiflexibleInput * input ) {
+
+      // make periodic box //
+      box = new LeesEdwards(syssize[0],syssize[1],0.0);
+    
+      // create body //
+      if(!adaptiveMeshing) {
+	gel = new SemiflexibleGel<2>(nodes,box,filDens,nNodesPerFilament,dL,bondType,cutOffEnds,_pm);
+	gel->compute(true,true,false);
+	std::cout << "Sanity check: gel energy at zero shear = " << gel->energy() << std::endl;
+      }
+      else {
+	gel = new SemiflexibleGel<2>(nodes,box,filDens,L,bondType,cutOffEnds,minLength,_pm);
+      }
+      //gel->addPinch(6.0,false,nodes,kBond,kAngle,visc,kT,dt,kcl);
+    
+      // write gel data to file //
+      if(!adaptiveMeshing) {
+	gel->storeGel(fName);
+      }
+    }
+
+  return;
+
+  }
+
+  //
+  // WSK: This constructor is used by drivers when the "adaptiveMeshing" flag is false.
+  //
+  template<int N>
   SemiflexibleGel<N>::SemiflexibleGel(DefNodeContainer & dNodes, PeriodicBox * box, double filDens, int nodesPerFil, double nodeLen, const string & bondType, bool cutOffEnds, const PropertyList & properties) {
     //double kBond, double kAngle, double visc, double kT, double dt, double kcl, bool prestress, double nematic, bool computeCD)
  
@@ -287,6 +317,9 @@ namespace voom {
     std::cout << "Failed to crosslink filaments " << failedCLAttempts << " times." << std::endl;
   }
   
+  //
+  // WSK: This constructor is used by drivers when adaptiveMeshing == false.
+  // 
   template<int N>
   SemiflexibleGel<N>::SemiflexibleGel(std::string fileName, DefNodeContainer & nodes, std::string bondType, bool cutOffEnds, const PropertyList & properties, double minLength) {
     
@@ -460,10 +493,18 @@ namespace voom {
 
     }
 
-    std::cout << "SemiflexibleGel constructor: read in data on " << nFils << " filaments; now setting up crosslinks." << std::endl;
+    std::cout << "SemiflexibleGel constructor: read in data on " 
+	      << nFils << " filaments; now setting up crosslinks." << std::endl;
 
     // now read in data on crosslinks //
-    if(kcl < 0.0) {
+    if(kcl < 0.0) { 
+      //
+      // kcl < 0 is meant to code that a hard constraint on the
+      // crosslinks should be enforced.  Probably it is set to -1 in
+      // the input file.  If so, since the kcl > 0 case isn't coded,
+      // we should remove kcl as a parameter and stop the song and
+      // dance.
+      //
       bool doRelax = false;
       if(maxPrestress > 0.0) {
 	doRelax = true;
@@ -491,6 +532,7 @@ namespace voom {
     }
     
     else {
+      // kcl > 0? Seriously?
       // code in later //
     }
 
@@ -572,6 +614,9 @@ namespace voom {
 
   }
  
+//
+// adaptive meshing constructor
+//
   template<int N>
   SemiflexibleGel<N>::SemiflexibleGel(DefNodeContainer & dNodes, PeriodicBox * box, double filDens, double filLength, const string & bondType, bool cutOffEnds, double minLength, const PropertyList & properties) {
     // Adaptively mesh the gel. //
@@ -1243,6 +1288,9 @@ namespace voom {
  
   }
 
+  //
+  // WSK: This constructor is used by drivers when adaptiveMeshing == true
+  //
   template<int N>
   SemiflexibleGel<N>::SemiflexibleGel(std::string fileName, DefNodeContainer & dNodes, std::string bondType, bool cutOffEnds, double minLength, const PropertyList & properties) {
     ConstPropertyIterator p = properties.find("kT");

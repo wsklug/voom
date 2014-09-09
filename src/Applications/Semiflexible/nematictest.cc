@@ -652,6 +652,9 @@ int main(int argc, char* argv[]) {
     }
   }
 
+  //
+  // Don't retrieve gel, create it.
+  //
   else {
     if(nematicOP >= 1.0e-6) {
       pm.insert(pair< std::string, std::string >("nematic PDF param",nemPDFparam));
