@@ -15,7 +15,7 @@ using namespace std;
 using namespace tvmet;
 using namespace voom;
 
-typedef SemiflexibleGel<2> Gel;
+//typedef SemiflexibleGel<2> Gel;
 typedef std::map< std::string, std::string > ParamMap; 
 typedef ParamMap::iterator PMIter;
 
@@ -25,11 +25,46 @@ typedef ParamMap::iterator PMIter;
 #define USEOPENMP 1
 #endif
 
+///////////////////////////////////////////////////////////
+// JKP: sqr not defined (Part of tvmet package?) I'll define it here so the code 
+// will compile. This can be deleted after.
+#define sqr(x) (x*x)
+///////////////////////////////////////////////////////////
+
+// Verification -------------------------------------------
+bool SemiflexibleInput::checkMap(std::string name) const
+{
+  if (_pm.find(name) == _pm.end()) {
+		return false;
+  }
+  else {
+  	return true;
+  }
+}
+
+
+
+
 // Accessors ----------------------------------------------
 double SemiflexibleInput::getReal(std::string name) const
 {
-  /* Cannot use map::operator[] to access value since it inserts a new element when no
-  element matches the key */
+  /* Cannot use map::operator[] to access value since it inserts a new element 
+  	 when no element matches the key */
+  
+  /*
+		JKP: What is the best way to ensure we don't get a segmentation fault here?
+		I've put in a quick fix below but it might not work with all cases.
+		This is probably good enough for now since we will likely end up changing
+		the way the parameters are stored (won't store everything in the map). 
+		Actually, what about a method that checks the existence of a parameter in 
+		the map and returns true or false? 
+  */
+  if (_pm.find(name) == _pm.end()) {
+  	std::cerr << "Error: Value for " << name 
+  	<< " not found in parameter map. \n"
+  	<< "Check input file." << std::endl;
+  	exit(1);
+  }
   return atof((_pm.find(name)->second).c_str());
 }
 
@@ -38,9 +73,17 @@ int SemiflexibleInput::getInt(std::string name) const
   return atoi((_pm.find(name)->second).c_str());
 }
 
-std::string SemiflexibleInput::getStr(std::string name) const
+std::string SemiflexibleInput::getString(std::string name) const
 {
   return _pm.find(name)->second;
+}
+
+bool SemiflexibleInput::getBool(std::string name) const
+{
+	if (_pm.find(name)->second == "true")
+		return true;
+	else
+		return false;	
 }
 
 // Mutators ----------------------------------------------- 
@@ -58,11 +101,15 @@ void SemiflexibleInput::setInt(std::string nameInt, int valueInt)
 	_pm[nameInt] = tmpVal.str();
 }	
 
-void SemiflexibleInput::setStr(std::string nameStr, std::string valueStr)
+void SemiflexibleInput::setStr(std::string name, std::string value)
 {
-	_pm[nameStr] = valueStr;
+	_pm[name] = value;
 }
 
+void SemiflexibleInput::setBool(std::string name, bool value)
+{
+	_pm[name] = value;
+}
 // Previous Code ------------------------------------------
 int getFilSegs(double avgCL, double nodesPerCL) {
   return (int)((avgCL+1)*nodesPerCL);
@@ -124,6 +171,9 @@ std::string getGelFileName(std::string gelLibDir, ParamMap & pmap, int gelNum=-1
   return gelStoreName;
 }
 
+    ////////////////////////////////////////////////////////////////////
+    // Constructor
+    ////////////////////////////////////////////////////////////////////
 SemiflexibleInput::SemiflexibleInput(std::string paramFileName)
 {
     std::ifstream inFile(paramFileName.c_str());
@@ -131,7 +181,7 @@ SemiflexibleInput::SemiflexibleInput(std::string paramFileName)
         std::cerr << "Error: input file name does not exist!" << std::endl;
         exit(1);
     }
-std::string pfn(paramFileName);
+		std::string pfn(paramFileName);
     std::cout << "Input file name: " << pfn << std::endl;
     
     if(USEOPENMP) std::cout << "Open MP being used." << std::endl;
@@ -176,7 +226,14 @@ std::string pfn(paramFileName);
     
     std::string gelDirectory = "./";
     std::string gelFileName;
+    
+    // JKP: This is weird. Should bondType be set as "Spring" in the input file 
+    // instead of here? "bondType" is dependent on k_max, 
+    // which is not listed in the input file. There is an F_max though.
     std::string bondType = "Spring";
+    _pm.insert(pair< std::string, std::string >("bondType",bondType));
+    
+    
     
     bool linearizedentropic = false;
     double linentfrac = 0.0;
@@ -185,12 +242,14 @@ std::string pfn(paramFileName);
     std::string solverType = "LBFGSB";
     
     bool cutOffEnds = false;
+    _pm.insert(pair< std::string, std::string >("Cut Off Ends","false"));
     
     double viscReg = -1.0;
     
     bool relaxPrestress = false;
     
     bool retrieveGel = false;
+    _pm.insert(pair< std::string, std::string >("retrieveGel","false"));
     
     bool checkConsist = false;
     
@@ -204,6 +263,7 @@ std::string pfn(paramFileName);
     bool zeroReturn = false;
     
     bool adaptiveMeshing = false;
+    _pm.insert(pair< std::string, std::string >("adaptiveMeshing","false"));
     double minLength = -1.0;
     
     std::string polydisp = "none";
@@ -256,7 +316,11 @@ std::string pfn(paramFileName);
             int pNameBegin = curString.find_first_not_of('\t',pNameEnd);
             pNameEnd = curString.find_first_of('\t',pNameBegin);
             parValStr.assign(curString,pNameBegin,pNameEnd-pNameBegin);
-            if(parName.find("GelFile") != std::string::npos) gelFileName.assign(parValStr);
+            if(parName.find("GelFile") != std::string::npos) {
+            	gelFileName.assign(parValStr);
+            	_pm.insert(pair< std::string, std::string>
+            	("storage file name",parValStr));
+            	}
             else if(parName.find("GelDirectory") != std::string::npos) gelDirectory.assign(parValStr);
             else if(parName.find("kT")!=std::string::npos) {
                 kT = atof(parValStr.data());
@@ -270,13 +334,15 @@ std::string pfn(paramFileName);
             else if(parName.find("visc")!=string::npos) {
                 visc = atof(parValStr.data());
                 _pm.insert(pair< std::string, std::string >("viscosity",parValStr));
+                
             }
             else if(parName.find("SolverType")!=string::npos) solverType = parValStr.data();
             // else if(parName.find("r")!=string::npos) r = parVal;
             else if(parName.find("k_max")!=string::npos) {
-                k_max = atof(parValStr.data());
-                _pm.insert(pair< std::string, std::string >("k_max",parValStr));
-                bondType = "EntropicSpring";
+              k_max = atof(parValStr.data());
+              _pm.insert(pair< std::string, std::string >("k_max",parValStr));
+            	bondType = "EntropicSpring";
+              _pm["bondType"] = bondType;
             }
             else if(parName.find("Entropic_lin")!=string::npos) {
                 if(atof(parValStr.data()) > 0.5) {
@@ -336,7 +402,10 @@ std::string pfn(paramFileName);
             //       else if(parName.find("Affine_tol")!=string::npos) affbintol = atof(parValStr.data());
             //       else if(parName.find("Affine_min")!=string::npos) affmin = atof(parValStr.data());
             //       else if(parName.find("Affine_max")!=string::npos) affmax = atof(parValStr.data());
-            else if(parName.find("FilDens")!=string::npos) filDens = atof(parValStr.data());
+            else if(parName.find("FilDens")!=string::npos) { 
+            filDens = atof(parValStr.data());
+            _pm.insert(pair< std::string, std::string >("filDens",parValStr.data()));
+            }
             else if(parName.find("NemPDF_param")!=string::npos) {
                 nemPDFparam = parValStr;
                 _pm.insert(pair< std::string, std::string >("nematic PDF param",nemPDFparam));
@@ -366,11 +435,17 @@ std::string pfn(paramFileName);
                 else _pm.insert(pair< std::string, std::string >("prestress","true"));
             }
             else if(parName.find("Retrieve")!=string::npos) {
+            	// JKP: why set retrieveGel = false if is initialized as false?
                 if(atof(parValStr.data()) < 0.5) retrieveGel = false;
-                else retrieveGel = true;
+                else {retrieveGel = true;
+                _pm["retrieveGel"] = "true";
+                }
             }
             else if(parName.find("AdaptiveMesh")!=string::npos) {
-                if(atof(parValStr.data()) >= .5) adaptiveMeshing = true;
+                if(atof(parValStr.data()) >= .5) {
+                adaptiveMeshing = true;
+                _pm["adaptiveMeshing"] = "true";
+                }
             }
             else if(parName.find("ShortSegRelief")!=string::npos) {
                 _pm.insert(pair< std::string, std::string >("nearby pair removal method",parValStr.data()));
@@ -379,10 +454,14 @@ std::string pfn(paramFileName);
                 _pm.insert(pair< std::string, std::string >("target segment length", parValStr.data()));
             }
             else if(parName.find("MinSegLength")!=string::npos) {
-                minLength = atof(parValStr.data());
+                minLength = atof(parValStr.data()); // why is this here>?
+                // minLength vs "minlength" is very confusing
+                _pm.insert(pair< std::string, std::string >("Min Seg Length",
+                parValStr.data()));
             }
             else if(parName.find("CutOffEnds")!=string::npos) {
                 if(atof(parValStr.data()) >= 0.5) cutOffEnds = true;
+                _pm["Cut Off Ends"] = "true";
             }
             else if(parName.find("ShearXTest")!=string::npos) {
                 if(atof(parValStr.data()) >= .5) shearXtest = true;
@@ -456,6 +535,7 @@ std::string pfn(paramFileName);
     }
     inFile.close();   
 
+std::cout << "\n" << "Input file now closed." << "\n" << std::endl;
     /////////////////////////////////////////////////////////////////////////////
     /////////////////////////////////////////////////////////////////////////////
     //
@@ -497,20 +577,21 @@ std::string pfn(paramFileName);
 	// way to distinguish between adaptive and non-adaptive
 	// meshing, that was foolish and should be avoided in favor of
 	// some more explicit and clear strategy.
-	this->setReal("bending modulus", kC); 
-
-      } else {
-
-	this->setReal("angle stiffness", kC); 
-
+			this->setReal("bending modulus", kC); 
+			}
+			else {
+			this->setReal("angle stiffness", kC); 
       }
 
       gelFileName.insert(0,gelDirectory);
       lambda = (L_over_lc/L)*pow(L_over_lc/(L*l_B),1.0/3.0);
-      input.setReal("lambda", lambda); 
+      
+      this->setReal("lambda", lambda);
+      //input.setReal("lambda", lambda); 
 
       double mu = kC/sqr(l_B);
-      input.setReal("bond stiffness", mu); 
+      this->setReal("bond stiffness", mu);
+      //input.setReal("bond stiffness", mu); 
 
     }
 
@@ -526,10 +607,10 @@ std::string pfn(paramFileName);
       // all of nematic order details should be listed there.
       //
       if(nematicOP >= 1.0e-6) {
-	std::string nemPDFparam("Gaussian");
-	_pm.insert(pair< std::string, std::string >("nematic PDF param",nemPDFparam));
+			std::string nemPDFparam("Gaussian");
+			_pm.insert(pair< std::string, std::string >("nematic PDFparam",nemPDFparam));
       }
-    
+    }
       //
       // WSK: This looks like the system size (of the box) is being
       // scaled by the filament length.  Is that the way it is
@@ -538,19 +619,20 @@ std::string pfn(paramFileName);
       // At least the stored properties should be changed.
       //
       for(int dn=0;dn<2;dn++) {
-	syssize[dn] *= L;
+			syssize[dn] *= L;
       }
     
       // get number of rods per filament from requirement of nodes
       // between crosslinks, then set all other parameters //
       if(!adaptiveMeshing) {
-	nNodesPerFilament = 1 + getFilSegs(L_over_lc-1,nodesPerCL);
-	dL = L/(nNodesPerFilament - 1);
-	// Estimate kAngle = E*I/L = kT\xi_p/dL; kT=4.1pN-nm, \xi_p=10^4nm, dL~100nm
-	//make kAngle 100 times larger to simulate the rotation diffusion
+			nNodesPerFilament = 1 + getFilSegs(L_over_lc-1,nodesPerCL);
+			dL = L/(nNodesPerFilament - 1);
+			// Estimate kAngle = E*I/L = kT\xi_p/dL; kT=4.1pN-nm, \xi_p=10^4nm, 
+			//dL~100nm
+			//make kAngle 100 times larger to simulate the rotation diffusion
     
-	if(kC > 0.0) {
-	  kAngle = kC/dL;
+			if(kC > 0.0) {
+	  	kAngle = kC/dL;
 	  // std::ostringstream tmpStr;
 	  // tmpStr << setprecision(16) << kAngle;
 	  // _pm.insert(pair< std::string, std::string>("angle stiffness",tmpStr.str()));
@@ -568,7 +650,7 @@ std::string pfn(paramFileName);
 	  this->setReal("bond stiffness", kBond);
 	}
 	else {
-	  std::cerr << "Error: input file must have a value for the bending/stretching length l_B." << std::endl;
+	  std::cerr << "Error: input file must have a value for the bending/stretching 			length l_B." << std::endl;
 	}
       }
       //
@@ -635,16 +717,23 @@ std::string pfn(paramFileName);
       std::string fName = getGelFileName(gelDirectory,_pm);
       curGelNum = getCurGelNum(fName);
 
-      if(adaptiveMeshing) _pm.insert(pair<std::string, std::string>("storage file name",fName));
-    }
+
+			// Why are we only using "storage file name" for adaptive meshing
+			// Should this be for when we create gels? 
+			// This needs to be looked at. 
+      if(adaptiveMeshing) 
+      _pm.insert(pair<std::string, std::string>("storage file name",fName));
+
 
     // Write out parameter map
     std::cout << "\n" << "-----Parameter Map---------" << std::endl;
+    
     for(ParamMap::const_iterator MapIterator = _pm.begin(); MapIterator != _pm.end(); ++MapIterator)
     {
         std::cout << "Key: \"" << MapIterator->first << "\" "
         << "Value: " << MapIterator->second << endl;
     }
-
-    
 }
+
+
+

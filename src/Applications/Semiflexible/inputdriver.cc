@@ -14,7 +14,7 @@
 //#include <getopt.h>
 //#include <ctime>
 //#include "Node.h"
-//#include "SemiflexibleGel.h"
+#include "SemiflexibleGel.h"
 //#include "Model.h"
 //#include "Lbfgsb.h"
 //#include "Lbfgs.h"
@@ -59,7 +59,7 @@ int main(int argc, char* argv[]){
 	// Test accessors
 	numReal = inp.getReal(testString);
 	numInt = inp.getInt(testString);
-	numStr = inp.getStr(testString);
+	numStr = inp.getString(testString);
 
 	cout << "\n" << "-----Accessor Testing------" << endl;
 	cout << "This is numReal: " << numReal << endl;
@@ -79,20 +79,31 @@ int main(int argc, char* argv[]){
 	numInt = inp.getInt(testString);
 	cout << "This is numInt: " << numInt << endl;
 	inp.setStr(testString, numStr);
-	numStr = inp.getStr(testString);
+	numStr = inp.getString(testString);
 	cout << "This is numStr: " << numStr << endl;
 	// ParamMap propMap = inp.pm;
 
 
-	// for(ParamMap::const_iterator MapIterator = propMap.begin(); MapIterator != propMap.end(); ++MapIterator)
-	//   {
-	//    std::cout << "Key: \"" << MapIterator->first << "\" "
-	//    << "Value: " << MapIterator->second << endl;
-	//   }
-	// 	
+// for(ParamMap::const_iterator MapIterator = propMap.begin(); MapIterator != propMap.end(); ++MapIterator)
+//   {
+//    std::cout << "Key: \"" << MapIterator->first << "\" "
+//    << "Value: " << MapIterator->second << endl;
+//   }
+// 	
+
+	
+	SemiflexibleGel<2> testInputGel (&inp);
+	
+	
+	
+	cout << "\n" << "-----More Testing----------" << endl;
+	cout << "Bond Stiffness: " << inp.getReal("bond stiffness") << endl;
+	cout << "Angle Stiffness: " << inp.getReal("angle stiffness") << endl;
 	cout << "\n" << "-----End of program--------" << endl;
+	
+	
 	return 0;
-}
+	}
 
 
 

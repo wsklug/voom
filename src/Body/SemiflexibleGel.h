@@ -18,6 +18,7 @@
 #if !defined(__SemiflexibleGel_h__)
 #define __SemiflexibleGel_h__
 
+
 #include<blitz/array.h>
 #include<random/exponential.h>
 #include<vector>
@@ -242,7 +243,7 @@ namespace voom
     }
 
     //! A constructor that uses the SemiflexibleInput class to bring in parameters
-    SemiflexibleGel( SemiflexibleInput * input );
+    SemiflexibleGel( SemiflexibleInput * pInp );
 
     //! Another Constructor
     SemiflexibleGel( DefNodeContainer & dNodes, PeriodicBox * box, 
