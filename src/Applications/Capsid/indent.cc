@@ -284,7 +284,8 @@ int main(int argc, char* argv[])
     if( prestressFlag == "yes" ) {
       // reset the ref configuration of all triangles to be
       // equilateral
-      bdm->resetEquilateral();
+      //bdm->resetEquilateral();
+      bdm->SetRefConfiguration();
     } else {
       // reset the ref configuration of all triangles to the current
       // configuration
