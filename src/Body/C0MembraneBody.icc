@@ -276,7 +276,7 @@ namespace voom
 	
   //! return the deformation invariants for elements
   template<class Quadrature_t, class Material_t, class Shape_t>
-  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::calcDeformInvariants(std::vector<double>& I1, std::vector<double>& J)
+  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>:calculateDeformationInvariants(std::vector<double>& I1, std::vector<double>& J)
   {
     //int eBegin=0, eEnd=_elements.size();
     int sBegin=0, sEnd=_membranes.size();

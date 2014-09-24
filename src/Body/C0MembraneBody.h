@@ -119,7 +119,7 @@ namespace voom
     void SetRefConfiguration(double edge);
 
     //! return the deformation invariantst for elements
-    void cal_inv(std::vector<double>& I1, std::vector<double>& J);
+    void calculateDeformationInvariants(std::vector<double>& I1, std::vector<double>& J);
     
     double volume() const{ return _volume; }
     
