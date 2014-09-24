@@ -283,6 +283,34 @@ namespace voom
     return;
   }
 	
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::resetEquilateral(double hTarget = 0) {
+    if ( hTarget <= 0 ) {
+      // compute average element edge length
+      double hAve = 0.0;
+      for(int e = 0; e<_membranes.size(); e++) {
+	double h=0.0;
+	const MembraneNodeContainer & nds = _membranes[e]->nodes();
+	for(int a=0; a<nds.size(); a++) {
+	  h += norm2( nds[a]->position() - nds[(a+1) % nds.size()]->position() );
+	}
+	h /= nds.size();
+	hAve += h;
+      }
+      hAve /= _membranes.size();
+      hTarget = hAve;
+    }
+    std::cout << "Reseting all elements to be equilateral with element edge length " << hAve << std::endl; 
+    
+    // reset all elements to be equilalateral with average edge
+    // length in ref config.
+    for(MembraneElementIterator e=_membranes.begin(); 
+	e!=_membranes.end(); e++) {
+      (*e)->updateRefConfiguration( hTarget );
+    }	
+    
+    return;
+  }
 
 	
   //! create input file used by Paraview, a 3D viewer

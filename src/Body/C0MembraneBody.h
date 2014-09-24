@@ -183,32 +183,12 @@ namespace voom
       return;
     }
 
-    //! Reset element ref configs to equilateral with average edge length.
-    void resetEquilateral() {
-      // compute average element edge length
-      double hAve = 0.0;
-      for(int e = 0; e<_membranes.size(); e++) {
-	double h=0.0;
-	const MembraneNodeContainer & nds = _membranes[e]->nodes();
-	for(int a=0; a<nds.size(); a++) {
-	  h += norm2( nds[a]->position() - nds[(a+1) % nds.size()]->position() );
-	}
-	h /= nds.size();
-	hAve += h;
-      }
-      hAve /= _membranes.size();
-
-      std::cout << "Reseting all elements to be equilateral with element edge length " << hAve << std::endl; 
-      
-      // reset all elements to be equilalateral with average edge
-      // length in ref config.
-      for(MembraneElementIterator e=_membranes.begin(); 
-	  e!=_membranes.end(); e++) {
-	(*e)->updateRefConfiguration( hAve );
-      }	
-
-      return;
-    }
+    //! Reset element ref configs to equilateral 
+    /*! 
+        If hTarget == 0, then reset edges to average edge length.
+        Otherwise, set to hTarget.
+    */
+    void resetEquilateral(double hTarget = 0);
 
     void pushBackConstraint( Constraint * c ) { _constraints.push_back( c ); }
 
