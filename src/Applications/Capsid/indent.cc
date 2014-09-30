@@ -21,6 +21,11 @@
 #include <vtkDataSetReader.h>
 #include <vtkPolyDataWriter.h>
 #include <vtkPolyDataNormals.h>
+#include <vtkSmartPointer.h>
+#include <vtkUnstructuredGrid.h>
+#include <vtkGeometryFilter.h>
+#include <vtkPolyData.h>
+#include <vtkSetGet.h>
 
 #if defined(_OPENMP)
 #include <omp.h>
@@ -35,7 +40,8 @@ using namespace voom;
 int main(int argc, char* argv[])
 {
   if( argc < 2 ) {
-      cout << "Usage: indent modelName [-g gamma -p prestressFlag -n nsteps]." << endl;
+      cout << "Usage: indent modelName [-g gamma -p prestressFlag -n nsteps]."
+	   << endl;
       return(0);
   }
 
@@ -131,17 +137,37 @@ int main(int argc, char* argv[])
 	    << "option = "<< option << std::endl;
 
   if(gamma_inp <=0.0) {
-    std::cout << "gamma = " << gamma_inp << " but should be positive." << std::endl;
+    std::cout << "gamma = " << gamma_inp << " but should be positive." 
+	      << std::endl;
     return 0;
   }
 
   string inputFileName = modelName + ".vtk";
   vtkDataSetReader * reader = vtkDataSetReader::New();
   reader->SetFileName( inputFileName.c_str() );
-  // send through normals filter to ensure that triangle orientations
-  // are consistent
+
+  //We will use this object shortly to ensure consistent triangle orientations
   vtkPolyDataNormals * normals = vtkPolyDataNormals::New();
-  normals->SetInput( reader->GetOutput() );
+
+  //We have to pass a vtkPolyData to vtkPolyDataNormals::SetInput()
+  //If our input vtk file has vtkUnstructuredGridData instead of vtkPolyData
+  //then we need to convert it using vtkGeometryFilter
+  if((reader->GetOutput())->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
+    vtkSmartPointer<vtkUnstructuredGrid> unstructuredGrid = 
+      reader->GetUnstructuredGridOutput();    
+    vtkSmartPointer<vtkGeometryFilter> geometryFilter = 
+      vtkSmartPointer<vtkGeometryFilter>::New();
+    geometryFilter->SetInput(unstructuredGrid);
+    geometryFilter->Update(); 
+    vtkPolyData* polydata = geometryFilter->GetOutput();
+    normals->SetInput( polydata);
+  }
+  else{
+    normals->SetInput(reader->GetOutput());
+  }
+  
+  // send through normals filter to ensure that triangle orientations
+  // are consistent 
   normals->ConsistencyOn();
   normals->SplittingOff();
   normals->AutoOrientNormalsOn();
@@ -256,7 +282,8 @@ int main(int argc, char* argv[])
     bd->resetReference();
     for(Body::ElementIterator e=bd->elements().begin(); e!=bd->elements().end(); e++) {
       LoopShell<MaterialType> * lse = (LoopShell<MaterialType>*)(*e);
-      for(LoopShell<MaterialType>::QuadPointIterator p=lse->quadraturePoints().begin(); p!=lse->quadraturePoints().end(); p++) {
+      for(LoopShell<MaterialType>::QuadPointIterator p=lse->quadraturePoints().begin();
+	  p!=lse->quadraturePoints().end(); p++) {
 	p->material.setSpontaneousCurvature(2.0*( p->material.meanCurvature() ) );
       }
     }
@@ -285,7 +312,21 @@ int main(int argc, char* argv[])
       // reset the ref configuration of all triangles to be
       // equilateral
       //bdm->resetEquilateral();
-      bdm->SetRefConfiguration();
+      //bdm->resetEquilateral();
+      double AvgEdgeLength = 0.0;
+      for(int i=0; i<connectivities.size(); i++) {
+	std::vector<int> cm(3);
+	for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
+	// Edge vectors in current config.
+	tvmet::Vector<double,3> e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
+	  e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
+	  e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
+	  eCent(defNodes[cm[2]]->point());
+	// Compute averate edge length for each triangle
+	AvgEdgeLength += (tvmet::norm2(e31) + tvmet::norm2(e32) + tvmet::norm2(e12))/3.0;
+      }
+      AvgEdgeLength /= connectivities.size();
+      bdm->SetRefConfiguration(AvgEdgeLength);
     } else {
       // reset the ref configuration of all triangles to the current
       // configuration
