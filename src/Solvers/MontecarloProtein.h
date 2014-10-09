@@ -48,7 +48,8 @@ namespace voom
       CONSTANT,         // T = T1
       LINEAR,           // T ~ alpha*t
       FAST,             // T ~ 1/t ("Fast Annealing")
-      EXPONENTIAL       // T ~ alpha^t,  0 < alpha < 1
+      EXPONENTIAL,      // T ~ alpha^t,  0 < alpha < 1
+      STEPWISE
     };
    
     //! Default Constructor
@@ -57,18 +58,18 @@ namespace voom
 		      map<DeformationNode<3> *, vector<DeformationNode<3> *> > & PossibleHosts,
 		      int Method,
 		      PrintingProtein * PrintProtein,
+		      double ResetT = -1.0,
 		      int PrintEvery = 1,
 		      unsigned int NSteps = 1000,
 		      bool print = false): 
       _proteins(Proteins), _body(Body), _possibleHosts(PossibleHosts),
       _method(Method),
-      _printProtein(PrintProtein), _printEvery(PrintEvery),
+      _printProtein(PrintProtein), _resetT(ResetT), _printEvery(PrintEvery),
       _nSteps(NSteps), _print(print), _f(0.0), _fSaved(0.0) {};
     
     //! destructor
     virtual ~MontecarloProtein() {};
 
-    //! overloading pure virtual function solve()
     void solve(uint ComputeNeighInterval, double Rsearch);
     bool changeState();
     bool changeAll();
@@ -83,6 +84,8 @@ namespace voom
       _T02 = T02;
       _FinalTratio = FinalTratio;
     }
+
+    double ComputeUavgSquare(vector<DeformationNode<3>::Point > & OriginalLocations);
     
   private:	
 
@@ -91,6 +94,7 @@ namespace voom
     map<DeformationNode<3> *, vector<DeformationNode<3> * > > & _possibleHosts;
     int _method;
     PrintingProtein * _printProtein;
+    double _resetT;
     int _printEvery;
     unsigned int _nSteps;
     bool _print;

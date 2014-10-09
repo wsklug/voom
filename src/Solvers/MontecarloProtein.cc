@@ -24,11 +24,14 @@ namespace voom {
   // MontecarloProtein Algorithm
   void MontecarloProtein::solve(uint ComputeNeighInterval, double Rsearch) 
   {
-    ofstream ofsE, ofsInteractions;
-    if (_print)
+    stringstream OutputFileStream;
+    OutputFileStream << "MC_uAVG_" << 0 << ".dat";
+    string OutputFileName = OutputFileStream.str();
+    ofstream ofsE;
+    if ( _Tsched == STEPWISE )
     {	
-      ofsE.open("MontecarloEnergy.dat");
-      if (!ofsE) { std::cout << "Cannot open output file MontecarloEnergy.dat" << std::endl;
+      ofsE.open(OutputFileName.c_str());
+      if (!ofsE) { std::cout << "Cannot open output file " << OutputFileStream << std::endl;
 	exit(0); }
     }
 
@@ -66,7 +69,16 @@ namespace voom {
 
 
     // Begin simulated annealing
-    unsigned accepted = 0, step = 1, pt = 0, j = 0;
+    unsigned accepted = 0, step = 1, pt = 0, j = 0, NT = 10;
+    unsigned int StepPerInterval = 0, Interval = 0;
+    vector<DeformationNode<3>::Point > OriginalLocations;
+    unsigned int adjust = 0;
+    for(pt = 0; pt < _proteins.size(); pt++)
+    {
+      OriginalLocations.push_back((_proteins[pt]->getHost())->point());
+    }
+
+    StepPerInterval = _nSteps/NT;
     for(step = 1; step <= _nSteps; step++)
     {
       if (_method == 0) { // change one protein at the time
@@ -83,7 +95,7 @@ namespace voom {
 	      fWorst = _fSaved;
 	    }
 	  }
-	} // End of sub-loop at constant T	
+	} // End of sub-loop at constant T
       } // method == 0
       else if (_method == 1) { // change all proteins together
 	// perform _size metropolis steps at current temperature T
@@ -99,10 +111,9 @@ namespace voom {
 	}
       } // method == 1
 
-
-      if (_print) {
+      if ( _Tsched == STEPWISE) {
 	// Print energy values on file for every sub-step
-	ofsE << _f << " " << _fSaved << " " <<  fBest << " " << fWorst << std::endl;
+	ofsE << step-(StepPerInterval*Interval) << " " <<  this->ComputeUavgSquare(OriginalLocations) << std::endl;
       }
       	
       // Print values of interest (energy, acceptance, Ravg)
@@ -143,16 +154,44 @@ namespace voom {
 	_T1 *= alpha;
 	_T2 *= alpha;
 	break;
+      case STEPWISE:
+	if (step >= StepPerInterval*(Interval+1))
+	{
+	  _T1 += (_T02-_T01)/double(NT-1);
+	  Interval++;
+	  ofsE.close();
+	  OutputFileStream.str(string());
+	  OutputFileStream << "MC_uAVG_" << Interval << ".dat";
+	  OutputFileName = OutputFileStream.str();
+	  ofsE.open(OutputFileName.c_str());
+	  if (!ofsE) { 
+	    std::cout << "Cannot open output file " << OutputFileStream << std::endl;
+	    exit(0); 
+	  }
+
+	  // Prepare for computing average u square at next temperature
+	  for(pt = 0; pt < _proteins.size(); pt++)
+	  {
+	    OriginalLocations[pt] = (_proteins[pt]->getHost())->point();
+	  }
+
+	}
+	break;
+      }
+
+      if (_T1 < _resetT /* && adjust == 0 */) {
+	_body->resetEquilibrium();
+	adjust++;
       }
 
     } // End of simulating annealing loop 
 
  
-    if (_print) {
+    if (_Tsched == STEPWISE) {
       ofsE.close();
     }
 
-    std::cout << "All done :) " << std::endl;
+    std::cout << "MontecarloProtein annealing done :) " << std::endl;
   }
 
 
@@ -170,6 +209,7 @@ namespace voom {
  
       uint j = rand()%NewHosts.size();
       A->setHost(NewHosts[j]);
+
       
       // Compute body energy
       _body->compute(true, false, false);
@@ -233,6 +273,23 @@ namespace voom {
       return false;  
     }
   } // changeAll
+
+
+
+  double MontecarloProtein::ComputeUavgSquare(vector<DeformationNode<3>::Point > & OriginalLocations) 
+  {
+    double uSQavg = 0.0;
+
+    uint Psize = _proteins.size();
+    for(uint pt = 0; pt < Psize; pt++) {
+      DeformationNode<3>::Point b = (_proteins[pt]->getHost())->point();
+      uSQavg += pow(tvmet::norm2(OriginalLocations[pt]-b), 2.0);
+    }
+    
+    uSQavg = uSQavg/double(Psize);
+
+    return uSQavg;
+  }
 
 
 
