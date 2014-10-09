@@ -11,17 +11,11 @@
 
 #include <tvmet/Vector.h>
 
-#include "Node.h"
-#include "EvansElastic.h"
-#include "LoopShellBody.h"
-#include "ProteinBody.h"
-#include "ProteinLennardJones.h"
-#include "MontecarloProtein.h"
-#include "LoopShell.h"
-#include "Model.h"
-#include "Lbfgsb.h"
-#include "CGfast.h"
 #include "VoomMath.h"
+#include "Node.h"
+#include "ProteinLennardJones.h"
+#include "ProteinBody.h"
+#include "MontecarloProtein.h"
 #include "Utils/PrintingProtein.h"
 
 using namespace voom;
@@ -44,25 +38,13 @@ int main(int argc, char* argv[])
   // File names
   string parameterFileName = argv[1];
   string modelName;
+  string outputFileName;
   string initialConf;
   int ICprovided = 0;
   double ICtol = 1.0e-5;
-  string outputFileName;
   int VTKflag = 0;
   double InflationFactor = 1.0;
  
-  // Bending
-  double KC = 1.0;
-  double KG =-1.0;
-  double C0 = 0.0;
-  int quadOrder = 1;
-  // Penalty parameters
-  double penaltyVolumeInit = 1.0e3;
-  double penaltyAreaInit   = 1.0e3;
-  double penaltyVolumeTol  = 1.0e-3;
-  double penaltyAreaTol    = 1.0e-3;
- 
-
   // Potential input parameters
   double PotentialSearchRF = 1.0;
   double epsilon = 1.0;
@@ -77,11 +59,15 @@ int main(int argc, char* argv[])
   double T01, T02, FinalRatio;
   int CompNeighInterval;
   int MCmethod = 0;
+  double ResetT = -1.0;
 
   // Number of nodes per protein
   int NnodePr = 10;
   int PrMaxNum = 10;
   int PrintEvery = 10;
+
+  // Other Analysis options
+  int StepWise = 0;
 
 
   // Reading input from file passed as argument
@@ -100,14 +86,6 @@ int main(int argc, char* argv[])
   inp >> temp >> ICtol;
   inp >> temp >> VTKflag;
   inp >> temp >> InflationFactor;
-  inp >> temp >> KC;
-  inp >> temp >> KG;
-  inp >> temp >> C0;
-  inp >> temp >> quadOrder;
-  inp >> temp >> penaltyVolumeInit;
-  inp >> temp >> penaltyAreaInit;
-  inp >> temp >> penaltyVolumeTol;
-  inp >> temp >> penaltyAreaTol;
   inp >> temp >> PotentialSearchRF;
   inp >> temp >> epsilon;
   inp >> temp >> sigma;
@@ -119,11 +97,11 @@ int main(int argc, char* argv[])
   inp >> temp >> FinalRatio;
   inp >> temp >> CompNeighInterval;
   inp >> temp >> MCmethod;
+  inp >> temp >> ResetT;
   inp >> temp >> NnodePr;
   inp >> temp >> PrMaxNum;
   inp >> temp >> PrintEvery;
-
-
+  inp >> temp >> StepWise;
   
   inp.close();
 
@@ -133,16 +111,8 @@ int main(int argc, char* argv[])
        << " initialConfiguration    : " << initialConf       << endl
        << " IC provided             : " << ICprovided        << endl
        << " IC tol                  : " << ICtol             << endl
-       << " VTKflag                 : " << VTKflag           << endl
+       << " VTK flag                : " << VTKflag           << endl
        << " InflationFactor         : " << InflationFactor   << endl
-       << " KC                      : " << KC                << endl
-       << " KG                      : " << KG                << endl
-       << " C0                      : " << C0                << endl
-       << " Loop Shell quadOrder    : " << quadOrder         << endl
-       << " Penalty volume factor   : " << penaltyVolumeInit << endl
-       << " Penalty area factor     : " << penaltyAreaInit   << endl  
-       << " Penalty volume tol      : " << penaltyVolumeTol  << endl
-       << " Penalty area tol        : " << penaltyAreaTol    << endl  
        << " Potential Search factor : " << PotentialSearchRF << endl
        << " epsilon                 : " << epsilon           << endl
        << " sigma                   : " << sigma             << endl
@@ -154,14 +124,12 @@ int main(int argc, char* argv[])
        << " MC FinalRatio           : " << FinalRatio        << endl
        << " MC ComputeNeighInterval : " << CompNeighInterval << endl
        << " MC method               : " << MCmethod          << endl
+       << " MC reset T              : " << ResetT            << endl
        << " Number of nodes per Pr  : " << NnodePr           << endl
        << " Max number of Pr        : " << PrMaxNum          << endl
-       << " Print .vtk file every   : " << PrintEvery        << endl;
+       << " Print .vtk file every   : " << PrintEvery        << endl
+       << " Step wise change in T   : " << StepWise          << endl;
 
-
-
-      
-  
 
 
 
@@ -190,13 +158,10 @@ int main(int argc, char* argv[])
     for(uint i = 0; i < NumIC; i++) {
       uint temp = 0;
       DeformationNode<3>::Point xIC;
-      if (VTKflag == 1) {
-	ifsIC >> xIC(0) >> xIC(1) >> xIC(2); 
-      }
-      else {
-	ifsIC >> temp >> xIC(0) >> xIC(1) >> xIC(2); }
+      ifsIC >> xIC(0) >> xIC(1) >> xIC(2); 
       IC.push_back(xIC);
     }
+    ifsIC.close();
   } // end of ICprovided loop
   cout << "NumIC = " << IC.size() << endl;
 
@@ -208,7 +173,7 @@ int main(int argc, char* argv[])
     exit(0);
   }
  
-
+  
 
   // Create vector of nodes
   unsigned int dof = 0, npts = 0, NumDoF = 0;
@@ -227,17 +192,17 @@ int main(int argc, char* argv[])
   // read in points
   uint NextProtein = 0;
   for(uint i = 0; i < npts; i++) {
-    uint NodeNum = 0;
     DeformationNode<3>::Point x;
-    if (VTKflag == 1) {
-      ifs >> x(0) >> x(1) >> x(2); }
-    else {
-      ifs >> NodeNum >> x(0) >> x(1) >> x(2); }
+    ifs >> x(0) >> x(1) >> x(2); 
     
     NodeBase::DofIndexMap idx(3);
-    for(uint j = 0; j < 3; j++) { 
+    for(uint j = 0; j < 3; j++) {
       idx[j] = dof++;
     }
+    
+    // Inflate/Deflate vessel if necessary
+    x *= InflationFactor;
+
     DeformationNode<3>* n = new DeformationNode<3>(i,idx,x);
     
     if (ICprovided == 1) {
@@ -247,7 +212,7 @@ int main(int argc, char* argv[])
 	  Proteins.push_back(PrNode);
 	}
       }
-      else {
+      else if (VTKflag == 2) {
 	for (uint k = 0; k < NumIC; k++) {
 	  if (tvmet::norm2(IC[k] - x) < ICtol && ICcheck[k] == 1) {
 	    ProteinNode * PrNode = new ProteinNode(n);
@@ -256,7 +221,7 @@ int main(int argc, char* argv[])
 	    break;
 	  }
 	}
-      }
+      } 
     }
     else {
       if (i == NextProtein && Proteins.size() < PrMaxNum) { // create a protein every NodePr nodes and additional conditions
@@ -267,11 +232,6 @@ int main(int argc, char* argv[])
 	// }
       }
     }
-
-    // Inflate vessel if necessary
-    x *= InflationFactor;
-    n->setPoint(x);
-    n->resetPosition();
       
     nodes.push_back( n );
     defNodes.push_back( n );
@@ -293,9 +253,6 @@ int main(int argc, char* argv[])
   {
     ifs >> ElemNum;
     ifs >> ct(0) >> ct(1) >> ct(2);
-    if (VTKflag == 0) {
-      ct(0) -= 1;  ct(1) -= 1;  ct(2) -= 1; }
-      
     connectivities.push_back(ct);
   } // end of reading triangle connectivities
 
@@ -330,47 +287,15 @@ int main(int argc, char* argv[])
   
 
 
-  // -------------------------------------------------------------------
-  // Create model
-  // -------------------------------------------------------------------
-  // Create Loop shell body with both bending and in-plane elastic energy
-  /*
-  // Bending material object, to be copied when body generates new elements
-  EvansElastic bodyMaterial(KC, KG, C0, 0.0, 0.0);
 
-  // Bending body will generate a mesh of Loop Subdivision shell elements from the connectivity and nodes
-  double pressure = 0.0;
-  double tension  = 0.0;
-  LoopShellBody<EvansElastic> * shellBody = new LoopShellBody<EvansElastic>(bodyMaterial, 
-									    connectivities, 
-									    nodes, 
-									    quadOrder,
-									    pressure, 
-									    tension,
-									    0.0,
-									    penaltyVolumeInit,
-									    penaltyAreaInit,
-									    0.0,
-									    noConstraint, // just at the beginning
-									    noConstraint, // just at the beginning
-									    noConstraint);
-  // Initialize body
-  // shellBody->compute(true, false, false);
-  cout << "Initial shell body energy = " << shellBody->totalStrainEnergy() << endl;
-  cout << "Initial shell body energy = " << shellBody->energy() << endl;
-  cout << "Initial shell body volume = " << shellBody->volume() << endl;
-  cout << "Initial shell body area   = " << shellBody->area()   << endl;
-  cout << "Average edge length from body = " << shellBody->AverageEdgeLength() << endl << endl;
-  // shellBody->checkConsistency();
-  
-  */
+
+
 
   // Initiliaze potential material
   ProteinLennardJones Mat(epsilon, sigma);
 
   // Then initialize potential body
-  ProteinBody * PrBody = new ProteinBody(Proteins, &Mat, PotentialSearchRF);
-  
+  ProteinBody * PrBody = new ProteinBody(Proteins, &Mat, PotentialSearchRF);  
   PrBody->compute(true, false, false);
   cout << "Initial protein body energy = " << PrBody->energy() << endl;
 
@@ -379,42 +304,33 @@ int main(int argc, char* argv[])
 
 
 
-  /*
-  // Create Model and solver
-  Model::BodyContainer bdc;
-  bdc.push_back(shellBody);
-  Model model(bdc, nodes);
-       // Consistency check
-       // model.checkConsistency(true,false);
-       // model.checkRank(model.dof()-3,true);
-  */
   
   // Initialize printing utils
   cout << "Seraching connectivity over R = " <<  RconnSF << endl;
   PrintingProtein PrintArchaea(modelName, outputFileName+"iter", nodes, connectivities, Proteins, RconnSF);
   
   // Initialize Montecarlo Solver
-  MontecarloProtein MCsolver(Proteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, PrintEvery, nMCsteps);
-  MCsolver.SetTempSchedule(MCsolver.EXPONENTIAL, T01, T02, FinalRatio);
+  MontecarloProtein MCsolver(Proteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, ResetT, PrintEvery, nMCsteps);
+  if (StepWise == 0) {
+    MCsolver.SetTempSchedule(MCsolver.EXPONENTIAL, T01, T02, FinalRatio); }
+  // MCsolver.SetTempSchedule(MCsolver.LINEAR, T01, T02, FinalRatio); }
+  else {
+    MCsolver.SetTempSchedule(MCsolver.STEPWISE, T01, T02, FinalRatio);
+  }
+
   MCsolver.solve(CompNeighInterval, PotentialSearchRF);
 
-  /*
-  // Print proteins positions for further processing
-  for (uint i = 0; i < Proteins.size(); i++)
-  {
-    DeformationNode<3>::Point P =  Proteins[i]->getHostPosition();
-    cout << P[0] << " " << P[1] << " " << P[2] << endl;
-  }
-  */
+ 
+
+
+
 
 
   // End of program
   time (&end);
   dif = difftime (end,start);
   cout << endl << "All done :) in " << dif  << " s" << endl;
-  
-
-  
+    
   // -------------------------------------------------------------------
   // Clean up
   // -------------------------------------------------------------------
