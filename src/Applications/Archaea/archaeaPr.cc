@@ -44,6 +44,7 @@ int main(int argc, char* argv[])
   double ICtol = 1.0e-5;
   int VTKflag = 0;
   double InflationFactor = 1.0;
+  double pressure = 0.0;
  
   // Potential input parameters
   double PotentialSearchRF = 1.0;
@@ -86,6 +87,7 @@ int main(int argc, char* argv[])
   inp >> temp >> ICtol;
   inp >> temp >> VTKflag;
   inp >> temp >> InflationFactor;
+  inp >> temp >> pressure;
   inp >> temp >> PotentialSearchRF;
   inp >> temp >> epsilon;
   inp >> temp >> sigma;
@@ -113,6 +115,7 @@ int main(int argc, char* argv[])
        << " IC tol                  : " << ICtol             << endl
        << " VTK flag                : " << VTKflag           << endl
        << " InflationFactor         : " << InflationFactor   << endl
+       << " Pressure                : " << pressure          << endl
        << " Potential Search factor : " << PotentialSearchRF << endl
        << " epsilon                 : " << epsilon           << endl
        << " sigma                   : " << sigma             << endl
@@ -151,12 +154,10 @@ int main(int argc, char* argv[])
       exit(0);
     }
     
-    string line;
-    ifsIC >> line;
+    ifsIC >> temp;
     ifsIC >> NumIC;
     ICcheck.assign(NumIC, 1);
     for(uint i = 0; i < NumIC; i++) {
-      uint temp = 0;
       DeformationNode<3>::Point xIC;
       ifsIC >> xIC(0) >> xIC(1) >> xIC(2); 
       IC.push_back(xIC);
@@ -176,15 +177,13 @@ int main(int argc, char* argv[])
   
 
   // Create vector of nodes
-  unsigned int dof = 0, npts = 0, NumDoF = 0;
+  unsigned int dof = 0, npts = 0;
   vector<NodeBase* > nodes;
   vector<DeformationNode<3>* > defNodes;
 
   // Input .vtk or inp files containing nodes and connectivities
-  string token;
-  ifs >> token;
+  ifs >> temp;
   ifs >> npts; 
-  NumDoF = npts*3; // Assumed all nodes have 3 DoF
   nodes.reserve(npts);
   defNodes.reserve(npts);
   vector<ProteinNode *> Proteins;
@@ -243,10 +242,10 @@ int main(int argc, char* argv[])
   // Read in triangle connectivities
   vector< tvmet::Vector<int,3> > connectivities;
   tvmet::Vector<int,3> ct;
-  uint ntri = 0, ElemNum = 0, tmp = 0;
+  uint ntri = 0, ElemNum = 0;
   map<DeformationNode<3> *, vector<DeformationNode<3> *> > PossibleHosts;
 
-  ifs >> token;
+  ifs >> temp;
   ifs >> ntri;
   connectivities.reserve(ntri);
   for (uint i = 0; i < ntri; i++)
@@ -282,7 +281,7 @@ int main(int argc, char* argv[])
        << "Number of proteins  = " << Proteins.size()       << endl
        << "Number of elements  = " << connectivities.size() << endl;
 
-  // Close mesh file in inp format
+  // Close mesh file
   ifs.close();
   
 
@@ -295,7 +294,7 @@ int main(int argc, char* argv[])
   ProteinLennardJones Mat(epsilon, sigma);
 
   // Then initialize potential body
-  ProteinBody * PrBody = new ProteinBody(Proteins, &Mat, PotentialSearchRF);  
+  ProteinBody * PrBody = new ProteinBody(Proteins, &Mat, PotentialSearchRF, pressure);  
   PrBody->compute(true, false, false);
   cout << "Initial protein body energy = " << PrBody->energy() << endl;
 
