@@ -149,7 +149,7 @@ namespace voom
 	      MinDist = R;
 	    }
 	  } 
-	}
+	} // j loop over NumProteins
 	
 	for (uint j = 0; j < NeighborDist.size(); j++)
 	{
@@ -162,9 +162,10 @@ namespace voom
 	  if (NeighborDist[j] <= MinDist*1.8) {
 	    Valence80[i] += 1;
 	  }
-	}
+	} // j loop over NeighborDist
       } // i loop
 	  
+
 
       // Node Section
       ofs1 << "# vtk DataFile Version 3.0" << endl
@@ -203,7 +204,7 @@ namespace voom
 	ofs1 << Valence80[i] << endl;
       }
 
-    } // print Interactions
+    } // print particles
 
   }; // PrintingArchaeaS
   
