@@ -33,6 +33,13 @@ namespace voom {
     virtual ~ProteinLennardJones() {};
 
     double computeEnergy(ProteinNode * A,  ProteinNode *B);
+    double computedWdEqPar(ProteinNode * A,  ProteinNode *B);
+    double computeddWddEqPar(ProteinNode * A,  ProteinNode *B);
+
+    void setEquilibriumParam(double a){ _sigma = a; };
+    double getEquilibriumParam(){ return _sigma; };
+    void setEquilibriumR(double R){ _sigma = R/pow(2.0, 1.0/6.0); };
+    double getEquilibriumR(){ return (_sigma*pow(2.0, 1.0/6.0)); };
 
     void setScaling(double epsilon) { _epsilon = epsilon; };
     void setEpsilon(double epsilon) { _epsilon = epsilon; };

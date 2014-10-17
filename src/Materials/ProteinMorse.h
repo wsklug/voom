@@ -33,6 +33,13 @@ namespace voom {
     virtual ~ProteinMorse() {};
 
     double computeEnergy(ProteinNode * A,  ProteinNode *B);
+    double computedWdEqPar(ProteinNode * A,  ProteinNode *B);
+    double computeddWddEqPar(ProteinNode * A,  ProteinNode *B);
+
+    void setEquilibriumParam(double a){ _Rshift = a; };
+    double getEquilibriumParam(){ return _Rshift; };
+    void setEquilibriumR(double R){ _Rshift = R; };
+    double getEquilibriumR(){ return _Rshift; };
 
     void setScaling(double epsilon) { _epsilon = epsilon; };
     void setEpsilon(double epsilon) { _epsilon = epsilon; };

@@ -57,6 +57,12 @@ namespace voom {
   {
   public:
     virtual double computeEnergy(ProteinNode * A,  ProteinNode *B) = 0;
+    virtual double computedWdEqPar(ProteinNode * A,  ProteinNode *B) = 0;
+    virtual double computeddWddEqPar(ProteinNode * A,  ProteinNode *B) = 0;
+    virtual void setEquilibriumParam(double a) = 0;
+    virtual double getEquilibriumParam() = 0;
+    virtual void setEquilibriumR(double R) = 0;
+    virtual double getEquilibriumR() = 0;
   }; 
   
 }
