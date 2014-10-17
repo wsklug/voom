@@ -23,8 +23,8 @@
 
 namespace voom
 {
-  ProteinBody::ProteinBody(vector<ProteinNode *> & Proteins, ProteinPotential * Mat, double SearchR):
-    _proteins(Proteins), _mat(Mat), _searchR(SearchR) 
+  ProteinBody::ProteinBody(vector<ProteinNode *> & Proteins, ProteinPotential * Mat, double SearchR, double Pressure):
+    _proteins(Proteins), _mat(Mat), _searchR(SearchR), _pressure(Pressure)
   {
     
 #ifdef WITH_MPI
@@ -51,7 +51,7 @@ namespace voom
 	}
       }
       
-      _elements.push_back(domain);
+      _prElements.push_back(domain);
     }
 
   }; // ProteinBody constructor
@@ -74,7 +74,7 @@ namespace voom
 	}
       }
       
-      _elements[i] = domain;
+      _prElements[i] = domain;
     }
     
   };
@@ -88,20 +88,80 @@ namespace voom
     if(f0) {
       _energy = 0.0;
     
-      // Loop over material objects
-      for (uint i = 0; i < _elements.size(); i++)
+      // Loop over protein elements
+      for (uint i = 0; i < _prElements.size(); i++)
       {
 	ProteinNode * A = _proteins[i];
-	vector<ProteinNode *> domain = _elements[i];
+	vector<ProteinNode *> domain = _prElements[i];
 	for (uint j = 0; j < domain.size(); j++)
 	{
 	  _energy += _mat->computeEnergy(A, domain[j]);
 	}
       }
-    }
+      _energy -= _pressure*pow(_mat->getEquilibriumR(), 2.0);
+    } // if(f0) loop
     
-    return;
   };
 
+
+
+  double ProteinBody::computedWdEqPar()
+  {
+    double dWdEqPar = 0.0;
+    // Loop over protein elements
+    for (uint i = 0; i < _prElements.size(); i++)
+    {
+      ProteinNode * A = _proteins[i];
+      vector<ProteinNode *> domain = _prElements[i];
+      for (uint j = 0; j < domain.size(); j++)
+      {
+	dWdEqPar += _mat->computedWdEqPar(A, domain[j]);
+      }
+    }
+    return dWdEqPar;
+  };
+
+
+
+  double ProteinBody::computeddWddEqPar()
+  {
+    double ddWddEqPar = 0.0;
+    // Loop over protein elements
+    for (uint i = 0; i < _prElements.size(); i++)
+    {
+      ProteinNode * A = _proteins[i];
+      vector<ProteinNode *> domain = _prElements[i];
+      for (uint j = 0; j < domain.size(); j++)
+      {
+	ddWddEqPar += _mat->computeddWddEqPar(A, domain[j]);
+      }
+    }
+    return ddWddEqPar;
+  }
+
+
+
+  // reset Equilibrium parameter
+  void ProteinBody::resetEquilibrium()
+  {
+    double a_prev = _mat->getEquilibriumParam(), a_new = 0.0;
+    double a_initial = a_prev;
+    double error = 1.0, tol = 1.0e-8;
+    unsigned int iter = 0, MaxIter = 100;
+
+    while (error > tol && iter < MaxIter)
+    {
+      a_new = a_prev - this->computedWdEqPar()/this->computeddWddEqPar();
+      error = fabs(a_new-a_prev);
+      iter++;
+      a_prev = a_new;
+      _mat->setEquilibriumParam(a_new);
+    }
+    
+    cout << endl << "ProteinBody reset equilibrium" << endl;
+    cout << "Iterations = " << iter << endl;
+    cout << "Error      = " << error << endl;
+    cout << "Previous EQ param. = " << a_initial << " New EQ param. = " << a_new << endl << endl;
+  }
 
 } // namespace voom
