@@ -39,15 +39,21 @@ namespace voom
   class ProteinBody : public Body
   {
   public:
-    ProteinBody(vector<ProteinNode *> & Proteins, ProteinPotential * Mat, double SearchR);
+    ProteinBody(vector<ProteinNode *> & Proteins, ProteinPotential * Mat, double SearchR, double Pressure = 0.0);
     
     //! Destructor
     ~ProteinBody() {};
     
     //! Do mechanics on Body
     void compute( bool f0, bool f1, bool f2 );
-
+    double computedWdEqPar();
+    double computeddWddEqPar();
+    
     void recomputeNeighbors(double searchR);
+
+    void resetEquilibrium();
+
+    ProteinPotential * getPotential() { return _mat; };
     
     //! General printing of a Paraview file
     void printParaview(const string name) const {
@@ -58,13 +64,16 @@ namespace voom
     vector<ProteinNode* > & _proteins;
 
     // Protein elements
-    vector<vector<ProteinNode* > > _elements;
+    vector<vector<ProteinNode* > > _prElements;
     
     // Protein material
     ProteinPotential * _mat;
 
     // Search radius
     double _searchR;
+
+    // Pressure to be included when energy is computed
+    double _pressure;
 
 #ifdef WITH_MPI
     int _processorRank;
