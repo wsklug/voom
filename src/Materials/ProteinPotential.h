@@ -8,7 +8,7 @@
 //----------------------------------------------------------------------
 //
 /*! 
-  \file ProteninPotential.h
+  \file ProteinPotential.h
 */
 
 #ifndef _PROTEINPOTENTIAL_H_
@@ -57,6 +57,7 @@ namespace voom {
   {
   public:
     virtual double computeEnergy(ProteinNode * A,  ProteinNode *B) = 0;
+    virtual double computeForce(ProteinNode * A,  ProteinNode *B) = 0;
     virtual double computedWdEqPar(ProteinNode * A,  ProteinNode *B) = 0;
     virtual double computeddWddEqPar(ProteinNode * A,  ProteinNode *B) = 0;
     virtual void setEquilibriumParam(double a) = 0;

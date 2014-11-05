@@ -33,6 +33,7 @@ namespace voom {
     virtual ~ProteinLennardJones() {};
 
     double computeEnergy(ProteinNode * A,  ProteinNode *B);
+    double computeForce(ProteinNode * A,  ProteinNode *B);
     double computedWdEqPar(ProteinNode * A,  ProteinNode *B);
     double computeddWddEqPar(ProteinNode * A,  ProteinNode *B);
 

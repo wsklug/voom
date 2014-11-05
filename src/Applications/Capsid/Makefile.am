@@ -1,4 +1,4 @@
-bin_PROGRAMS    = relax indent refine disassemble grow dual
+bin_PROGRAMS    = relax indent refine disassemble grow dual indentWparticles
 AM_CPPFLAGS =-I$(srcdir)/../../       		\
 		-I$(srcdir)/../../Body/		\
 		-I$(srcdir)/../../Model/		\
@@ -12,7 +12,7 @@ AM_CPPFLAGS =-I$(srcdir)/../../       		\
 		-I$(srcdir)/../../Solvers/		\
 		-I$(srcdir)/../../Mesh/		\
 		-I$(blitz_includes) -I$(tvmet_includes)
-AM_CXXFLAGS = -ggdb
+AM_CXXFLAGS = -ggdb -O0
 #
 AM_LDFLAGS = -L$(blitz_libraries) \
         -L../                          	\
@@ -70,3 +70,5 @@ dual_SOURCES    =  dual.cc
 disassemble_SOURCES    =  disassemble.cc 
 #
 grow_SOURCES    =  grow.cc C0MembraneGLoutput.cc
+#
+indentWparticles_SOURCES    =  indentWparticles.cc 

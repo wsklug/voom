@@ -320,8 +320,12 @@ namespace voom
 	p!=_quadPoints.end(); p++){
       tvmet::Vector< Vector3D, 2 > a;
       tvmet::Matrix< Vector3D, 2, 2 > aPartials;
-      a(0) = edgelen,0.,0.;
-      a(1) = edgelen*cos(M_PI/3.),edgelen*sin(M_PI/3.),0.;
+      a(0) = edgelen, 0.0, 0.0;
+      // WSK: an example of what not to do... Seriously, when you can
+      // evaluate a complicated expression in closed form, you should
+      // do so.
+      //  a(1) = edgelen*cos(M_PI/3.),edgelen*sin(M_PI/3.),0.;
+      a(1) = edgelen*0.5, edgelen*0.5*sqrt(3.0), 0.0;
 			
       Material_t& material = p->material;
 

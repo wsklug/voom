@@ -39,6 +39,9 @@ namespace voom {
 
   } // Morse::updateState
 
+  double ProteinMorse::computeForce(ProteinNode * A, ProteinNode *B){
+    //TODO: Amit: Somebody needs to implement this if they want to use it
+  }
   double ProteinMorse::computedWdEqPar(ProteinNode * A,  ProteinNode *B)
   {
     double r = A->getDistance(B);

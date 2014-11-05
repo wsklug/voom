@@ -100,7 +100,18 @@ namespace voom
       }
       _energy -= _pressure*pow(_mat->getEquilibriumR(), 2.0);
     } // if(f0) loop
-    
+
+    //To compute forces
+    if(f1){
+      for (uint i=0; i < _prElements.size(); i++){
+	ProteinNode * A = _proteins[i];
+	vector<ProteinNode *> domain = _prElements[i];
+	for (uint j = 0; j < domain.size(); j++)
+	  {
+	    _mat->computeForce(A, domain[j]);
+	  }
+      }
+    }
   };
 
 

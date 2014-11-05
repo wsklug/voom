@@ -1,5 +1,6 @@
 #include <string>
 #include <iostream>
+#include <time.h>
 #include <vector>
 #include <fstream>
 #include <unistd.h>
@@ -26,6 +27,13 @@
 #include <vtkGeometryFilter.h>
 #include <vtkPolyData.h>
 #include <vtkSetGet.h>
+#include <vtkExtractEdges.h>
+#include <vtkCellArray.h>
+
+#include "ProteinLennardJones.h"
+#include "ProteinBody.h"
+// #include "MontecarloProtein.h"
+#include "Utils/PrintingProtein.h"
 
 #if defined(_OPENMP)
 #include <omp.h>
@@ -39,16 +47,18 @@ using namespace voom;
 
 int main(int argc, char* argv[])
 {
-  if( argc < 2 ) {
-      cout << "Usage: indent modelName [-g gamma -p prestressFlag -n nsteps]."
-	   << endl;
-      return(0);
+  clock_t t1,t2;
+  t1=clock();
+ if( argc < 2 ) {
+    cout << "Usage: indent modelName [-g gamma -p prestressFlag -n nsteps]."
+	 << endl;
+    return(0);
   }
-
+  
 #if defined(_OPENMP)
   std::cout << omp_get_max_threads() << " OpenMP threads." << std::endl;
 #endif
-
+  
   bool verbose=true;
 #ifdef WITH_MPI
   MPI_Init( &argc, &argv );
@@ -56,7 +66,7 @@ int main(int argc, char* argv[])
   MPI_Comm_rank( MPI_COMM_WORLD, &procId );
   if( procId !=0 ) verbose=false;
 #endif
-
+  
   for(int i=0; i<argc; i++) {
     std::cout << std::setw(8) << i << "\t"
 	      << argv[i] << std::endl;
@@ -148,7 +158,7 @@ int main(int argc, char* argv[])
   vtkDataSetReader * reader = vtkDataSetReader::New();
   reader->SetFileName( inputFileName.c_str() );
 
-  //We will use this object shortly to ensure consistent triangle orientations
+  //We will use this object, shortly, to ensure consistent triangle orientations
   vtkPolyDataNormals * normals = vtkPolyDataNormals::New();
 
   //We have to pass a vtkPolyData to vtkPolyDataNormals::SetInput()
@@ -178,11 +188,28 @@ int main(int argc, char* argv[])
   std::cout << "mesh->GetNumberOfPoints() = " << mesh->GetNumberOfPoints()
 	    << std::endl;
 
+  //Following few lines of code are meant to obtain number of edges
+  //from the mesh
+  vtkSmartPointer<vtkExtractEdges> extractedEdges = 
+    vtkSmartPointer<vtkExtractEdges>::New();
+  extractedEdges->SetInput(mesh);
+  extractedEdges->Update();
+  //Uncommenting the next line fetches the line entities, if you want 
+  //them : Amit
+  //vtkCellArray * lines = extractedEdges()->GetOutput()->GetLines();
+
+  //Number of Cells in vtkExtractEdges = number of edges : Amit
+  std::cout << "Number of edges in the mesh= " 
+	    << extractedEdges->GetOutput()->GetNumberOfCells()
+	    <<std::endl; 
+
+
   // create vector of nodes
   double Rcapsid = 1.0;
   int dof=0;
   std::vector< NodeBase* > nodes;
   std::vector< DeformationNode<3>* > defNodes;
+  vector<ProteinNode *> Proteins;
   double Ravg = 0;
 
   // read in points
@@ -193,9 +220,12 @@ int main(int argc, char* argv[])
     Ravg += tvmet::norm2(x);
     NodeBase::DofIndexMap idx(3);
     for(int j=0; j<3; j++) idx[j]=dof++;
-    DeformationNode<3>* n = new DeformationNode<3>(id,idx,x);
+    DeformationNode<3>* n = new DeformationNode<3>(id,idx,x);    
     nodes.push_back( n );
     defNodes.push_back( n );
+    //We will add a Protein at every node - Amit
+    ProteinNode * PrNode = new ProteinNode(n);
+    Proteins.push_back(PrNode);
   }
   assert(nodes.size()!=0);
   Ravg /= nodes.size();
@@ -231,7 +261,8 @@ int main(int argc, char* argv[])
       defNodes[i]->setPoint(x);
       defNodes[i]->setPosition(x);
     }
-  } else {
+  }
+  else {
     for(int i=0; i<defNodes.size(); i++) {
       DeformationNode<3>::Point x;
       x = defNodes[i]->point();
@@ -247,13 +278,17 @@ int main(int argc, char* argv[])
   // Introduce a numerical scaling factor to make energy and forces
   // large enough to avoid issues with machine precision.  Later
   // divide forces by factor when printing to file.
-  double scalingFactor=1.0e6;
+  double scalingFactor = 1.0e6;
   Y *= scalingFactor;
   KC *= scalingFactor;
 
-  double nu = 1.0/3.0;
+  //Amit: Set nu=0 and Yb=0 so that LoopShellBody does not handle
+  //stretching anymore.
+  //double nu = 1.0/3.0;
+  //double Yb=Y;
+  double Yb=0.0;  
+  double nu = 0.0;
   double KG = -2.0*(1.0-nu)*KC;
-//   double KG = 0.0;
 
   if(verbose) 
     std::cout << " Y: " << Y << std::endl
@@ -265,8 +300,6 @@ int main(int argc, char* argv[])
   // create Body
   int quadOrder = 2;
 
-  double Yb=Y;
-  
   typedef FVK MaterialType;
   if(CST) Yb=1.0e-6*Y;
   MaterialType bending( KC, KG, C0, Yb, nu );
@@ -350,9 +383,35 @@ int main(int argc, char* argv[])
     bdc.push_back(bdm);
   }
 
+  // Potential input parameters
+  double PotentialSearchRF = 1.0;
+  double epsilon = 1.0;
+  double sigma = 1.0;
+  double pressure = 0.0;
 
+  ifstream LennardJonesInp("LennardJones.inp");
+  string temp;
+  LennardJonesInp>>temp>>sigma;
+  LennardJonesInp>>temp>>epsilon;
+  LennardJonesInp>>temp>>PotentialSearchRF;
+  LennardJonesInp>>temp>>pressure;
+  std::cout<< "Lennard-Jones potential parameters:" << endl
+	   << "sigma =" << sigma << endl
+	   << "epsilon =" << epsilon << endl
+	   << "PotentialSearchRF =" << PotentialSearchRF << endl
+	   << "pressure =" << pressure << endl;
+
+  // Protein body
+  // Initiliaze potential material
+  ProteinLennardJones Mat(epsilon, sigma);
+
+  // Then initialize potential body
+  ProteinBody * PrBody = new ProteinBody(Proteins, &Mat, PotentialSearchRF, pressure);  
+  PrBody->compute(true, false, false);
+  std::cout << "Initial protein body energy = " << PrBody->energy() << endl;  
+  bdc.push_back(PrBody);  
+  
   Model model(bdc,nodes);
-
 
   int m=5;
   int maxIter=500;//1000;//model.dof();
@@ -361,6 +420,7 @@ int main(int argc, char* argv[])
   int iprint = 0;
   int maxIter_inp=0;
   ifstream lbfgsbinp("lbfgsb.inp");
+  
   lbfgsbinp >> iprint >> factr >> pgtol >> m >> maxIter_inp;
   if(verbose) 
     std::cout << "Input iprint: " << iprint << std::endl
@@ -370,7 +430,7 @@ int main(int argc, char* argv[])
 	      << "Input maxIter: " << maxIter_inp << std::endl;
   maxIter = std::max(maxIter,maxIter_inp);
 
-#if 1
+#if 0
   Lbfgsb solver(model.dof(), m, factr, pgtol, iprint, maxIter );//(true);
 
 
@@ -513,7 +573,7 @@ int main(int argc, char* argv[])
   int step=0;
 
   // Following variables are for calling LoopShellBody::Remesh()
-  double ARtol = 2.0; //ARtol = Aspect Ratio tolerance
+  double ARtol = 1.1; //ARtol = Aspect Ratio tolerance
   uint elementsChanged = 0;
 
   for(double Z = Zbegin; /*Z<Zend+0.5*dZ*//*Z>=Zbegin*/; Z+=dZ, step++) {
@@ -733,10 +793,12 @@ int main(int argc, char* argv[])
 	   dynamic_cast<MB*>(bdc[b])->Remesh(ARtol,stretching,quadOrder);*/
       }
       else{
-	//We assume that if body is not of MB type then it must be
-	//LSB type
-	std::cout<<"I am about to try swapping element sides...";
-	elementsChanged =dynamic_cast<LSB*>(bdc[b])->Remesh(ARtol,bending,quadOrder);
+	//If it's not MB type let's check for LSB type
+	LSB* checkLSBType = dynamic_cast<LSB*>(bdc[b]);
+	if(checkLSBType !=NULL){
+	  std::cout<<"I am about to try swapping element sides..."<<std::endl;
+	  elementsChanged =dynamic_cast<LSB*>(bdc[b])->Remesh(ARtol,bending,quadOrder);
+	}
       }
 
       //Print out the number of elements that changed due to remeshing
@@ -767,8 +829,11 @@ int main(int argc, char* argv[])
 
   FvsZ.close();
 
-  std::cout << "Indentation complete." << std::endl;
-
+  std::cout << "Indentation complete." << std::endl; 
+ 
+  t2=clock();
+  float diff ((float)t2-(float)t1);
+  std::cout<<"Total execution time: "<<diff/CLOCKS_PER_SEC<<" seconds"<<std::endl;
   return 0;
 }
 

@@ -1,6 +1,0 @@
-# vtk DataFile Version 2.0
-icos.vtk dual 
-ASCII
-DATASET POLYDATA
-POINTS  0  double
-POLYGONS  0  0

@@ -21,6 +21,19 @@ namespace voom {
     return 2.0*_epsilon*(pow(_sigma/r, 12.0) - pow(_sigma/r, 6.0)); // only return half energy - the rest comes from counting the other particle
   }
 
+  double ProteinLennardJones::computeForce(ProteinNode * A,  ProteinNode *B)
+  {
+    double r = A->getDistance(B);
+    // Lennard Jones forces
+    double factor = (4.0*_epsilon/pow(r, 2.0))*(6.0*pow(_sigma/r, 6.0) - 12.0*pow(_sigma/r, 12.0));
+    
+    Vector3D ForceIncrement(0.0);
+    ForceIncrement = factor*(A->getHostPosition() - B->getHostPosition());
+    A->getHost()->updateForce(ForceIncrement);
+    ForceIncrement = -ForceIncrement;
+    B->getHost()->updateForce(ForceIncrement);
+  }
+
   double ProteinLennardJones::computedWdEqPar(ProteinNode * A,  ProteinNode *B)
   {
     double r = A->getDistance(B);

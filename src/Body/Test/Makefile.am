@@ -1,4 +1,4 @@
-bin_PROGRAMS    = test axi body3d TestPotentialBody TestViscosityBody
+bin_PROGRAMS    = test axi body3d TestPotentialBody TestViscosityBody TestProteinBody
 INCLUDES        =-I$(srcdir)/../../       		\
 		-I$(srcdir)/../../Body/		\
 		-I$(srcdir)/../../Model/		\
@@ -17,6 +17,8 @@ axi_SOURCES    = axi.cc
 body3d_SOURCES = TestBody3D.cpp
 TestPotentialBody_SOURCES = TestPotentialBody.cc
 TestViscosityBody_SOURCES = TestViscosityBody.cc
+TestProteinBody_SOURCES = TestProteinBody.cc
+
 AM_LDFLAGS    = -L$(blitz_libraries) \
         -L../                          	\
         -L../../Materials/             	\
