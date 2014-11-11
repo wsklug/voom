@@ -284,7 +284,8 @@ namespace voom
   }
 	
   template<class Quadrature_t, class Material_t, class Shape_t>
-  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::resetEquilateral(double hTarget = 0) {
+  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::resetEquilateral(double hTarget) {
+    double hAve = 1.0;
     if ( hTarget <= 0 ) {
       // compute average element edge length
       double hAve = 0.0;
