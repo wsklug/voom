@@ -1197,9 +1197,9 @@ namespace voom
       for(FeElementIterator e=_shells.begin(); e!=_shells.end(); e++) {
 	delete (*e);
       }
-      _shells.clear();
-      _elements.clear();
-      _active.clear();
+      // _shells.clear();
+      // _elements.clear();
+      // _active.clear();
     }
 
     // Equal to constructor - can be substituted there too
@@ -1376,18 +1376,13 @@ namespace voom
 			   _areaConstraint,
 			   _totalCurvatureConstraint
 			   );
-      _shells.push_back(elem);
-
-      _active.push_back(true);
+      _shells[f]=elem;
+      _elements[f] = elem;
+      _active[f]=true;
       
     }
 
     delete mesh;
-
-    _elements.reserve(_shells.size());
-    for(ConstFeElementIterator e=_shells.begin(); e!=_shells.end(); e++) {
-      _elements.push_back(*e);
-    }
 
     clock_t t2=clock();
     std::cout << "Done building elements.  Elapsed time: "
