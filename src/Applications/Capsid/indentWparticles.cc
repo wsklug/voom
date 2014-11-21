@@ -18,20 +18,27 @@
 #include "RigidHemisphereAL.h"
 #include "RigidPlateAL.h"
 
-#include <vtkCell.h>
+#include <vtkDataSet.h>
+#include <vtkPointData.h>
+#include <vtkPolyData.h>
 #include <vtkDataSetReader.h>
 #include <vtkPolyDataWriter.h>
 #include <vtkPolyDataNormals.h>
 #include <vtkSmartPointer.h>
 #include <vtkUnstructuredGrid.h>
 #include <vtkGeometryFilter.h>
-#include <vtkPolyData.h>
 #include <vtkSetGet.h>
 #include <vtkExtractEdges.h>
 #include <vtkCellArray.h>
+#include <vtkIdList.h>
+#include <vtkUnsignedIntArray.h>
+#include <vtkPolyDataWriter.h>
+#include <vtkCell.h>
 
-#include "ProteinLennardJones.h"
-#include "ProteinBody.h"
+//#include "ProteinLennardJones.h"
+#include "LennardJones.h"
+//#include "ProteinBody.h"
+#include "PotentialBody.h"
 // #include "MontecarloProtein.h"
 #include "Utils/PrintingProtein.h"
 
@@ -80,7 +87,8 @@ int main(int argc, char* argv[])
   double friction_inp=0.0;
   double minStep_inp=0.01;
   double step_inp=0.0;
-  double remesh_inp=0.0; //
+  // double remesh_inp=0.0; //
+  bool remesh = false;
   string prestressFlag = "yes";
   bool CST=false;
   bool badCommandLine=false;
@@ -171,7 +179,7 @@ int main(int argc, char* argv[])
       vtkSmartPointer<vtkGeometryFilter>::New();
     geometryFilter->SetInput(unstructuredGrid);
     geometryFilter->Update(); 
-    vtkPolyData* polydata = geometryFilter->GetOutput();
+    vtkSmartPointer<vtkPolyData> polydata = geometryFilter->GetOutput();
     normals->SetInput( polydata);
   }
   else{
@@ -183,7 +191,7 @@ int main(int argc, char* argv[])
   normals->ConsistencyOn();
   normals->SplittingOff();
   normals->AutoOrientNormalsOn();
-  vtkPolyData * mesh = normals->GetOutput();
+  vtkSmartPointer<vtkPolyData> mesh = normals->GetOutput();
   mesh->Update();
   std::cout << "mesh->GetNumberOfPoints() = " << mesh->GetNumberOfPoints()
 	    << std::endl;
@@ -209,7 +217,7 @@ int main(int argc, char* argv[])
   int dof=0;
   std::vector< NodeBase* > nodes;
   std::vector< DeformationNode<3>* > defNodes;
-  vector<ProteinNode *> Proteins;
+  // vector<ProteinNode *> Proteins;
   double Ravg = 0;
 
   // read in points
@@ -224,8 +232,8 @@ int main(int argc, char* argv[])
     nodes.push_back( n );
     defNodes.push_back( n );
     //We will add a Protein at every node - Amit
-    ProteinNode * PrNode = new ProteinNode(n);
-    Proteins.push_back(PrNode);
+    //ProteinNode * PrNode = new ProteinNode(n);
+    //Proteins.push_back(PrNode);
   }
   assert(nodes.size()!=0);
   Ravg /= nodes.size();
@@ -278,7 +286,7 @@ int main(int argc, char* argv[])
   // Introduce a numerical scaling factor to make energy and forces
   // large enough to avoid issues with machine precision.  Later
   // divide forces by factor when printing to file.
-  double scalingFactor = 1.0e6;
+  double scalingFactor = 1.0;//e6;
   Y *= scalingFactor;
   KC *= scalingFactor;
 
@@ -309,6 +317,23 @@ int main(int argc, char* argv[])
   
   bd->setOutput(paraview);
 
+  double EquilateralEdgeLength = 0.0;
+
+  for(int i=0; i<connectivities.size(); i++) {
+    std::vector<int> cm(3);
+    for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
+    // Edge vectors in current config.
+    tvmet::Vector<double,3> 
+      e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
+      e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
+      e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
+      eCent(defNodes[cm[2]]->point());
+    // Compute average edge length for each triangle
+    EquilateralEdgeLength += 
+      (tvmet::norm2(e31) + tvmet::norm2(e32) + tvmet::norm2(e12))/3.0;
+  }
+  EquilateralEdgeLength /= connectivities.size();
+
   // If we want pre-stress removed, then reset the reference
   // configuration for stretching, and reset the spontaneous curvature
   // for bending.
@@ -322,20 +347,7 @@ int main(int argc, char* argv[])
 	p->material.setSpontaneousCurvature(2.0*( p->material.meanCurvature() ) );
       }
     }
-    double AvgEdgeLength = 0.0;
-    for(int i=0; i<connectivities.size(); i++) {
-      std::vector<int> cm(3);
-      for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
-      // Edge vectors in current config.
-      tvmet::Vector<double,3> e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
-	e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
-	e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
-	eCent(defNodes[cm[2]]->point());
-      // Compute average edge length for each triangle
-      AvgEdgeLength += (tvmet::norm2(e31) + tvmet::norm2(e32) + tvmet::norm2(e12))/3.0;
-    }
-    AvgEdgeLength /= connectivities.size();
-    bd->SetRefConfiguration(AvgEdgeLength);
+    bd->SetRefConfiguration(EquilateralEdgeLength);
   }
 
   // create Model
@@ -360,20 +372,7 @@ int main(int argc, char* argv[])
     if( prestressFlag == "yes" ) {
       // reset the ref configuration of all triangles to be
       // equilateral 
-     double AvgEdgeLength = 0.0;
-      for(int i=0; i<connectivities.size(); i++) {
-	std::vector<int> cm(3);
-	for(int j=0; j<3; j++) cm[j]=s_connectivities[i][j];
-	// Edge vectors in current config.
-	tvmet::Vector<double,3> e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
-	  e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
-	  e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
-	  eCent(defNodes[cm[2]]->point());
-	// Compute average edge length for each triangle
-	AvgEdgeLength += (tvmet::norm2(e31) + tvmet::norm2(e32) + tvmet::norm2(e12))/3.0;
-      }
-      AvgEdgeLength /= s_connectivities.size();
-      bdm->SetRefConfiguration(AvgEdgeLength);
+      bdm->SetRefConfiguration(EquilateralEdgeLength);
     } else {
       // reset the ref configuration of all triangles to the current
       // configuration
@@ -387,26 +386,30 @@ int main(int argc, char* argv[])
   double PotentialSearchRF = 1.0;
   double epsilon = 1.0;
   double sigma = 1.0;
-  double pressure = 0.0;
+  double ARtol = 1.1;
+  //double pressure = 0.0;
 
-  ifstream LennardJonesInp("LennardJones.inp");
+  ifstream MiscInp("MiscInp.inp");
   string temp;
-  LennardJonesInp>>temp>>sigma;
-  LennardJonesInp>>temp>>epsilon;
-  LennardJonesInp>>temp>>PotentialSearchRF;
-  LennardJonesInp>>temp>>pressure;
+  MiscInp>>temp>>sigma;
+  MiscInp>>temp>>epsilon;
+  MiscInp>>temp>>PotentialSearchRF;
+  MiscInp>>temp>>remesh;
+  MiscInp>>temp>>ARtol;
   std::cout<< "Lennard-Jones potential parameters:" << endl
 	   << "sigma =" << sigma << endl
 	   << "epsilon =" << epsilon << endl
 	   << "PotentialSearchRF =" << PotentialSearchRF << endl
-	   << "pressure =" << pressure << endl;
+	   << "Is Remesh On? " << remesh << endl
+	   << "ARtol =" << ARtol << endl;
 
-  // Protein body
+  // Protein body implemented using Lennard-Jones body
   // Initiliaze potential material
-  ProteinLennardJones Mat(epsilon, sigma);
+  // ProteinLennardJones Mat(epsilon, sigma);
+  LennardJones Mat(epsilon, sigma);
 
   // Then initialize potential body
-  ProteinBody * PrBody = new ProteinBody(Proteins, &Mat, PotentialSearchRF, pressure);  
+  PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);  
   PrBody->compute(true, false, false);
   std::cout << "Initial protein body energy = " << PrBody->energy() << endl;  
   bdc.push_back(PrBody);  
@@ -430,21 +433,7 @@ int main(int argc, char* argv[])
 	      << "Input maxIter: " << maxIter_inp << std::endl;
   maxIter = std::max(maxIter,maxIter_inp);
 
-#if 0
   Lbfgsb solver(model.dof(), m, factr, pgtol, iprint, maxIter );//(true);
-
-
-#else
-  CGfast solver;
-  int restartStride = model.dof()/2;
-  int printStride = 100;//restartStride;
-  double tolLS = 1.0+0*pgtol/sqrt(model.dof());
-  int maxIterLS = 20;
-  double sigma = 5.0e-6;
-  solver.setParameters(CGfast::PR,
-		       maxIter,restartStride,printStride,
-		       pgtol,pgtol,tolLS,maxIterLS,sigma);
-#endif
 
   std::cout << "Relaxing shape for gamma = " << gamma_inp << std::endl
 	    << "Energy = " << solver.function() << std::endl;
@@ -572,8 +561,7 @@ int main(int argc, char* argv[])
 
   int step=0;
 
-  // Following variables are for calling LoopShellBody::Remesh()
-  double ARtol = 1.1; //ARtol = Aspect Ratio tolerance
+  // Following variables is for output from LoopShellBody::Remesh()
   uint elementsChanged = 0;
 
   for(double Z = Zbegin; /*Z<Zend+0.5*dZ*//*Z>=Zbegin*/; Z+=dZ, step++) {
@@ -654,23 +642,6 @@ int main(int argc, char* argv[])
  		  << "bottom penetration = " << glass->penetration() << std::endl;
       }
 	
-      // update viscosity
-//       if( vr.velocity() > 2*targetVelocity && vr.viscosity() < maxViscosity ) {
-
-// 	// Displacements very large; re-do last step with max viscosity
-// 	std::cout << std::endl
-// 		  << "Velocity too large.  Re-do previous step with max viscosity." 
-// 		  << std::endl << std::endl;
-// 	for(int i=0; i<model.dof(); i++ ) solver.field(i) = vSave(i);
-// 	model.putField(solver);
-// 	vr.setViscosity(maxViscosity);	
-//       } else {
-// 	// adjust viscosity to get velocity equal to target
-// 	double viscosity = vr.viscosity()*vr.velocity()/targetVelocity;
-// 	viscosity = std::max(viscosity,minViscosity);
-// 	vr.setViscosity(viscosity);
-//       }
-
       if(verbose) {
 	std::cout << "VISCOSITY: " << std::endl
 		  << "          velocity = " << vr.velocity() << std::endl
@@ -705,20 +676,6 @@ int main(int argc, char* argv[])
     //
     // Do we want to keep this solution or back up and try again?
     //
-//     if( afm->FZ() < F_prev && std::abs(dZ) > minStep_inp ) {
-//       // drop in force.  Reset viscosity, back up, and try a smaller increment 
-//       Z_drop = Z;
-//       std::cout << "Force drop after increment of "
-// 		<< dZ << std::endl;
-
-//       //vr.setViscosity(viscosity_inp);
-//       for(int i=0; i<model.dof(); i++ ) solver.field(i) = x_prev(i);
-//       model.putField(solver);
-//       Z -= dZ;
-//       dZ /= 2.0;
-//       std::cout << "Trying again with increment of " << dZ << std::endl;
-//       continue;
-//     } 
 
     //
     // Keeping solution
@@ -740,25 +697,32 @@ int main(int argc, char* argv[])
     if ( unload && Z >= Zend ) { // reached max indentation, now unload by reversing dZ
       dZ = -dZ;
     } 
-//     else if ( Z+dZ >= Zend ) { // almost at max indentation
-//       dZ = Zend - Z;    
-//     } else if ( Z < Z_drop && dZ > minStep_inp ) {
-//       // approaching previous drop point, take a smaller step forward
-//       dZ /= 2.0;
-//       std::cout << "Decreasing increment to " << dZ << std::endl;
-//     } else if ( afm->FZ() > F_prev && Z > Z_drop && dZ < step_inp ) {
-//       // past previous drop point, take a bigger step
-//       dZ *= 2.0;
-//       std::cout << "Increasing increment to " << dZ << std::endl;
-//     }
     F_prev = afm->FZ();
 
+    //This is where we remesh before next indentation step
 
-    for(int b=0; b<bdc.size(); b++) {
-      char name[100]; 
-      sprintf(name,"%s-body%d-step%04d",modelName.c_str(),b,step);
-      bdc[b]->printParaview(name);
-    }
+    // Do this only for the bending body since LoopShellBody is the
+    // only one that has remeshing implemented
+
+    if(remesh) {     
+      elementsChanged = bd->Remesh(ARtol,bending,quadOrder);
+
+      //Print out the number of elements that changed due to remeshing
+      if(elementsChanged > 0){
+	std::cout<<"Number of elements that changed after remeshing = "
+		 <<elementsChanged<<"."<<std::endl;
+
+	//If some elements have changed then we need to reset the
+	//reference configuration with average side lengths
+	bd->SetRefConfiguration(EquilateralEdgeLength);
+
+	//We also need to recompute the neighbors for PotentialBody
+	PrBody->recomputeNeighbors(PotentialSearchRF);
+      }
+    }// Remeshing ends here
+
+    //*********** BEGIN PRINTING OUTPUT (and log) FILES ***********//
+
     FvsZ << std::setw( 24 ) << std::setprecision(16) 
 	 << originalHeight-height
 	 << std::setw( 24 ) << std::setprecision(16) 
@@ -769,62 +733,72 @@ int main(int argc, char* argv[])
 	 << step
 	 << std::endl;
 
+    //The following vtkUnsignedIntArray will be used to store the
+    //number of CELLS in the mesh that share the POINT denoted by the
+    //index of the vector
+    vtkSmartPointer<vtkUnsignedIntArray> countPointCells = 
+      vtkSmartPointer<vtkUnsignedIntArray>::New();
+    countPointCells->SetNumberOfValues(mesh->GetNumberOfPoints());
+    countPointCells->SetName("CapsomerGlyphs");
+    
+    //cellIds will be used to temporarily hold the CELLS that use a
+    //point specified by a point id.
+    vtkSmartPointer<vtkIdList> cellIds = 
+      vtkSmartPointer<vtkIdList>::New();
+    
+    //We will use a vtkPolyDataWriter to write our modified output
+    //files that will have Capsomer information as well
+    vtkSmartPointer<vtkDataWriter> writer = 
+      vtkSmartPointer<vtkDataWriter>::New();
+    
+    //The output stream to appendto the files printed by
+    //printParaview()
+    ofstream * appendTo;
+    
+    for(int b=0; b<bdc.size(); b++) {
+      char name[100]; 
+      sprintf(name,"%s-body%d-step%04d",modelName.c_str(),b,step);
+      bdc[b]->printParaview(name);
+      //We will append Caspsomer POINT_DATA to the vtk output file
+      //printed by printParaview(), if such a file exists
+      sprintf(name,"%s-body%d-step%04d.vtk",modelName.c_str(),b,step);
+      if (ifstream(name)){      
+	reader->SetFileName(name);
+	vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();
+	ds->Update();
+	if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
+	  vtkSmartPointer<vtkUnstructuredGrid> usg 
+	    = vtkUnstructuredGrid::SafeDownCast(ds);
+	  usg->BuildLinks();
+	  for(int p=0; p<ds->GetNumberOfPoints(); p++){
+	    usg->GetPointCells(p,cellIds);
+	    countPointCells->SetValue(p,cellIds->GetNumberOfIds());
+	    cellIds->Reset();
+	  }      
+	}                  
+	else if(ds->GetDataObjectType() == VTK_POLY_DATA){
+	  vtkSmartPointer<vtkPolyData> pd = vtkPolyData::SafeDownCast(ds);
+	  pd->BuildLinks();
+	  for(int p=0; p<ds->GetNumberOfPoints(); p++){
+	    pd->GetPointCells(p,cellIds);
+	    countPointCells->SetValue(p,cellIds->GetNumberOfIds());
+	    cellIds->Reset();
+	  }	
+	}
+	ds->GetFieldData()->AddArray(countPointCells);
+	appendTo = new ofstream(name,ofstream::app);
+	writer->WriteFieldData(appendTo,ds->GetFieldData());
+	appendTo->close();
+      }
+    }
+    //************* END PRINTING OUTPUT FILES **************//
+
     // check if we are done
     if( unload && Z+dZ < Zbegin ) 
       break;
     else if( !unload && Z+dZ > Zend ) 
       break;
-
-    //This is where we remesh before next indentation step
-    for(int b=0; b<bdc.size(); b++) {
-      //We have to specify material type as 'bending' or 'stretching'
-      //depending on whether bdc[b] is of LoopShellBody type or
-      //C0MembraneBody type. Only when CST flag is true can we expect
-      //a C0MembraneBody but we will always have a LSB body. So we
-      //will put LSB in else block
-      typedef C0MembraneBody<TriangleQuadrature,MaterialType,ShapeTri3> MB;
-      MaterialType stretching( 0.0, 0.0, C0, Y, nu );
-      MB* checkMBType = NULL;
-      checkMBType = dynamic_cast<MB*>(bdc[b]);
-      if(CST && checkMBType != NULL){
-	//C0MembraneBody has no Remesh() implemented yet so we will do
-	//nothing
-	/* elementsChanged =
-	   dynamic_cast<MB*>(bdc[b])->Remesh(ARtol,stretching,quadOrder);*/
-      }
-      else{
-	//If it's not MB type let's check for LSB type
-	LSB* checkLSBType = dynamic_cast<LSB*>(bdc[b]);
-	if(checkLSBType !=NULL){
-	  std::cout<<"I am about to try swapping element sides..."<<std::endl;
-	  elementsChanged =dynamic_cast<LSB*>(bdc[b])->Remesh(ARtol,bending,quadOrder);
-	}
-      }
-
-      //Print out the number of elements that changed due to remeshing
-      if(elementsChanged > 0){
-	std::cout<<"Number of elements that changed after remeshing = "
-		 <<elementsChanged<<"."<<std::endl;
-
-	//If some elements have changed then we need to reset the
-	//reference configuration with average side lengths ???
-	double AvgEdgeLength = 0.0;
-	for(int i=0; i<connectivities.size(); i++) {
-	  std::vector<int> cm(3);
-	  for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
-	  // Edge vectors in current config.
-	  tvmet::Vector<double,3> e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
-	    e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
-	    e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
-	    eCent(defNodes[cm[2]]->point());
-	  // Compute average edge length for each triangle
-	  AvgEdgeLength += (tvmet::norm2(e31) + tvmet::norm2(e32) + tvmet::norm2(e12))/3.0;
-	}
-	AvgEdgeLength /= connectivities.size();
-	bd->SetRefConfiguration(AvgEdgeLength);
-      }
-    }// Remeshing for loop ends here
-
+    
   }// Indentation Loop Ends
 
   FvsZ.close();
@@ -833,7 +807,8 @@ int main(int argc, char* argv[])
  
   t2=clock();
   float diff ((float)t2-(float)t1);
-  std::cout<<"Total execution time: "<<diff/CLOCKS_PER_SEC<<" seconds"<<std::endl;
+  std::cout<<"Total execution time: "<<diff/CLOCKS_PER_SEC
+	   <<" seconds"<<std::endl;
   return 0;
 }
 

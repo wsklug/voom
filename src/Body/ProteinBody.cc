@@ -33,11 +33,11 @@ namespace voom
 #endif
     
     // // Initialize Body.h containers
-    // _nodes.insert(_nodes.begin(), DefNodes.begin(), DefNodes.end() );
+    // _nodes.insert(_nodes.begin(), Proteins.begin()->getHost(), Proteins.end()->getHost() );
     // for(ConstNodeIterator n = _nodes.begin(); n != _nodes.end(); n++) {
     //   _dof+=(*n)->dof();
     // }
-        
+    
     // Initialize protein objects
     for(uint i = 0; i < Proteins.size(); i++)
     {

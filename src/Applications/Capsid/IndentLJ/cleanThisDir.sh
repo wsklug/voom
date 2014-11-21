@@ -9,10 +9,10 @@
 DIRECTORY=.
 REMOVEFILES=('abnormal*.vtk' 'contact*.vtk' 'lbfgsb*.vtk' \
 '*-body*step*.vtk' '*.fz' '*.initial*.vtk' '*.relaxed*.vtk' \
-'*~' '*.cmd')
+'*~')
 
 # We are passing all elements of $REMOVEFILES array and piping the
-# stderr of ls to null device to make its execution silent
+# output of ls to null device to make its execution silent
 echo 'Following files will be removed:'
 ls ${REMOVEFILES[@]} 2>/dev/null
 
