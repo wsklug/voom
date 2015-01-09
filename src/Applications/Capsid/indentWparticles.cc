@@ -172,7 +172,9 @@ int main(int argc, char* argv[])
   //We have to pass a vtkPolyData to vtkPolyDataNormals::SetInput()
   //If our input vtk file has vtkUnstructuredGridData instead of vtkPolyData
   //then we need to convert it using vtkGeometryFilter
-  if((reader->GetOutput())->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
+  vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();
+  ds->Update();
+  if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
     vtkSmartPointer<vtkUnstructuredGrid> unstructuredGrid = 
       reader->GetUnstructuredGridOutput();    
     vtkSmartPointer<vtkGeometryFilter> geometryFilter = 
@@ -739,7 +741,7 @@ int main(int argc, char* argv[])
     vtkSmartPointer<vtkUnsignedIntArray> countPointCells = 
       vtkSmartPointer<vtkUnsignedIntArray>::New();
     countPointCells->SetNumberOfValues(mesh->GetNumberOfPoints());
-    countPointCells->SetName("CapsomerGlyphs");
+    countPointCells->SetName("Valence");
     
     //cellIds will be used to temporarily hold the CELLS that use a
     //point specified by a point id.
@@ -764,7 +766,7 @@ int main(int argc, char* argv[])
       sprintf(name,"%s-body%d-step%04d.vtk",modelName.c_str(),b,step);
       if (ifstream(name)){      
 	reader->SetFileName(name);
-	vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();
+	ds = reader->GetOutput();
 	ds->Update();
 	if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
 	  vtkSmartPointer<vtkUnstructuredGrid> usg 
@@ -810,5 +812,6 @@ int main(int argc, char* argv[])
   std::cout<<"Total execution time: "<<diff/CLOCKS_PER_SEC
 	   <<" seconds"<<std::endl;
   return 0;
+
 }
 
