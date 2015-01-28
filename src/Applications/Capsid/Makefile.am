@@ -12,7 +12,6 @@ AM_CPPFLAGS =-I$(srcdir)/../../       		\
 		-I$(srcdir)/../../Solvers/		\
 		-I$(srcdir)/../../Mesh/		\
 		-I$(blitz_includes) -I$(tvmet_includes)
-AM_CXXFLAGS = -ggdb -O0
 #
 AM_LDFLAGS = -L$(blitz_libraries) \
         -L../                          	\

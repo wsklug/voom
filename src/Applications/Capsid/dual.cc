@@ -18,6 +18,10 @@
 #include <vtkPolyDataWriter.h>
 #include <vtkPolyDataNormals.h>
 #include <vtkLoopSubdivisionFilter.h>
+#include <vtkPolyData.h>
+#include <vtkSmartPointer.h>
+#include <vtkUnstructuredGrid.h>
+#include <vtkGeometryFilter.h>
 
 #if defined(_OPENMP)
 #include <omp.h>
@@ -50,10 +54,30 @@ int main(int argc, char* argv[])
 
   vtkDataSetReader * reader = vtkDataSetReader::New();
   reader->SetFileName( inputFileName.c_str() );
+  //We will use this object, shortly, to ensure consistent triangle orientations
+  vtkPolyDataNormals * normals = vtkPolyDataNormals::New();
+
+  //We have to pass a vtkPolyData to vtkPolyDataNormals::SetInput()
+  //If our input vtk file has vtkUnstructuredGridData instead of vtkPolyData
+  //then we need to convert it using vtkGeometryFilter
+  vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();
+  ds->Update();
+  if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
+    vtkSmartPointer<vtkUnstructuredGrid> unstructuredGrid = 
+      reader->GetUnstructuredGridOutput();    
+    vtkSmartPointer<vtkGeometryFilter> geometryFilter = 
+      vtkSmartPointer<vtkGeometryFilter>::New();
+    geometryFilter->SetInput(unstructuredGrid);
+    geometryFilter->Update(); 
+    vtkSmartPointer<vtkPolyData> polydata = geometryFilter->GetOutput();
+    normals->SetInput( polydata);
+  }
+  else{
+    normals->SetInput(reader->GetOutput());
+  }
+
   // send through normals filter to ensure that triangle orientations
   // are consistent
-  vtkPolyDataNormals * normals = vtkPolyDataNormals::New();
-  normals->SetInput( reader->GetOutput() );
   normals->ConsistencyOn();
   normals->SplittingOff();
   normals->AutoOrientNormalsOn();

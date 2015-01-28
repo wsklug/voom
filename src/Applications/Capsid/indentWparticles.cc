@@ -32,7 +32,6 @@
 #include <vtkCellArray.h>
 #include <vtkIdList.h>
 #include <vtkUnsignedIntArray.h>
-#include <vtkPolyDataWriter.h>
 #include <vtkCell.h>
 
 //#include "ProteinLennardJones.h"
