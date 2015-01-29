@@ -49,7 +49,7 @@ using namespace tvmet;
 using namespace std;
 using namespace voom;
 
-
+void insertValenceInVtk(const std::string fileName, vtkSmartPointer<vtkPolyData> mesh);
 
 int main(int argc, char* argv[])
 {
@@ -733,29 +733,7 @@ int main(int argc, char* argv[])
 	 << std::setw( 10 ) 
 	 << step
 	 << std::endl;
-
-    //The following vtkUnsignedIntArray will be used to store the
-    //number of CELLS in the mesh that share the POINT denoted by the
-    //index of the vector
-    vtkSmartPointer<vtkUnsignedIntArray> countPointCells = 
-      vtkSmartPointer<vtkUnsignedIntArray>::New();
-    countPointCells->SetNumberOfValues(mesh->GetNumberOfPoints());
-    countPointCells->SetName("Valence");
-    
-    //cellIds will be used to temporarily hold the CELLS that use a
-    //point specified by a point id.
-    vtkSmartPointer<vtkIdList> cellIds = 
-      vtkSmartPointer<vtkIdList>::New();
-    
-    //We will use a vtkPolyDataWriter to write our modified output
-    //files that will have Capsomer information as well
-    vtkSmartPointer<vtkDataWriter> writer = 
-      vtkSmartPointer<vtkDataWriter>::New();
-    
-    //The output stream to appendto the files printed by
-    //printParaview()
-    ofstream * appendTo;
-    
+   
     for(int b=0; b<bdc.size(); b++) {
       char name[100]; 
       sprintf(name,"%s-body%d-step%04d",modelName.c_str(),b,step);
@@ -764,32 +742,7 @@ int main(int argc, char* argv[])
       //printed by printParaview(), if such a file exists
       sprintf(name,"%s-body%d-step%04d.vtk",modelName.c_str(),b,step);
       if (ifstream(name)){      
-	reader->SetFileName(name);
-	ds = reader->GetOutput();
-	ds->Update();
-	if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
-	  vtkSmartPointer<vtkUnstructuredGrid> usg 
-	    = vtkUnstructuredGrid::SafeDownCast(ds);
-	  usg->BuildLinks();
-	  for(int p=0; p<ds->GetNumberOfPoints(); p++){
-	    usg->GetPointCells(p,cellIds);
-	    countPointCells->SetValue(p,cellIds->GetNumberOfIds());
-	    cellIds->Reset();
-	  }      
-	}                  
-	else if(ds->GetDataObjectType() == VTK_POLY_DATA){
-	  vtkSmartPointer<vtkPolyData> pd = vtkPolyData::SafeDownCast(ds);
-	  pd->BuildLinks();
-	  for(int p=0; p<ds->GetNumberOfPoints(); p++){
-	    pd->GetPointCells(p,cellIds);
-	    countPointCells->SetValue(p,cellIds->GetNumberOfIds());
-	    cellIds->Reset();
-	  }	
-	}
-	ds->GetFieldData()->AddArray(countPointCells);
-	appendTo = new ofstream(name,ofstream::app);
-	writer->WriteFieldData(appendTo,ds->GetFieldData());
-	appendTo->close();
+	insertValenceInVtk(name,mesh);
       }
     }
     //************* END PRINTING OUTPUT FILES **************//
@@ -813,4 +766,73 @@ int main(int argc, char* argv[])
   return 0;
 
 }
+
+///////////////////////// END OF MAIN FUNCTION //////////////////////////////////
+/////////////////////////                     //////////////////////////////////
+
+///////////////////////// INSERTVALENCEINVTK BEGINS ///////////////////////////
+/////////////////////////                           //////////////////////////
+
+//The method insertValenceInVtk() inserts valence information in a vtk file
+//The calling method must ensure that 'fileName' exists and is a valid vtk file.
+//Do not use the extension '.vtk' in 'fileName'.
+//'mesh' is a pointer to a vtkPolyData
+
+void insertValenceInVtk(const std::string fileName, vtkSmartPointer<vtkPolyData> mesh){
+  ofstream * appendTo;
+  string name = fileName + ".vtk";
+
+  //Check that the file exists
+  assert(ifstream(name.c_str()));
+
+  vtkDataSetReader * reader = vtkDataSetReader::New();
+  reader->SetFileName(name.c_str());
+  
+  vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();  
+  ds->Update();
+  
+  //The following vtkUnsignedIntArray will be used to store the
+  //number of CELLS in the mesh that share the POINT denoted by the
+  //index of the vector
+  vtkSmartPointer<vtkUnsignedIntArray> countPointCells = 
+    vtkSmartPointer<vtkUnsignedIntArray>::New();
+  countPointCells->SetNumberOfValues(mesh->GetNumberOfPoints());
+  countPointCells->SetName("Valence");
+  
+  //cellIds will be used to temporarily hold the CELLS that use a
+  //point specified by a point id.
+  vtkSmartPointer<vtkIdList> cellIds = 
+    vtkSmartPointer<vtkIdList>::New();
+  
+  //We will use a vtkPolyDataWriter to write our modified output
+  //files that will have Capsomer information as well
+  vtkSmartPointer<vtkDataWriter> writer = 
+    vtkSmartPointer<vtkDataWriter>::New();
+  
+  if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
+    vtkSmartPointer<vtkUnstructuredGrid> usg 
+      = vtkUnstructuredGrid::SafeDownCast(ds);
+    usg->BuildLinks();
+    for(int p=0; p<ds->GetNumberOfPoints(); p++){
+      usg->GetPointCells(p,cellIds);
+      countPointCells->SetValue(p,cellIds->GetNumberOfIds());
+      cellIds->Reset();
+    }      
+  }                  
+  else if(ds->GetDataObjectType() == VTK_POLY_DATA){
+    vtkSmartPointer<vtkPolyData> pd = vtkPolyData::SafeDownCast(ds);
+    pd->BuildLinks();
+    for(int p=0; p<ds->GetNumberOfPoints(); p++){
+      pd->GetPointCells(p,cellIds);
+      countPointCells->SetValue(p,cellIds->GetNumberOfIds());
+      cellIds->Reset();
+    }	
+  }
+  ds->GetFieldData()->AddArray(countPointCells);
+  appendTo = new ofstream(name.c_str(),ofstream::app);
+  writer->WriteFieldData(appendTo,ds->GetFieldData());
+  appendTo->close();
+}
+
+
 

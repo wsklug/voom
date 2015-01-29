@@ -13,7 +13,7 @@ close all;
 clc;
 
 %Input pentamer points. It loads a 12x3 matrix 'penta' in workspace.
-load('pentamer.mat');
+penta = dlmread('pentamers.dat','\t');
 
 %We arbitrarily choose one pentamer as reference for further calculations.
 %In this case we will choose the one that has highest z-co-ordinate.
@@ -142,6 +142,12 @@ I = [1,0,0;0,1,0;0,0,1]; %Identity matrix
 %the other way round.
 R3 = I + sin(-theta)*K + (1-cos(-theta))*K^2;
 
+%Consistency check: R3 should belong to SO(3) i.e. det(R3)=1 and 
+%R3*transpose(R3)=I
+if(abs(det(R3)-1)>tol || abs(R3*R3'-I)>tol)
+	error('R3 does not belong to SO(3)!\n');
+end
+
 % Calculate v_rot for two-fold axis. We just want the midpoint of any side
 % of the triangular face.
 midPoint = fP + (sP-fP)/2;
@@ -169,3 +175,32 @@ theta = acos(cosTheta);
 %used -theta instead of theta because theta takes v to v_rot and we want
 %the other way round.
 R2 = I + sin(-theta)*K + (1-cos(-theta))*K^2;
+
+%Consistency check: R2 should belong to SO(3) i.e. det(R2)=1 and 
+%R2*transpose(R2)=I
+if(abs(det(R2)-1)>tol || abs(R2*R2'-I)>tol)
+	error('R2 does not belong to SO(3)!\n');
+end
+
+%Now we will load all the points from the vtk file and multiply them by R2
+%and R3 to get the rotated points such that two-fold axis and three-fold
+%axis are along z-direction respectively
+allPoints = dlmread('allPoints.dat','\t');
+
+twoFoldZ = allPoints*R2;
+twoFold = fopen('twoFold.dat','w');
+for l=1:size(twoFoldZ,1)
+  fprintf(twoFold,'%18.16f\t%18.16f\t%18.16f\n',twoFoldZ(l,1),twoFoldZ(l,2),...
+     twoFoldZ(l,3));
+end
+fclose(twoFold);
+
+threeFoldZ = allPoints*R3;
+threeFold = fopen('threeFold.dat','w');
+for l=1:size(threeFoldZ,1)
+  fprintf(threeFold,'%18.16f\t%18.16f\t%18.16f\n',threeFoldZ(l,1),threeFoldZ(l,2),...
+   threeFoldZ(l,3));
+end
+fclose(threeFold);
+
+

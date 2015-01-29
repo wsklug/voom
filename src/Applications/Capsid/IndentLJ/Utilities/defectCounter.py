@@ -33,7 +33,7 @@ fileBaseName = "T7input-body0-step"
 
 #The step numbering starts from 0000 so actually there are 2003 files
 #but we will enter 2002 below
-steps = 1000
+steps = 2002
 
 #We need to pad the step number with enough zeros e.g 0001, 0103 to
 #get the required file name. We prepare the format specifier here to
@@ -43,8 +43,8 @@ formatSpec = '{0:0' + str(digits) + 'd}'
 
 #We prepare the output file to be written containing the tab-separated
 #valence data
-output = open("valenceCount.txt","w")
-header = "Step,Pentamer,Hexamer,Heptamer,Octamers,NetCharge"
+output = open("valenceCount.csv","w")
+header = "#Step,Pentamer,Hexamer,Heptamer,Octamers,NetCharge"
 print >> output, header
 
 for step in range(0, steps+1):
