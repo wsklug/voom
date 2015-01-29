@@ -775,18 +775,17 @@ int main(int argc, char* argv[])
 
 //The method insertValenceInVtk() inserts valence information in a vtk file
 //The calling method must ensure that 'fileName' exists and is a valid vtk file.
-//Do not use the extension '.vtk' in 'fileName'.
+//MUST use the extension '.vtk' in 'fileName'.
 //'mesh' is a pointer to a vtkPolyData
 
 void insertValenceInVtk(const std::string fileName, vtkSmartPointer<vtkPolyData> mesh){
   ofstream * appendTo;
-  string name = fileName + ".vtk";
 
   //Check that the file exists
-  assert(ifstream(name.c_str()));
+  assert(ifstream(fileName.c_str()));
 
   vtkDataSetReader * reader = vtkDataSetReader::New();
-  reader->SetFileName(name.c_str());
+  reader->SetFileName(fileName.c_str());
   
   vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();  
   ds->Update();
@@ -829,7 +828,7 @@ void insertValenceInVtk(const std::string fileName, vtkSmartPointer<vtkPolyData>
     }	
   }
   ds->GetFieldData()->AddArray(countPointCells);
-  appendTo = new ofstream(name.c_str(),ofstream::app);
+  appendTo = new ofstream(fileName.c_str(),ofstream::app);
   writer->WriteFieldData(appendTo,ds->GetFieldData());
   appendTo->close();
 }
