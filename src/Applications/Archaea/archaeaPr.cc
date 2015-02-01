@@ -40,12 +40,13 @@ int main(int argc, char* argv[])
   string modelName;
   string outputFileName;
   string initialConf;
+  string fixedList;
   int ICprovided = 0;
   double ICtol = 1.0e-5;
   int VTKflag = 0;
   double InflationFactor = 1.0;
   double pressure = 0.0;
- 
+  
   // Potential input parameters
   double PotentialSearchRF = 1.0;
   double epsilon = 1.0;
@@ -83,6 +84,7 @@ int main(int argc, char* argv[])
   inp >> temp >> modelName;
   inp >> temp >> outputFileName;
   inp >> temp >> initialConf;
+  inp >> temp >> fixedList;;
   inp >> temp >> ICprovided;
   inp >> temp >> ICtol;
   inp >> temp >> VTKflag;
@@ -111,6 +113,7 @@ int main(int argc, char* argv[])
   cout << " modelName               : " << modelName         << endl
        << " outputFileName          : " << outputFileName    << endl
        << " initialConfiguration    : " << initialConf       << endl
+       << " Fixed proteins from     : " << fixedList         << endl
        << " IC provided             : " << ICprovided        << endl
        << " IC tol                  : " << ICtol             << endl
        << " VTK flag                : " << VTKflag           << endl
@@ -187,6 +190,7 @@ int main(int argc, char* argv[])
   nodes.reserve(npts);
   defNodes.reserve(npts);
   vector<ProteinNode *> Proteins;
+  vector<ProteinNode *> FreeProteins;
 
   // read in points
   uint NextProtein = 0;
@@ -305,11 +309,52 @@ int main(int argc, char* argv[])
 
   
   // Initialize printing utils
-  cout << "Seraching connectivity over R = " <<  RconnSF << endl;
+  cout << "Searching connectivity over R = " <<  RconnSF << endl;
   PrintingProtein PrintArchaea(modelName, outputFileName+"iter", nodes, connectivities, Proteins, RconnSF);
   
   // Initialize Montecarlo Solver
-  MontecarloProtein MCsolver(Proteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, ResetT, PrintEvery, nMCsteps);
+  set<int > FixedPrIndices;
+  ifstream ifsFixedList;
+  ifsFixedList.open(fixedList.c_str(), ios::in);
+  if (!ifsFixedList) {
+    cout << "Cannot open input file: " << fixedList << endl;
+  }
+  else {
+    int PrIndex = 0;
+    while ( ifsFixedList >> PrIndex )
+    {
+      FixedPrIndices.insert(PrIndex);
+      cout << PrIndex << " ";
+    }
+    cout << endl;
+    ifsFixedList.close();
+  }
+
+  if (VTKflag == 1) {
+    for (int i = 0; i < Proteins.size(); i++) {
+      if ( FixedPrIndices.find(i) == FixedPrIndices.end() ) {
+	FreeProteins.push_back(Proteins[i]);
+      }
+    } 
+  }
+  else if (VTKflag == 2) {
+    for (int i = 0; i < Proteins.size(); i++) {
+      int FlagFixed = 0;
+      for (set<int>::iterator it = FixedPrIndices.begin(); it !=  FixedPrIndices.end(); it++) {
+	DeformationNode<3>::Point a = Proteins[i]->getHostPosition();
+	if ( tvmet::norm2(defNodes[*it]->point() - a) <  ICtol ) {
+	  FlagFixed = 1;
+	  break;
+	}
+      }
+      if (FlagFixed == 0) {
+	FreeProteins.push_back(Proteins[i]);
+      }
+    }
+  }
+  cout << "Number of free proteins = " << FreeProteins.size() << endl;
+
+  MontecarloProtein MCsolver(FreeProteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, ResetT, PrintEvery, nMCsteps);
   if (StepWise == 0) {
     MCsolver.SetTempSchedule(MCsolver.EXPONENTIAL, T01, T02, FinalRatio); }
   // MCsolver.SetTempSchedule(MCsolver.LINEAR, T01, T02, FinalRatio); }
