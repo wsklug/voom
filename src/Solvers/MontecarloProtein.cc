@@ -69,10 +69,11 @@ namespace voom {
 
 
     // Begin simulated annealing
-    unsigned accepted = 0, step = 1, pt = 0, j = 0, NT = 10;
+    unsigned accepted = 0,  accepReq = 0, step = 1, pt = 0, j = 0, NT = 10;
     unsigned int StepPerInterval = 0, Interval = 0;
     vector<DeformationNode<3>::Point > OriginalLocations;
     unsigned int adjust = 0;
+    ProteinPotential * Mat = _body->getPotential();
     for(pt = 0; pt < _proteins.size(); pt++)
     {
       OriginalLocations.push_back((_proteins[pt]->getHost())->point());
@@ -111,6 +112,40 @@ namespace voom {
 	}
       } // method == 1
 
+
+
+      // Additional steps for method == 2 - imposed pressure
+      if (_method == 2) 
+      { // try to adjust scaling distance and repeat MC moves at constant pressure
+	bool changed = changeEqR();
+	if( changed ) {
+	  accepReq++;
+	  if( _fSaved < fBest ) {
+	    fBest = _fSaved;
+	  }
+	  if( _fSaved > fWorst ) {
+	    fWorst = _fSaved;
+	  }
+	} // if changed loop
+	
+	for(pt = 0; pt < _proteins.size(); pt++)
+	{
+	  // perform _size metropolis steps at current temperature T
+	  bool changed = changeState();
+	  if( changed ) {
+	    accepted++;
+	    if( _fSaved < fBest ) {
+	      fBest = _fSaved;
+	    }
+	    if( _fSaved > fWorst ) {
+	      fWorst = _fSaved;
+	    }
+	  } // if changed loop
+	} // for loop over all proteins
+      } // End of addtion for method == 2
+
+      
+
       if ( _Tsched == STEPWISE) {
 	// Print energy values on file for every sub-step
 	ofsE << step-(StepPerInterval*Interval) << " " <<  this->ComputeUavgSquare(OriginalLocations) << std::endl;
@@ -119,6 +154,8 @@ namespace voom {
       // Print values of interest (energy, acceptance, Ravg)
       std::cout << "MTS iteration = " << step     << std::endl 
 		<< "accepted      = " << accepted << std::endl 
+		<< "accepReq      = " << accepReq << std::endl
+		<< "R equilibrium = " << Mat->getEquilibriumR() << std::endl
 		<< "_f            = " << _f       << std::endl 
 		<< "_fSaved       = " << _fSaved  << std::endl 
 		<< "fBest         = " << fBest    << std::endl
@@ -273,6 +310,36 @@ namespace voom {
       return false;  
     }
   } // changeAll
+
+
+
+  bool MontecarloProtein::changeEqR()
+  {
+    ProteinPotential * Mat = _body->getPotential();
+    double CurrentReq = Mat->getEquilibriumR();
+    double NewReq = ( (double(rand())/double(RAND_MAX) - 0.5) * 0.1 + 1.0)*CurrentReq;
+    
+    Mat->setEquilibriumR(NewReq);
+    
+    // Compute body energy
+    _body->compute(true, false, false);
+    _f = _body->energy();
+    
+    // Decide whether or not to keep the new state
+    double df = _f - _fSaved; 
+    
+    // metropolis
+    double p = double(rand())/double(RAND_MAX);
+    if( df < 0.0 || p < exp( -df/_T1 ) )
+    { 
+      _fSaved = _f;
+      return true;  
+    }
+    else {
+      Mat->setEquilibriumR(CurrentReq);
+      return false;  
+    }
+  }
 
 
 
