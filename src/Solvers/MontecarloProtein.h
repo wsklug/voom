@@ -73,6 +73,7 @@ namespace voom
     void solve(uint ComputeNeighInterval, double Rsearch);
     bool changeState();
     bool changeAll();
+    bool changeEqR();
 
     void SetTempSchedule(TempSchedule Tsched = EXPONENTIAL,
 			 const double T01 = 0.0,
