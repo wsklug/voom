@@ -15,7 +15,7 @@
 #include "Node.h"
 #include "ProteinLennardJones.h"
 #include "ProteinBody.h"
-#include "MontecarloProtein.h"
+#include "KMCprotein.h"
 #include "Utils/PrintingProtein.h"
 
 using namespace voom;
@@ -354,15 +354,15 @@ int main(int argc, char* argv[])
   }
   cout << "Number of free proteins = " << FreeProteins.size() << endl;
 
-  MontecarloProtein MCsolver(FreeProteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, ResetT, PrintEvery, nMCsteps);
+  KMCprotein KMCsolver(FreeProteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, PrintEvery, nMCsteps);
   if (StepWise == 0) {
-    MCsolver.SetTempSchedule(MCsolver.EXPONENTIAL, T01, T02, FinalRatio); }
-  // MCsolver.SetTempSchedule(MCsolver.LINEAR, T01, T02, FinalRatio); }
+    KMCsolver.SetTempSchedule(KMCsolver.EXPONENTIAL, T01, T02, FinalRatio); }
+  // KMCsolver.SetTempSchedule(KMCsolver.LINEAR, T01, T02, FinalRatio); }
   else {
-    MCsolver.SetTempSchedule(MCsolver.STEPWISE, T01, T02, FinalRatio);
+    KMCsolver.SetTempSchedule(KMCsolver.STEPWISE, T01, T02, FinalRatio);
   }
 
-  MCsolver.solve(CompNeighInterval, PotentialSearchRF);
+  KMCsolver.solve(CompNeighInterval, PotentialSearchRF);
 
  
 
