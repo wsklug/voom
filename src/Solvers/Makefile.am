@@ -27,4 +27,5 @@ libSolvers_a_SOURCES=		\
 	cg_descent.c		\
 	BrownianDynamics.cc	\
 	BrownianDynamics3D.cc	\
-	MontecarloProtein.cc
+	MontecarloProtein.cc    \
+        KMCprotein.cc
