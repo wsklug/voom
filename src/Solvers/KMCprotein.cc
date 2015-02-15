@@ -99,8 +99,14 @@ namespace voom {
 	  }  
 	} // loop over all proteins
       } // method 1
-      // Update time - probably crrect only for method 1
-      _time += -log(double(rand())/double(RAND_MAX))/_rmax;
+      // Update time - correct only for method 1
+      double xi = double(rand())/double(RAND_MAX);
+      double DeltaTime = -log(xi)/_rmax; // Needed to print following warning
+      _time += DeltaTime;
+      if ( DeltaTime > 100) { // 100 is an arbitrary number to trigger a warning in the output file - just for debugging
+	cout << "DeltaTime = " << DeltaTime << " ; xi = " << xi <<  " ; rmax = " << _rmax << endl;
+      }
+      _approxTime += 1.0/_rmax;
       
       // Compute body energy
       _body->compute(true, false, false);
@@ -117,13 +123,14 @@ namespace voom {
       }
       	
       // Print values of interest (energy, acceptance, Ravg)
-      std::cout << "MTS iteration = " << step     << std::endl 
-		<< "accepted      = " << accepted << std::endl 
-		<< "_fSaved       = " << _fSaved  << std::endl 
-		<< "fBest         = " << fBest    << std::endl
-		<< "fWorst        = " << fWorst   << std::endl
-		<< "Temperature   = " << _T1      << std::endl
-		<< "time          = " << _time    << std::endl;
+      std::cout << "MTS iteration = " << step        << std::endl 
+		<< "accepted      = " << accepted    << std::endl 
+		<< "_fSaved       = " << _fSaved     << std::endl 
+		<< "fBest         = " << fBest       << std::endl
+		<< "fWorst        = " << fWorst      << std::endl
+		<< "Temperature   = " << _T1         << std::endl
+		<< "time          = " << _time       << std::endl
+		<< "approxTime    = " << _approxTime << std::endl;
 
       // Print current configuration
       if (step%_printEvery == 0) {

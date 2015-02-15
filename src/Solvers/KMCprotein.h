@@ -68,7 +68,7 @@ namespace voom
       _proteins(Proteins), _body(Body), _possibleHosts(PossibleHosts),
       _method(Method),
       _printProtein(PrintProtein), _printEvery(PrintEvery),
-      _nSteps(NSteps), _print(print), _fSaved(0.0), _time(0.0), _rmax(0.0) 
+      _nSteps(NSteps), _print(print), _fSaved(0.0), _time(0.0), _approxTime(0.0), _rmax(0.0) 
     {
       _proteinsSize = Proteins.size();
       _rates.assign(_proteinsSize, 0.0);
@@ -128,6 +128,7 @@ namespace voom
     double _fSaved;
 
     double _time;
+    double _approxTime;
     double _rmax;
 
     TempSchedule _Tsched;
