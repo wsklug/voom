@@ -1,4 +1,4 @@
-bin_PROGRAMS    = relax indent refine disassemble grow dual indentWparticles
+bin_PROGRAMS    = relax countValence refine disassemble grow dual indentWparticles
 AM_CPPFLAGS =-I$(srcdir)/../../       		\
 		-I$(srcdir)/../../Body/		\
 		-I$(srcdir)/../../Model/		\
@@ -58,7 +58,7 @@ LDADD	= -lblitz              		\
 	-lgfortran
 #
 # capsid_lbfgsb_SOURCES    =  capsid-lbfgsb.cc 
-indent_SOURCES    =  indent.cc 
+countValence_SOURCES    =  countValence.cc 
 #
 relax_SOURCES    =  relax.cc 
 #
