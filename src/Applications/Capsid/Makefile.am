@@ -1,4 +1,4 @@
-bin_PROGRAMS    = relax countValence refine disassemble grow dual indentWparticles
+bin_PROGRAMS    = relax countValence refine disassemble grow dual indentWparticles indent
 AM_CPPFLAGS =-I$(srcdir)/../../       		\
 		-I$(srcdir)/../../Body/		\
 		-I$(srcdir)/../../Model/		\
@@ -71,3 +71,5 @@ disassemble_SOURCES    =  disassemble.cc
 grow_SOURCES    =  grow.cc C0MembraneGLoutput.cc
 #
 indentWparticles_SOURCES    =  indentWparticles.cc 
+#
+indent_SOURCES = indent.cc
