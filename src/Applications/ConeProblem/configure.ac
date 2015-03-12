@@ -3,7 +3,7 @@
 
 AC_PREREQ(2.59)
 AC_INIT([voom], [version])
-AC_CONFIG_SRCDIR([indentWparticles.cc])
+AC_CONFIG_SRCDIR([coneProblem.cc])
 AM_INIT_AUTOMAKE([foreign])
 
 ##AC_CONFIG_HEADER([config.h])

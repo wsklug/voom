@@ -49,13 +49,14 @@ using namespace tvmet;
 using namespace std;
 using namespace voom;
 
-void insertValenceInVtk(const std::string fileName, vtkSmartPointer<vtkPolyData> mesh);
+void insertValenceInVtk(const std::string fileName,\
+			vtkSmartPointer<vtkPolyData> mesh);
 
 int main(int argc, char* argv[])
 {
   clock_t t1,t2;
   t1=clock();
- if( argc < 2 ) {
+  if( argc < 2 ) {
     cout << "Usage: indent modelName [-g gamma -p prestressFlag -n nsteps]."
 	 << endl;
     return(0);
@@ -334,7 +335,8 @@ int main(int argc, char* argv[])
       (tvmet::norm2(e31) + tvmet::norm2(e32) + tvmet::norm2(e12))/3.0;
   }
   EquilateralEdgeLength /= connectivities.size();
-
+  std::cout<<"Average equilateral triangle edge length:"<<EquilateralEdgeLength<<endl;
+  
   // If we want pre-stress removed, then reset the reference
   // configuration for stretching, and reset the spontaneous curvature
   // for bending.
@@ -403,6 +405,11 @@ int main(int argc, char* argv[])
 	   << "PotentialSearchRF =" << PotentialSearchRF << endl
 	   << "Is Remesh On? " << remesh << endl
 	   << "ARtol =" << ARtol << endl;
+
+  //For Lennard-Jones sigma = a/(2^(1/6)) where a = EquilateralEdgeLength
+  // We are ignoring the input read from the inp file.
+  sigma = EquilateralEdgeLength/1.122462048;
+  std::cout<<"Lennard-Jones sigma OVERRIDDEN to:"<<sigma<<endl;
 
   // Protein body implemented using Lennard-Jones body
   // Initiliaze potential material
