@@ -34,10 +34,6 @@
 #include <vtkUnsignedIntArray.h>
 #include <vtkCell.h>
 
-#include "LennardJones.h"
-#include "PotentialBody.h"
-#include "Utils/PrintingProtein.h"
-
 #if defined(_OPENMP)
 #include <omp.h>
 #endif
@@ -108,13 +104,13 @@ int main(int argc, char* argv[])
       minStep_inp = std::atof(optarg);
       std::cout << "min step: " << minStep_inp << std::endl;
       break;
-//     case 'n':
-//       maxIter_inp = std::atof(optarg);
-//       std::cout << "max iterations: " << maxIter_inp << std::endl;
-//       break;
+      //     case 'n':
+      //       maxIter_inp = std::atof(optarg);
+      //       std::cout << "max iterations: " << maxIter_inp << std::endl;
+      //       break;
     case 'p' :
-//       if( std::string(optarg) == std::string("no") ) 
-	prestressFlag = std::string(optarg);
+      //       if( std::string(optarg) == std::string("no") ) 
+      prestressFlag = std::string(optarg);
       std::cout << "prestressFlag: " << prestressFlag << std::endl;
       break;
     case 's':
@@ -279,7 +275,7 @@ int main(int argc, char* argv[])
     }
   }
 
-  double Y = sqrt(gamma_inp);
+  double Y = sqrt(gamma_inp); // WHY IS THIS TRUE?
   double KC = 1.0/Y;
 
   // Introduce a numerical scaling factor to make energy and forces
@@ -289,12 +285,10 @@ int main(int argc, char* argv[])
   Y *= scalingFactor;
   KC *= scalingFactor;
 
-  //Amit: Set nu=0 and Yb=0 so that LoopShellBody does not handle
+  //Amit: Set nu=0 and Yb=0 if you want LoopShellBody not to handle
   //stretching anymore.
-  //double nu = 1.0/3.0;
-  //double Yb=Y;
-  double Yb=0.0;  
-  double nu = 0.0;
+  double nu = 1.0/3.0;
+  double Yb=Y;
   double KG = -2.0*(1.0-nu)*KC;
 
   if(verbose) 
@@ -308,7 +302,7 @@ int main(int argc, char* argv[])
   int quadOrder = 2;
 
   typedef FVK MaterialType;
-  if(CST) Yb=1.0e-6*Y;
+
   MaterialType bending( KC, KG, C0, Yb, nu );
 	
   typedef LoopShellBody<MaterialType> LSB;
@@ -354,75 +348,14 @@ int main(int argc, char* argv[])
   Model::BodyContainer bdc;
   bdc.push_back(bd);
 
-  // stretching body
-  if(CST) {
-    std::vector< std::vector<int> > s_connectivities;
-    for(int i=0; i<connectivities.size(); i++) {
-      std::vector<int> c(3);
-      for(int j=0; j<3; j++) c[j]=connectivities[i](j);
-      s_connectivities.push_back(c);
-    }
-
-    MaterialType stretching( 0.0, 0.0, C0, Y, nu );
-    quadOrder = 1;
-    typedef C0MembraneBody<TriangleQuadrature,MaterialType,ShapeTri3> MB;
-    MB * bdm = new MB(stretching, s_connectivities, nodes, quadOrder, 0.0);
-    bdm->setOutput(paraview);
-
-    if( prestressFlag == "yes" ) {
-      // reset the ref configuration of all triangles to be
-      // equilateral 
-      bdm->SetRefConfiguration(EquilateralEdgeLength);
-    } else {
-      // reset the ref configuration of all triangles to the current
-      // configuration
-      bdm->resetReference();      
-    }
-
-    bdc.push_back(bdm);
-  }
-
-  // Potential input parameters
-  double PotentialSearchRF = 1.0;
-  double epsilon = 1.0;
-  double sigma = 1.0;
-  double ARtol = 1.1;
-  //double pressure = 0.0;
-
-  ifstream MiscInp("MiscInp.inp");
-  string temp;
-  MiscInp>>temp>>epsilon;
-  MiscInp>>temp>>remesh;
-  MiscInp>>temp>>ARtol;
-  //For Lennard-Jones sigma = a/(2^(1/6)) where a = EquilateralEdgeLength
-  // We are ignoring the input read from the inp file.
-  sigma = EquilateralEdgeLength/1.122462048;
-  PotentialSearchRF = 1.5*EquilateralEdgeLength;
-
-  std::cout<< "Lennard-Jones potential parameters:" << endl
-	   << "sigma = " << sigma << endl	   
-	   << "PotentialSearchRF = " << PotentialSearchRF << endl
-	   << "epsilon = " << epsilon << endl
-	   << "Is Remesh On? " << remesh << endl
-	   << "ARtol = " << ARtol << endl;
-  
-  // Protein body implemented using Lennard-Jones body
-  // Initiliaze potential material
-  // ProteinLennardJones Mat(epsilon, sigma);
-  LennardJones Mat(epsilon, sigma);
-
-  // Then initialize potential body
-  PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);  
-  PrBody->compute(true, false, false);
-  std::cout << "Initial protein body energy = " << PrBody->energy() << endl;  
-  bdc.push_back(PrBody);  
+  double ARtol = 1.1;    
   
   Model model(bdc,nodes);
 
   int m=5;
   int maxIter=500;//1000;//model.dof();
   double factr=1.0e+1;
-  double pgtol=1.0e-8;
+  double pgtol=1.0e-5;
   int iprint = 0;
   int maxIter_inp=0;
   ifstream lbfgsbinp("lbfgsb.inp");
@@ -485,13 +418,11 @@ int main(int argc, char* argv[])
   }
   dRavg2 /= nodes.size();
   
-  double Ycalc =  32.993511288*epsilon/(sigma*sigma);
-  double gammaCalc = Ycalc*Ravg*Ravg/KC;
-  double asphericity = dRavg2/(Ravg*Ravg); 
+  double gammaCalc = Y*Ravg*Ravg/KC;
+  double asphericity = dRavg2/(Ravg*Ravg);
   
-  std::cout << "Effective 2D Young's modulus = " << Ycalc << endl
-	    << "Effective FVK number = " << gammaCalc << endl
-	    << "Asphericity = " << asphericity << endl;
+  std::cout << "gamma = " << gammaCalc << endl
+	    << "asphericity = " << asphericity << endl;
 
   std::cout << "Compressing capsid." << std::endl;
 
@@ -676,7 +607,7 @@ int main(int argc, char* argv[])
 		<< "        height = " << height << std::endl
 		<< "   indentation = " << originalHeight-height << std::endl
 		<< std::endl;
-      }
+    }
 
     //
     // Do we want to keep this solution or back up and try again?
@@ -720,9 +651,7 @@ int main(int argc, char* argv[])
 	//If some elements have changed then we need to reset the
 	//reference configuration with average side lengths
 	bd->SetRefConfiguration(EquilateralEdgeLength);
-
-	//We also need to recompute the neighbors for PotentialBody
-	PrBody->recomputeNeighbors(PotentialSearchRF);
+	
       }
     }// Remeshing ends here
 

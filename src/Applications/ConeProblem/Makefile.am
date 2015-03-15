@@ -1,4 +1,4 @@
-bin_PROGRAMS    = relax countValence refine disassemble grow dual indentWparticles indent asphVsFVK
+bin_PROGRAMS    = coneproblem
 AM_CPPFLAGS =-I$(srcdir)/../../       		\
 		-I$(srcdir)/../../Body/		\
 		-I$(srcdir)/../../Model/		\
@@ -57,21 +57,4 @@ LDADD	= -lblitz              		\
 	-lpthread			\
 	-lgfortran
 #
-# capsid_lbfgsb_SOURCES    =  capsid-lbfgsb.cc 
-countValence_SOURCES    =  countValence.cc 
-#
-relax_SOURCES    =  relax.cc 
-#
-refine_SOURCES    =  refine.cc 
-#
-dual_SOURCES    =  dual.cc 
-#
-disassemble_SOURCES    =  disassemble.cc 
-#
-grow_SOURCES    =  grow.cc C0MembraneGLoutput.cc
-#
-indentWparticles_SOURCES    =  indentWparticles.cc 
-#
-indent_SOURCES = indent.cc
-#
-asphVsFVK_SOURCES = asphVsFVK.cc
+coneproblem_SOURCES = coneproblem.cc
