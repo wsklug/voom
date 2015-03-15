@@ -16,6 +16,7 @@
 #include "ProteinLennardJones.h"
 #include "ProteinBody.h"
 #include "KMCprotein.h"
+#include "MontecarloProtein.h"
 #include "Utils/PrintingProtein.h"
 
 using namespace voom;
@@ -70,7 +71,7 @@ int main(int argc, char* argv[])
 
   // Other Analysis options
   int StepWise = 0;
-
+  int KMCflag  = 0;
 
   // Reading input from file passed as argument
   ifstream inp;
@@ -106,7 +107,8 @@ int main(int argc, char* argv[])
   inp >> temp >> PrMaxNum;
   inp >> temp >> PrintEvery;
   inp >> temp >> StepWise;
-  
+  inp >> temp >> KMCflag;
+
   inp.close();
 
   // List input parameters
@@ -134,7 +136,8 @@ int main(int argc, char* argv[])
        << " Number of nodes per Pr  : " << NnodePr           << endl
        << " Max number of Pr        : " << PrMaxNum          << endl
        << " Print .vtk file every   : " << PrintEvery        << endl
-       << " Step wise change in T   : " << StepWise          << endl;
+       << " Step wise change in T   : " << StepWise          << endl
+       << " KMCflag                 : " << KMCflag           << endl;
 
 
 
@@ -307,6 +310,18 @@ int main(int argc, char* argv[])
 
 
 
+
+  // Compute optimal equilbrium distance
+  // if (KMCflag == 0) { 
+  //   PrBody->resetEquilibrium();
+  //   PrBody->compute(true, false, false);
+  //   cout << "Protein body energy after resetting equilibrium distance = " << PrBody->energy() << endl;
+  // }
+
+
+
+
+
   
   // Initialize printing utils
   cout << "Searching connectivity over R = " <<  RconnSF << endl;
@@ -354,17 +369,43 @@ int main(int argc, char* argv[])
   }
   cout << "Number of free proteins = " << FreeProteins.size() << endl;
 
-  KMCprotein KMCsolver(FreeProteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, PrintEvery, nMCsteps);
-  if (StepWise == 0) {
-    KMCsolver.SetTempSchedule(KMCsolver.EXPONENTIAL, T01, T02, FinalRatio); }
-  // KMCsolver.SetTempSchedule(KMCsolver.LINEAR, T01, T02, FinalRatio); }
-  else {
-    KMCsolver.SetTempSchedule(KMCsolver.STEPWISE, T01, T02, FinalRatio);
+
+
+  if (KMCflag == 0) {
+    MontecarloProtein MCsolver(FreeProteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, ResetT, PrintEvery, nMCsteps); 
+    if (StepWise == 0) {
+      MCsolver.SetTempSchedule(MCsolver.EXPONENTIAL, T01, T02, FinalRatio); }
+      // MCsolver.SetTempSchedule(MCsolver.LINEAR, T01, T02, FinalRatio); }
+    else {
+      MCsolver.SetTempSchedule(MCsolver.STEPWISE, T01, T02, FinalRatio);
+    }
+    MCsolver.solve(CompNeighInterval, PotentialSearchRF);
+  }
+  else { 
+    KMCprotein KMCsolver(FreeProteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, PrintEvery, nMCsteps);
+    if (StepWise == 0) {
+      KMCsolver.SetTempSchedule(KMCsolver.EXPONENTIAL, T01, T02, FinalRatio); }
+      // KMCsolver.SetTempSchedule(KMCsolver.LINEAR, T01, T02, FinalRatio); }
+    else {
+      KMCsolver.SetTempSchedule(KMCsolver.STEPWISE, T01, T02, FinalRatio);
+    }
+    KMCsolver.solve(CompNeighInterval, PotentialSearchRF);
   }
 
-  KMCsolver.solve(CompNeighInterval, PotentialSearchRF);
 
- 
+
+
+
+
+
+  // Compute optimal equilbrium distance
+  if (KMCflag == 0) { 
+    PrBody->resetEquilibrium();
+    PrBody->compute(true, false, false);
+    cout << "Protein body energy after resetting equilibrium distance = " << PrBody->energy() << endl;
+  }
+
+
 
 
 
