@@ -118,7 +118,7 @@ namespace voom {
       
 
       if ( _Tsched == STEPWISE) {
-	// Print energy values on file for every sub-step
+	// Print uAvgSq at each step
 	ofsE << time << " " <<  this->ComputeUavgSquare(OriginalLocations) << std::endl;
       }
       	
@@ -182,9 +182,10 @@ namespace voom {
 	  }
 	  // Reset time to zero
 	  _time = 0.0;
+	  _approxTime = 0.0;
 	}
 	break;
-      }
+      } // switch
 
     } // End of simulating annealing loop 
 
