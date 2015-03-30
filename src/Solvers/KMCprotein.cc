@@ -119,7 +119,7 @@ namespace voom {
 
       if ( _Tsched == STEPWISE) {
 	// Print uAvgSq at each step
-	ofsE << time << " " <<  this->ComputeUavgSquare(OriginalLocations) << std::endl;
+	ofsE << _time << " " <<  this->ComputeUavgSquare(OriginalLocations) << std::endl;
       }
       	
       // Print values of interest (energy, acceptance, Ravg)
