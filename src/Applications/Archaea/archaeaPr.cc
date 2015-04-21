@@ -71,6 +71,7 @@ int main(int argc, char* argv[])
 
   // Other Analysis options
   int StepWise = 0;
+  int NT = 0;
   int KMCflag  = 0;
 
   // Reading input from file passed as argument
@@ -107,6 +108,7 @@ int main(int argc, char* argv[])
   inp >> temp >> PrMaxNum;
   inp >> temp >> PrintEvery;
   inp >> temp >> StepWise;
+  inp >> temp >> NT;
   inp >> temp >> KMCflag;
 
   inp.close();
@@ -137,6 +139,7 @@ int main(int argc, char* argv[])
        << " Max number of Pr        : " << PrMaxNum          << endl
        << " Print .vtk file every   : " << PrintEvery        << endl
        << " Step wise change in T   : " << StepWise          << endl
+       << " Number of Delta T       : " << NT                << endl
        << " KMCflag                 : " << KMCflag           << endl;
 
 
@@ -372,7 +375,7 @@ int main(int argc, char* argv[])
 
 
   if (KMCflag == 0) {
-    MontecarloProtein MCsolver(FreeProteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, ResetT, PrintEvery, nMCsteps); 
+    MontecarloProtein MCsolver(FreeProteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, ResetT, PrintEvery, nMCsteps, NT); 
     if (StepWise == 0) {
       MCsolver.SetTempSchedule(MCsolver.EXPONENTIAL, T01, T02, FinalRatio); }
       // MCsolver.SetTempSchedule(MCsolver.LINEAR, T01, T02, FinalRatio); }
@@ -382,7 +385,7 @@ int main(int argc, char* argv[])
     MCsolver.solve(CompNeighInterval, PotentialSearchRF);
   }
   else { 
-    KMCprotein KMCsolver(FreeProteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, PrintEvery, nMCsteps);
+    KMCprotein KMCsolver(FreeProteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, PrintEvery, nMCsteps, NT);
     if (StepWise == 0) {
       KMCsolver.SetTempSchedule(KMCsolver.EXPONENTIAL, T01, T02, FinalRatio); }
       // KMCsolver.SetTempSchedule(KMCsolver.LINEAR, T01, T02, FinalRatio); }
