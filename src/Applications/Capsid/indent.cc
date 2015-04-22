@@ -275,8 +275,9 @@ int main(int argc, char* argv[])
     }
   }
 
-  double Y = sqrt(gamma_inp); // WHY IS THIS TRUE?
+  double Y = sqrt(gamma_inp);
   double KC = 1.0/Y;
+  
 
   // Introduce a numerical scaling factor to make energy and forces
   // large enough to avoid issues with machine precision.  Later

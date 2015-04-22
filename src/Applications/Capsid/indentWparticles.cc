@@ -84,8 +84,7 @@ int main(int argc, char* argv[])
   double friction_inp=0.0;
   double minStep_inp=0.01;
   double step_inp=0.0;
-  // double remesh_inp=0.0; //
-  bool remesh = false;
+  bool remesh = true;
   string prestressFlag = "yes";
   bool CST=false;
   bool badCommandLine=false;
@@ -230,9 +229,6 @@ int main(int argc, char* argv[])
     DeformationNode<3>* n = new DeformationNode<3>(id,idx,x);    
     nodes.push_back( n );
     defNodes.push_back( n );
-    //We will add a Protein at every node - Amit
-    //ProteinNode * PrNode = new ProteinNode(n);
-    //Proteins.push_back(PrNode);
   }
   assert(nodes.size()!=0);
   Ravg /= nodes.size();
@@ -291,11 +287,9 @@ int main(int argc, char* argv[])
 
   //Amit: Set nu=0 and Yb=0 so that LoopShellBody does not handle
   //stretching anymore.
-  //double nu = 1.0/3.0;
-  //double Yb=Y;
   double Yb=0.0;  
   double nu = 0.0;
-  double KG = -2.0*(1.0-nu)*KC;
+  double KG = -2.0*(1.0-(1.0/3.0))*KC;
 
   if(verbose) 
     std::cout << " Y: " << Y << std::endl
@@ -383,22 +377,12 @@ int main(int argc, char* argv[])
   }
 
   // Potential input parameters
-  double PotentialSearchRF = 1.0;
-  double epsilon = 1.0;
-  double sigma = 1.0;
-  double ARtol = 1.1;
-  //double pressure = 0.0;
-
-  ifstream MiscInp("MiscInp.inp");
-  string temp;
-  MiscInp>>temp>>epsilon;
-  MiscInp>>temp>>remesh;
-  MiscInp>>temp>>ARtol;
   //For Lennard-Jones sigma = a/(2^(1/6)) where a = EquilateralEdgeLength
-  // We are ignoring the input read from the inp file.
-  sigma = EquilateralEdgeLength/1.122462048;
-  PotentialSearchRF = 1.5*EquilateralEdgeLength;
-
+  double sigma = EquilateralEdgeLength/1.122462048;
+  //double PotentialSearchRF = 1.5*EquilateralEdgeLength;
+  double PotentialSearchRF = 1.5;
+  double epsilon = Y*sigma*sigma/32.993511288;
+  double ARtol = 1.5;
   std::cout<< "Lennard-Jones potential parameters:" << endl
 	   << "sigma = " << sigma << endl	   
 	   << "PotentialSearchRF = " << PotentialSearchRF << endl
@@ -412,7 +396,7 @@ int main(int argc, char* argv[])
   LennardJones Mat(epsilon, sigma);
 
   // Then initialize potential body
-  PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);  
+  PotentialBody * PrBody = new PotentialBody(&Mat,nodes,PotentialSearchRF);  
   PrBody->compute(true, false, false);
   std::cout << "Initial protein body energy = " << PrBody->energy() << endl;  
   bdc.push_back(PrBody);  
@@ -485,11 +469,10 @@ int main(int argc, char* argv[])
   }
   dRavg2 /= nodes.size();
   
-  double Ycalc =  32.993511288*epsilon/(sigma*sigma);
-  double gammaCalc = Ycalc*Ravg*Ravg/KC;
+  double gammaCalc = Y*Ravg*Ravg/KC;
   double asphericity = dRavg2/(Ravg*Ravg); 
   
-  std::cout << "Effective 2D Young's modulus = " << Ycalc << endl
+  std::cout << "Effective 2D Young's modulus = " << Y << endl
 	    << "Effective FVK number = " << gammaCalc << endl
 	    << "Asphericity = " << asphericity << endl;
 
@@ -724,6 +707,10 @@ int main(int argc, char* argv[])
 	//We also need to recompute the neighbors for PotentialBody
 	PrBody->recomputeNeighbors(PotentialSearchRF);
       }
+
+      //TODO: MAY HAVE TO CALL RECOMPUTENEIGHBOUR AGAIN FOR VERY SMALL
+      //PotentialSearchRad
+
     }// Remeshing ends here
 
     //*********** BEGIN PRINTING OUTPUT (and log) FILES ***********//

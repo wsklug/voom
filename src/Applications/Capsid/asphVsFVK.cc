@@ -10,6 +10,8 @@
 #include "LoopShellBody.h"
 #include "Model.h"
 #include "Lbfgsb.h"
+#include "Quadrature.h"
+#include "TriangleQuadrature.h"
 
 #include <vtkDataSet.h>
 #include <vtkPointData.h>
@@ -43,12 +45,14 @@ int main(int argc, char* argv[])
 {
   clock_t t1,t2;
   t1=clock();
+  if ( argc != 2 ){
+    cout<<"usage: "<< argv[0] <<" <filename>\n";
+    return -1;
+  }
+  string inputFileName = argv[1];
 
-  double gamma_inp=1500.0;
   bool remesh = true;
-  string prestressFlag = "yes";
 
-  string inputFileName = "T7input.vtk";
   vtkDataSetReader * reader = vtkDataSetReader::New();
   reader->SetFileName( inputFileName.c_str() );
 
@@ -91,8 +95,7 @@ int main(int argc, char* argv[])
     vtkSmartPointer<vtkExtractEdges>::New();
   extractedEdges->SetInput(mesh);
   extractedEdges->Update();
-  //Uncommenting the next line fetches the line entities, if you want 
-  //them : Amit
+  
   //vtkCellArray * lines = extractedEdges()->GetOutput()->GetLines();
 
   //Number of Cells in vtkExtractEdges = number of edges : Amit
@@ -100,13 +103,12 @@ int main(int argc, char* argv[])
 	    << extractedEdges->GetOutput()->GetNumberOfCells()
 	    <<std::endl; 
 
-
   // create vector of nodes
   double Rcapsid = 1.0;
   int dof=0;
   std::vector< NodeBase* > nodes;
   std::vector< DeformationNode<3>* > defNodes;
-  double Ravg = 0;
+  double Ravg = 0.0;
 
   // read in points
   for(int a=0; a<mesh->GetNumberOfPoints(); a++) {
@@ -119,14 +121,10 @@ int main(int argc, char* argv[])
     DeformationNode<3>* n = new DeformationNode<3>(id,idx,x);    
     nodes.push_back( n );
     defNodes.push_back( n );
-    //We will add a Protein at every node - Amit
-    //ProteinNode * PrNode = new ProteinNode(n);
-    //Proteins.push_back(PrNode);
   }
   assert(nodes.size()!=0);
   Ravg /= nodes.size();
-  cout << "Number of nodes: " <<nodes.size() << endl
-       << "Ravg = " << Ravg << endl;
+  cout << "Number of nodes: " <<nodes.size() << endl;
 
   // read in triangle connectivities
   vector< tvmet::Vector<int,3> > connectivities;
@@ -141,71 +139,18 @@ int main(int argc, char* argv[])
     connectivities.push_back(c);
   }
 
-  double C0 = 0.0;
-
-  // rescale size 
-  if( prestressFlag == "spherical" ) {
-    // make capsid spherical 
-
-    C0 = - 2.0/Rcapsid; // WSK: use minus sign here consistent with
-			// outward pointing surface normals.
-
-    for(int i=0; i<defNodes.size(); i++) {
-      DeformationNode<3>::Point x;
-      x = defNodes[i]->point();
-      double R = norm2(x);
-      x *= Rcapsid/R;
-      defNodes[i]->setPoint(x);
-      defNodes[i]->setPosition(x);
-    }
+  // Rescale size of the capsid
+  for(int i=0; i<defNodes.size(); i++) {
+    DeformationNode<3>::Point x;
+    x = defNodes[i]->point();
+    x *= Rcapsid/Ravg;
+    defNodes[i]->setPoint(x);
+    defNodes[i]->setPosition(x);
   }
-  else {
-    for(int i=0; i<defNodes.size(); i++) {
-      DeformationNode<3>::Point x;
-      x = defNodes[i]->point();
-      x *= Rcapsid/Ravg;
-      defNodes[i]->setPoint(x);
-      defNodes[i]->setPosition(x);
-    }
-  }
+  Ravg = 1.0;
 
-  double Y = sqrt(gamma_inp);
-  double KC = 1.0/Y;
-
-  // Introduce a numerical scaling factor to make energy and forces
-  // large enough to avoid issues with machine precision.  Later
-  // divide forces by factor when printing to file.
-  double scalingFactor = 1.0;//e6;
-  Y *= scalingFactor;
-  KC *= scalingFactor;
-
-  //Amit: Set nu=0 and Yb=0 so that LoopShellBody does not handle
-  //stretching anymore.
-  //double nu = 1.0/3.0;
-  //double Yb=Y;
-  double Yb=0.0;  
-  double nu = 0.0;
-  double KG = -2.0*(1.0-nu)*KC;
-
-  std::cout << " Y: " << Y << std::endl
-	    << " nu: " << nu << std::endl
-	    << " KC: " << KC << std::endl
-	    << " KG: " << KG << std::endl
-	    << " C0: " << C0 << std::endl;
-
-  // create Body
-  int quadOrder = 2;
-
-  typedef FVK MaterialType;  
-  MaterialType bending( KC, KG, C0, Yb, nu );
-	
-  typedef LoopShellBody<MaterialType> LSB;
-  LSB * bd = new LSB(bending, connectivities, nodes, quadOrder);
-  
-  bd->setOutput(paraview);
-
+  // Calculate side lengths of the equilateral triangles
   double EquilateralEdgeLength = 0.0;
-
   for(int i=0; i<connectivities.size(); i++) {
     std::vector<int> cm(3);
     for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
@@ -220,55 +165,80 @@ int main(int argc, char* argv[])
       (tvmet::norm2(e31) + tvmet::norm2(e32) + tvmet::norm2(e12))/3.0;
   }
   EquilateralEdgeLength /= connectivities.size();
-  std::cout<<"Average equilateral triangle edge length:"<<EquilateralEdgeLength<<endl;
+  std::cout<<"Average equilateral triangle edge length:"
+	   <<EquilateralEdgeLength<<endl;
   
-  // If we want pre-stress removed, then reset the reference
-  // configuration for stretching, and reset the spontaneous curvature
-  // for bending.
-  //
-  if( prestressFlag == "no" /*|| prestressFlag == "spherical"*/ ) {
-    bd->resetReference();
-    for(Body::ElementIterator e=bd->elements().begin(); e!=bd->elements().end(); e++) {
-      LoopShell<MaterialType> * lse = (LoopShell<MaterialType>*)(*e);
-      for(LoopShell<MaterialType>::QuadPointIterator p=lse->quadraturePoints().begin();
-	  p!=lse->quadraturePoints().end(); p++) {
-	p->material.setSpontaneousCurvature(2.0*( p->material.meanCurvature() ) );
-      }
-    }
-    bd->SetRefConfiguration(EquilateralEdgeLength);
-  }
+  // Bending body material and other properties
+  double Y;
+  double KC;
+  double KG;
+  double C0 = 0.0; 
+  int quadOrder = 2;
+  typedef FVK MaterialType;
+  typedef LoopShellBody<MaterialType> LSB;  
+  KC = 1.0;
+  KG = -2.0*(1.0-(1.0/3.0))*KC;
+  
+  // We will set Yb and nu as 0 so that LSB does not do stretching
+  MaterialType bending(KC,KG,C0,0.0,0.0);
+  LSB * bd = new LSB(bending, connectivities, nodes, quadOrder);
+  bd->setOutput(paraview);
 
-  // create Model
+  // Protein body properties
+  double PotentialSearchRF=1.5;  
+  //For Lennard-Jones sigma = a/(2^(1/6)) where a = EquilateralEdge
+  double sigma = EquilateralEdgeLength/1.122462048;
+  double epsilon;
+  double ARtol = 1.5; 
+
+  // Initiliaze protein material
+  LennardJones Mat(0.0,sigma); // We will update epsilon in the for-loop
+
+  // Then initialize potential body
+  PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);    
+
+  //Create the model
   Model::BodyContainer bdc;
   bdc.push_back(bd);
+  bdc.push_back(PrBody);
+  Model model(bdc,nodes);
 
   //Parameters for the l-BFGS solver
   int m=5;
-  int maxIter=500;//1000;//model.dof();
+  int maxIter=1000;
   double factr=1.0e+1;
   double pgtol=1.0e-5;
   int iprint = 1;
+  Lbfgsb solver(model.dof(), m, factr, pgtol, iprint, maxIter );//(true);
 
-  // Potential input parameters
-  double PotentialSearchRF;  
-  double sigma;
-  double ARtol = 1.5;
+  // We want variable number of FVK increments in different ranges. So
+  // we will read FVK values from a file instead of generating it by
+  // code  
+  std::ifstream fvkFile("fvkSteps.dat");
+  assert(fvkFile);
+  std::vector<vector<double> > gammaVec;
+  double currFVK,currPrintFlag;  
+  while(fvkFile>>currFVK>>currPrintFlag){
+    std::vector<double> currLine;
+    currLine.push_back(currFVK);
+    currLine.push_back(currPrintFlag);
+    gammaVec.push_back(currLine);
+  }  
+  fvkFile.close();
 
-  //For Lennard-Jones sigma = a/(2^(1/6)) where a = EquilateralEdgeLength  
-  sigma = EquilateralEdgeLength/1.122462048;
-  
-  //We will look for only neighbouring nodes 
-  PotentialSearchRF = 1.5*EquilateralEdgeLength;
+  //Uncomment the block comment to calculate FVK by code instead of
+  //reading from dat file
+  /*
+  // FVK = 10^(exponent)
+  double expMin = 0.0; // minimum exponent -> FVK = 10^0
+  double expMax = 4.0; // maximum exponent -> FVK = 10^4
+  double FVK_steps = 1000;
+  double expIncr = (expMax - expMin)/FVK_steps;
+  double currExponent;
+  */
 
-  double FVK_min = 1.0;
-  double FVK_max = 10000.0;
-  double epsilon_min = 0.03030898988810338*(sigma/Ravg)*(sigma/Ravg)*KC*FVK_min;
-  double epsilon_max = 0.03030898988810338*(sigma/Ravg)*(sigma/Ravg)*KC*FVK_max;
-  double d_epsilon = (epsilon_max - epsilon_min)/2000;
-  double epsilon;
- 
   std::stringstream sstm;
-  string fname = "T7input";
+  string fname = inputFileName.substr(0,inputFileName.find("."));
   string iName;
   string rName;
 
@@ -276,90 +246,83 @@ int main(int argc, char* argv[])
   myfile.open ("asphVsFVK.dat");
   myfile << "Epsilon,Sigma,Ravg,Y,asphericity,FVK"<< endl;
 
-  double Ycalc;
   double asphericity;
   double gammaCalc;
 
-  PotentialBody * PrBody;
-
-  // Protein body implemented using Lennard-Jones body
-  // Initiliaze potential material
-  LennardJones Mat(epsilon_min, sigma);
-  
-  // Then initialize potential body
-  PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);  
-   
-  bdc.push_back(PrBody);   
-  Model model(bdc,nodes);  
-  Lbfgsb solver(model.dof(), m, factr, pgtol, iprint, maxIter );//(true);
-  
-
   //***************************  FOR_LOOP ***************************//
 
-  //Loop over all values of epsilon and relax the shapes to get
-  //asphericity and FVK numbers
-  for(int q=0;q <= 2000; q++){    
-    epsilon = epsilon_min + q*d_epsilon;
+  //Loop over all values of gamma and relax the shapes to get
+  //asphericity
+  /*for(int q=0;q <= FVK_steps; q++){
+      currExponent = expMin + q*expIncr;
+      double gamma = pow(10.0,currExponent);*/
+  for(std::vector<vector<double> >::iterator q=gammaVec.begin();
+      q!=gammaVec.end();++q){  
+  
+    double gamma = (*q)[0];
+    double currPrintFlag = (*q)[1];
 
     //Update the epsilon for material
+    Y = gamma/(Ravg*Ravg);
+    epsilon = 0.0303089898881*sigma*sigma*Y;
     Mat.setEpsilon(epsilon);
-
+  
     std::cout<< "Lennard-Jones potential parameters:" << endl
 	     << "sigma =" << sigma <<" epsilon =" << epsilon << endl;
-	      
+  
     PrBody->compute(true, false, false);
     std::cout << "Initial protein body energy = " << PrBody->energy() << endl;
-    
-    std::cout << "Relaxing shape for gamma = " << gamma_inp << std::endl
+  
+    std::cout << "Relaxing shape for gamma = " << gamma<< std::endl
 	      << "Energy = " << solver.function() << std::endl;
   
     for(int n=0; n<nodes.size(); n++) {
       for(int i=0; i<nodes[n]->dof(); i++) nodes[n]->setForce(i,0.0);
     }
-    
+  
     for(int b=0; b<bdc.size(); b++) {
       std::cout << "bdc[" << b << "]->compute()" << std::endl;
       bdc[b]->compute(true,true,false);    
     }
-
+  
     std::cout << "Initial Shape." << std::endl
 	      << "Energy = " << solver.function() << std::endl;  
-    
-    //Uncomment the following region if you want to print relaxed
+  
+    //Uncomment the following region if you want to print initial
     //shapes
     /*
-    sstm << fname <<".initial-" << q;
-    iName = sstm.str();
-
-    model.print(iName);
-
-    sstm.str("");
-    sstm.clear(); // Clear state flags.
+      sstm << fname <<".initial-" << q;
+      iName = sstm.str();
+    
+      model.print(iName);
+    
+      sstm.str("");
+      sstm.clear(); // Clear state flags.
     */
-
+  
     // relax initial shape
     solver.solve(&model);
-
+  
     std::cout << "Shape relaxed." << std::endl
 	      << "Energy = " << solver.function() << std::endl;
  
-    //Uncomment the following region if you want to print relaxed
-    //shapes
-    /*
-    sstm << fname <<".relaxed-" << q;
-    rName = sstm.str();
+    //Print relaxed shapes for selected FVK
+    if(currPrintFlag){
+      sstm << fname <<".relaxedFVK-" << gamma;
+      rName = sstm.str();
 
-    model.print(rName);
+      model.print(rName);
 
-    sstm.str("");
-    sstm.clear(); // Clear state flags    
-    */
+      sstm.str("");
+      sstm.clear(); // Clear state flags    
+    }
 
     tvmet::Vector<double,3> Xavg(0.0);
     for ( int i = 0; i<defNodes.size(); i++){
       Xavg += defNodes[i]->point();
     }
     Xavg /= nodes.size();
+    
     Ravg = 0.0;
     for ( int i = 0; i<defNodes.size(); i++){
       Ravg += tvmet::norm2( defNodes[i]->point() - Xavg );
@@ -373,13 +336,16 @@ int main(int argc, char* argv[])
     }
     dRavg2 /= nodes.size();
 
-    Ycalc =  32.993511288*epsilon/(sigma*sigma);
-    gammaCalc = Ycalc*Ravg*Ravg/KC;
+    gammaCalc = Y*Ravg*Ravg/KC;
     asphericity = dRavg2/(Ravg*Ravg);
   
-    myfile<<epsilon<<","<<sigma<<","<<Ravg<<","<<Ycalc<<","
+    myfile<<epsilon<<","<<sigma<<","<<Ravg<<","<<Y<<","
 	  <<asphericity<<","<<gammaCalc<<endl;
   }
   myfile.close();
+  t2=clock();
+  float diff ((float)t2-(float)t1);
+  std::cout<<"Total execution time: "<<diff/CLOCKS_PER_SEC
+	   <<" seconds"<<std::endl;
 }
     
