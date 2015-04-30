@@ -69,7 +69,7 @@ namespace voom {
 
 
     // Begin simulated annealing
-    unsigned accepted = 0,  accepReq = 0, step = 1, pt = 0, j = 0, NT = 10;
+    unsigned accepted = 0,  accepReq = 0, step = 1, pt = 0, j = 0;
     unsigned int StepPerInterval = 0, Interval = 0;
     vector<DeformationNode<3>::Point > OriginalLocations;
     unsigned int adjust = 0;
@@ -79,7 +79,7 @@ namespace voom {
       OriginalLocations.push_back((_proteins[pt]->getHost())->point());
     }
 
-    StepPerInterval = _nSteps/NT;
+    StepPerInterval = _nSteps/_NT;
     for(step = 1; step <= _nSteps; step++)
     {
       if (_method == 0) { // change one protein at the time
@@ -194,7 +194,7 @@ namespace voom {
       case STEPWISE:
 	if (step >= StepPerInterval*(Interval+1))
 	{
-	  _T1 += (_T02-_T01)/double(NT-1);
+	  _T1 += (_T02-_T01)/double(_NT-1);
 	  Interval++;
 	  ofsE.close();
 	  OutputFileStream.str(string());

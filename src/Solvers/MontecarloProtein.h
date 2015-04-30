@@ -61,6 +61,7 @@ namespace voom
 		      double ResetT = -1.0,
 		      int PrintEvery = 1,
 		      unsigned int NSteps = 1000,
+		      int NT = 10,
 		      bool print = false): 
       _proteins(Proteins), _body(Body), _possibleHosts(PossibleHosts),
       _method(Method),
@@ -98,6 +99,7 @@ namespace voom
     double _resetT;
     int _printEvery;
     unsigned int _nSteps;
+    int _NT;
     bool _print;
 
     double _f;
