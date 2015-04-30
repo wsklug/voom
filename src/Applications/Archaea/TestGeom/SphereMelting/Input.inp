@@ -23,5 +23,5 @@ NumNodePerPr	50
 PrMaxNum	1350
 PrintEvery	50
 StepWise	1
-NT		17
+NT		10
 KMCflag		1
