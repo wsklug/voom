@@ -467,7 +467,7 @@ void writeEdgeStrainVtk(std::string fileName, double avgEdgeLen){
   vtkIdType npts;
   vtkIdType *pts;
   lines->InitTraversal();
-  vtkIdType index=1;
+  vtkIdType index=0;
   while(lines->GetNextCell(npts,pts)){
     double p1[3],p2[3];
     mesh->GetPoint(pts[0],p1);
@@ -478,9 +478,11 @@ void writeEdgeStrainVtk(std::string fileName, double avgEdgeLen){
     double strain = (tvmet::norm2(line)-avgEdgeLen)/avgEdgeLen;
   if(abs(strain) < 1e-16){
     edgeStrain->SetTuple1(index++,0);
+    //edgeStrain->InsertNextValue(0.0);
   }
   else{
     edgeStrain->SetTuple1(index++,strain);
+    //edgeStrain->InsertNextValue(strain);
   }
 }
 int pos = fileName.find("-bd1.vtk");
