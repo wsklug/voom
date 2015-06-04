@@ -59,18 +59,20 @@ namespace voom {
 
 
     // Begin simulated annealing
-    unsigned accepted = 0, step = 1, pt = 0, j = 0, NT = 10;
+    unsigned accepted = 0, step = 1, pt = 0, j = 0;
     unsigned int StepPerInterval = 0, Interval = 0;
     vector<DeformationNode<3>::Point > OriginalLocations;
+    vector<DeformationNode<3>* > OriginalHost;
     unsigned int adjust = 0;
     ProteinPotential * Mat = _body->getPotential();
     // std::uniform_real_distribution<double> RealDistribution(0.0, 1.0); // does not include 1.0
     for(pt = 0; pt < _proteinsSize; pt++)
     {
       OriginalLocations.push_back((_proteins[pt]->getHost())->point());
+      OriginalHost.push_back( _proteins[pt]->getHost() );
     }
 
-    StepPerInterval = _nSteps/NT;
+    StepPerInterval = _nSteps/_NT;
     for(step = 1; step <= _nSteps; step++)
     {
       // Compute particles rates in isolation
@@ -164,7 +166,7 @@ namespace voom {
       case STEPWISE:
 	if (step >= StepPerInterval*(Interval+1))
 	{
-	  _T1 += (_T02-_T01)/double(NT-1);
+	  _T1 += (_T02-_T01)/double(_NT-1);
 	  Interval++;
 	  ofsE.close();
 	  OutputFileStream.str(string());
@@ -175,10 +177,13 @@ namespace voom {
 	    std::cout << "Cannot open output file " << OutputFileStream << std::endl;
 	    exit(0); 
 	  }
-	  // Prepare for computing average u square at next temperature
+	  // Prepare for computing average u square at next temperature or reset proteins to original location
 	  for(pt = 0; pt < _proteinsSize; pt++)
 	  {
-	    OriginalLocations[pt] = (_proteins[pt]->getHost())->point();
+	    // If we do not want to change the original locations then
+	    _proteins[pt]->setHost(OriginalHost[pt]);
+	    // Otherwise ...
+	    // OriginalLocations[pt] = (_proteins[pt]->getHost())->point();
 	  }
 	  // Reset time to zero
 	  _time = 0.0;
