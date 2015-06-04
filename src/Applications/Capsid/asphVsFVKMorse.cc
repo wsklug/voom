@@ -473,7 +473,7 @@ void writeEdgeStrainVtk(std::string fileName, double avgEdgeLen){
     mesh->GetPoint(pts[0],p1);
     mesh->GetPoint(pts[1],p2);
     tvmet::Vector<double,3> p1v(p1[0],p1[1],p1[2]);
-    tvmet::Vector<double,3> p2v(p2[0],p2[1],p2[3]);
+    tvmet::Vector<double,3> p2v(p2[0],p2[1],p2[2]);
     tvmet::Vector<double,3> line(p1v-p2v);
     double strain = (tvmet::norm2(line)-avgEdgeLen)/avgEdgeLen;
   if(abs(strain) < 1e-16){
