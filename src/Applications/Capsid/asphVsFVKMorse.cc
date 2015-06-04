@@ -338,7 +338,7 @@ int main(int argc, char* argv[])
      
     //Selectively print the relaxed shapes
     if(currPrintFlag){
-      sstm << fname <<".relaxed-" << nameSuffix++;
+      sstm << fname <<"-relaxed-" << nameSuffix++;
       rName = sstm.str();
 
       model.print(rName);
@@ -478,18 +478,16 @@ void writeEdgeStrainVtk(std::string fileName, double avgEdgeLen){
     double strain = (tvmet::norm2(line)-avgEdgeLen)/avgEdgeLen;
   if(abs(strain) < 1e-16){
     edgeStrain->SetTuple1(index++,0);
-    //edgeStrain->InsertNextValue(0.0);
   }
   else{
     edgeStrain->SetTuple1(index++,strain);
-    //edgeStrain->InsertNextValue(strain);
   }
 }
 int pos = fileName.find("-bd1.vtk");
 fileName.erase(pos,string::npos);
 pos = fileName.find("relaxed-");
 fileName.erase(pos,8);
-pos = fileName.find(".");
+pos = fileName.find("-");
 string serialNum = fileName.substr(pos+1,string::npos);
 fileName.erase(pos,string::npos);
 fileName = "./" + fileName + "-EdgeStrain-"+ serialNum + ".vtk";
