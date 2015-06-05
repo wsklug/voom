@@ -266,12 +266,9 @@ int main(int argc, char* argv[])
 
     //For Morse material 
     double Rshift = EquilateralEdgeLength;
-    double ratio = 1.0;
-    double epsilon = 0.0023/ratio;
-    //double sigma = (6.0/Rshift)*sqrt(ratio);
+    double epsilon = 0.0023;
     double sigma = (5.0/Rshift)*log(2.0);
-    double springConstant = 2*sigma*sigma*epsilon;
-    //double ARtol = 1.5;
+    double springConstant = 2*sigma*sigma*epsilon;    
     double PotentialSearchRF=1.5;    
 
     //*************** Bending body parameters ***************//
@@ -370,7 +367,28 @@ int main(int argc, char* argv[])
     TriangleEdgeLength /= connectivities.size();
     std::cout<<"Average equilateral triangle edge length after relaxing:"
 	     <<TriangleEdgeLength<<endl;
-    
+
+    // Calculate the standard deviation of side lengths of the
+    // equilateral triangles after relaxation
+    stdDevEdgeLen = 0.0;
+    for(int i=0; i<connectivities.size(); i++) {
+      std::vector<int> cm(3);
+      for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
+      // Edge vectors in current config.
+      tvmet::Vector<double,3> 
+	e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
+	e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
+	e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
+	eCent(defNodes[cm[2]]->point());
+      stdDevEdgeLen = std::pow(tvmet::norm2(e31) - TriangleEdgeLength,2.0) +
+	std::pow(tvmet::norm2(e32) - TriangleEdgeLength,2.0) +
+	std::pow(tvmet::norm2(e12) - TriangleEdgeLength,2.0);
+    }
+    stdDevEdgeLen /= connectivities.size();
+    stdDevEdgeLen = sqrt(stdDevEdgeLen);
+    std::cout<<"Standard deviation in equilateral triangle edge length after relaxing:"
+	     <<stdDevEdgeLen<<endl;    
+
     tvmet::Vector<double,3> Xavg(0.0);
     for ( int i = 0; i<defNodes.size(); i++){
       Xavg += defNodes[i]->point();
@@ -448,21 +466,22 @@ void writeEdgeStrainVtk(std::string fileName, double avgEdgeLen){
 
   //Following few lines of code are meant to obtain number of edges
   //from the mesh
-  vtkSmartPointer<vtkExtractEdges> extractedEdges = 
-    vtkSmartPointer<vtkExtractEdges>::New();
-  
-  extractedEdges->SetInput(mesh);
-  extractedEdges->Update();  
-  vtkSmartPointer<vtkCellArray> lines = extractedEdges->GetOutput()->GetLines();
+  vtkSmartPointer<vtkExtractEdges> extractEdges = 
+    vtkSmartPointer<vtkExtractEdges>::New();  
+  extractEdges->SetInput(mesh);
+  extractEdges->Update();
+  vtkSmartPointer<vtkPolyData> wireFrame = extractEdges->GetOutput();
+
+  vtkSmartPointer<vtkCellArray> lines = wireFrame->GetLines();
   int numLines = lines->GetNumberOfCells();
 
-  //The following vtkUnsignedIntArray will be used to store the
+  //The following vtkDoubleArray will be used to store the
   //strain in each edge
   vtkSmartPointer<vtkDoubleArray> edgeStrain = 
     vtkSmartPointer<vtkDoubleArray>::New();
   edgeStrain->SetNumberOfComponents(1);
   edgeStrain->SetNumberOfTuples(numLines);
-  edgeStrain->SetName("EdgeStrain");
+  edgeStrain->SetName("EdgeStrains");
   
   vtkIdType npts;
   vtkIdType *pts;
@@ -470,19 +489,16 @@ void writeEdgeStrainVtk(std::string fileName, double avgEdgeLen){
   vtkIdType index=0;
   while(lines->GetNextCell(npts,pts)){
     double p1[3],p2[3];
-    mesh->GetPoint(pts[0],p1);
-    mesh->GetPoint(pts[1],p2);
+    wireFrame->GetPoint(pts[0],p1);
+    wireFrame->GetPoint(pts[1],p2);
     tvmet::Vector<double,3> p1v(p1[0],p1[1],p1[2]);
     tvmet::Vector<double,3> p2v(p2[0],p2[1],p2[2]);
     tvmet::Vector<double,3> line(p1v-p2v);
     double strain = (tvmet::norm2(line)-avgEdgeLen)/avgEdgeLen;
-  if(abs(strain) < 1e-16){
-    edgeStrain->SetTuple1(index++,0);
-  }
-  else{
     edgeStrain->SetTuple1(index++,strain);
-  }
 }
+wireFrame->GetCellData()->SetScalars(edgeStrain);
+
 int pos = fileName.find("-bd1.vtk");
 fileName.erase(pos,string::npos);
 pos = fileName.find("relaxed-");
@@ -491,11 +507,9 @@ pos = fileName.find("-");
 string serialNum = fileName.substr(pos+1,string::npos);
 fileName.erase(pos,string::npos);
 fileName = "./" + fileName + "-EdgeStrain-"+ serialNum + ".vtk";
-vtkSmartPointer<vtkPolyData> edgeMesh = extractedEdges->GetOutput();
-edgeMesh->GetCellData()->SetScalars(edgeStrain);
 
 vtkNew<vtkPolyDataWriter> writer;
 writer->SetFileName(fileName.c_str());
-writer->SetInput(edgeMesh);
+writer->SetInput(wireFrame);
 writer->Write();
 }
