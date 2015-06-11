@@ -185,6 +185,8 @@ namespace voom {
 	    // Otherwise ...
 	    // OriginalLocations[pt] = (_proteins[pt]->getHost())->point();
 	  }
+	  _body->recomputeNeighbors(Rsearch);
+	  _printProtein->printMaster(-step, 0);
 	  // Reset time to zero
 	  _time = 0.0;
 	  _approxTime = 0.0;
