@@ -190,6 +190,13 @@ namespace voom {
 	  // Reset time to zero
 	  _time = 0.0;
 	  _approxTime = 0.0;
+
+	  _body->compute(true, false, false);
+	  _fSaved = _body->energy();
+	  std::cout << "Initial energy = " << _fSaved << std::endl;
+	  
+	  fBest = _fSaved;
+	  fWorst = _fSaved;
 	}
 	break;
       } // switch
