@@ -246,6 +246,30 @@ int main(int argc, char* argv[])
   typedef LoopShellBody<MaterialType> LSB;
   typedef LoopShell<MaterialType> LS;
 
+  //****************  Protein body parameters ****************//
+
+  //For Morse material 
+  double epsilon;
+  double sigmaFactor;
+  double pressure;
+
+  //Read epsilon and sigmaFactor from input file sigmaFactor is
+  //calculating using to set the inflection point of Morse potential
+  //at a fixed distance relative to the equilibrium separation
+  //e.g. 1.1*R_eq, 1.5*R_eq etc.
+  std::ifstream miscInpFile("miscInp.dat");
+  assert(miscInpFile);
+  string temp;
+  miscInpFile >> temp >> epsilon
+	      >> temp >> sigmaFactor
+	      >> temp >> pressure;
+  miscInpFile.close();
+
+  double Rshift = EquilateralEdgeLength;
+  double sigma  = (sigmaFactor/Rshift)*log(2.0);
+  double PotentialSearchRF=1.5; 
+  double springConstant = 2*sigma*sigma*epsilon;
+
   //***************************  SOLUTION LOOP ***************************//
 
   //Loop over all values of gamma and relax the shapes to get
@@ -262,14 +286,14 @@ int main(int argc, char* argv[])
     double gamma = (*q)[0];
     double currPrintFlag = (*q)[1];    
     
-    //****************  Protein body parameters ****************//
+    // //****************  Protein body parameters ****************//
 
-    //For Morse material 
-    double Rshift = EquilateralEdgeLength;
-    double epsilon = 0.0023;
-    double sigma = (5.0/Rshift)*log(2.0);
-    double springConstant = 2*sigma*sigma*epsilon;    
-    double PotentialSearchRF=1.5;    
+    // //For Morse material 
+    // double Rshift = EquilateralEdgeLength;
+    // double epsilon = 0.0023;
+    // double sigma = (5.0/Rshift)*log(2.0);
+    // double springConstant = 2*sigma*sigma*epsilon;    
+    // double PotentialSearchRF=1.5;    
 
     //*************** Bending body parameters ***************//
     double Y = 2.0/sqrt(3)*springConstant; // Young's modulus
@@ -282,7 +306,8 @@ int main(int argc, char* argv[])
     //**************** The Bodies *****************//
 
     MaterialType bending(KC,KG,C0,0.0,0.0);
-    LSB * bd = new LSB(bending, connectivities, nodes, quadOrder);
+    LSB * bd = new LSB(bending, connectivities, nodes, quadOrder, pressure,
+		       0.0,0.0,1.0e4,1.0e6,1.0e4,augmented,noConstraint,noConstraint);
     bd->setOutput(paraview);
 
     Morse Mat(epsilon,sigma,Rshift);
@@ -297,6 +322,8 @@ int main(int argc, char* argv[])
     std::cout<< "Morse potential parameters:" << endl
 	     << "sigma = " << sigma <<" epsilon = " << epsilon
 	     << " Rshift = "<< Rshift <<endl;
+
+    std::cout << "Pressure :" << pressure << endl;
      
     PrBody->compute(true, false, false);
     std::cout << "Initial protein body energy = " << PrBody->energy() << endl;
@@ -329,7 +356,36 @@ int main(int argc, char* argv[])
       sstm.str("");
       sstm.clear(); // Clear state flags.
     */
-     
+    
+    //************************************ REMESHING ******************************//
+    bool remesh = false;
+    double ARtol = 1.5;
+    uint elementsChanged = 0;
+
+    if(remesh) {     
+      elementsChanged = bd->Remesh(ARtol,bending,quadOrder);
+
+      //Print out the number of elements that changed due to remeshing
+      if(elementsChanged > 0){
+	std::cout<<"Number of elements that changed after remeshing = "
+		 <<elementsChanged<<"."<<std::endl;
+
+	//If some elements have changed then we need to reset the
+	//reference configuration with average side lengths
+	bd->SetRefConfiguration(EquilateralEdgeLength);
+
+	//We also need to recompute the neighbors for PotentialBody
+	PrBody->recomputeNeighbors(PotentialSearchRF);
+      }
+
+      //TODO: MAY HAVE TO CALL RECOMPUTENEIGHBOUR AGAIN FOR VERY SMALL
+      //PotentialSearchRad
+
+    }// Remeshing ends here     
+
+    //Relax again after remeshing
+    solver.solve( &model );
+
     std::cout << "Shape relaxed." << std::endl
 	      << "Energy = " << solver.function() << std::endl;
      
@@ -475,6 +531,10 @@ void writeEdgeStrainVtk(std::string fileName, double avgEdgeLen){
   vtkSmartPointer<vtkCellArray> lines = wireFrame->GetLines();
   int numLines = lines->GetNumberOfCells();
 
+  string vectorName="displacements";
+  vtkSmartPointer<vtkDataArray> displacements = wireFrame->GetPointData()->
+    GetVectors(vectorName.c_str());
+
   //The following vtkDoubleArray will be used to store the
   //strain in each edge
   vtkSmartPointer<vtkDoubleArray> edgeStrain = 
@@ -489,27 +549,30 @@ void writeEdgeStrainVtk(std::string fileName, double avgEdgeLen){
   vtkIdType index=0;
   while(lines->GetNextCell(npts,pts)){
     double p1[3],p2[3];
+    double disp1[3],disp2[3];
     wireFrame->GetPoint(pts[0],p1);
     wireFrame->GetPoint(pts[1],p2);
-    tvmet::Vector<double,3> p1v(p1[0],p1[1],p1[2]);
-    tvmet::Vector<double,3> p2v(p2[0],p2[1],p2[2]);
+    displacements->GetTuple(pts[0],disp1);
+    displacements->GetTuple(pts[1],disp2);
+    tvmet::Vector<double,3> p1v(p1[0]+disp1[0],p1[1]+disp1[1],p1[2]+disp1[2]);
+    tvmet::Vector<double,3> p2v(p2[0]+disp2[0],p2[1]+disp2[1],p2[2]+disp2[2]);
     tvmet::Vector<double,3> line(p1v-p2v);
     double strain = (tvmet::norm2(line)-avgEdgeLen)/avgEdgeLen;
     edgeStrain->SetTuple1(index++,strain);
-}
-wireFrame->GetCellData()->SetScalars(edgeStrain);
+  }
+  wireFrame->GetCellData()->SetScalars(edgeStrain);
 
-int pos = fileName.find("-bd1.vtk");
-fileName.erase(pos,string::npos);
-pos = fileName.find("relaxed-");
-fileName.erase(pos,8);
-pos = fileName.find("-");
-string serialNum = fileName.substr(pos+1,string::npos);
-fileName.erase(pos,string::npos);
-fileName = "./" + fileName + "-EdgeStrain-"+ serialNum + ".vtk";
+  int pos = fileName.find("-bd1.vtk");
+  fileName.erase(pos,string::npos);
+  pos = fileName.find("relaxed-");
+  fileName.erase(pos,8);
+  pos = fileName.find("-");
+  string serialNum = fileName.substr(pos+1,string::npos);
+  fileName.erase(pos,string::npos);
+  fileName = "./" + fileName + "-EdgeStrain-"+ serialNum + ".vtk";
 
-vtkNew<vtkPolyDataWriter> writer;
-writer->SetFileName(fileName.c_str());
-writer->SetInput(wireFrame);
-writer->Write();
+  vtkNew<vtkPolyDataWriter> writer;
+  writer->SetFileName(fileName.c_str());
+  writer->SetInput(wireFrame);
+  writer->Write();
 }
