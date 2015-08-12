@@ -251,10 +251,10 @@ int main(int argc, char* argv[])
   //For Morse material 
   double epsilon;
   double sigmaFactor;
-  double pressure;
+  double pressureFactor;
 
-  //Read epsilon and sigmaFactor from input file sigmaFactor is
-  //calculating using to set the inflection point of Morse potential
+  //Read epsilon and sigmaFactor from input file. sigmaFactor is
+  //calculated so as to set the inflection point of Morse potential
   //at a fixed distance relative to the equilibrium separation
   //e.g. 1.1*R_eq, 1.5*R_eq etc.
   std::ifstream miscInpFile("miscInp.dat");
@@ -262,7 +262,7 @@ int main(int argc, char* argv[])
   string temp;
   miscInpFile >> temp >> epsilon
 	      >> temp >> sigmaFactor
-	      >> temp >> pressure;
+	      >> temp >> pressureFactor;
   miscInpFile.close();
 
   double Rshift = EquilateralEdgeLength;
@@ -302,12 +302,13 @@ int main(int argc, char* argv[])
     double KG = -2*(1-nu)*KC; // Gaussian modulus
     double C0 = 0.0;
     int quadOrder = 2;
+    double pressure = pressureFactor*(3.82)*sigma*epsilon/(Rshift*Rshift);
     
     //**************** The Bodies *****************//
 
     MaterialType bending(KC,KG,C0,0.0,0.0);
     LSB * bd = new LSB(bending, connectivities, nodes, quadOrder, pressure,
-		       0.0,0.0,1.0e4,1.0e6,1.0e4,augmented,noConstraint,noConstraint);
+		       0.0,0.0,1.0e4,1.0e6,1.0e4,multiplier,noConstraint,noConstraint);
     bd->setOutput(paraview);
 
     Morse Mat(epsilon,sigma,Rshift);
@@ -358,7 +359,7 @@ int main(int argc, char* argv[])
     */
     
     //************************************ REMESHING ******************************//
-    bool remesh = false;
+    bool remesh = true;
     double ARtol = 1.5;
     uint elementsChanged = 0;
 
@@ -445,6 +446,7 @@ int main(int argc, char* argv[])
     std::cout<<"Standard deviation in equilateral triangle edge length after relaxing:"
 	     <<stdDevEdgeLen<<endl;    
 
+    //Calculate centre of sphere as average of position vectors of all nodes.
     tvmet::Vector<double,3> Xavg(0.0);
     for ( int i = 0; i<defNodes.size(); i++){
       Xavg += defNodes[i]->point();

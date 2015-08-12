@@ -216,9 +216,9 @@ int main(int argc, char* argv[])
 
   //Parameters for the l-BFGS solver
   int m=5;
-  int maxIter=500;//1000;//model.dof();
+  int maxIter=1e5;
   double factr=1.0e+1;
-  double pgtol=1.0e-5;
+  double pgtol=1.0e-8;
   int iprint = 1;  
  
   std::stringstream sstm;
@@ -229,9 +229,21 @@ int main(int argc, char* argv[])
   ofstream myfile;
   myfile.open ("asphVsFVKcont.dat");
   myfile << "Ravg,Y,asphericity,FVK"<< endl;
+
+  //Read pressure value from input file
+  double pressure;
+  std::ifstream miscInpFile("miscInp.dat");
+  assert(miscInpFile);
+  string temp;
+  miscInpFile >> temp >> pressure;
+  miscInpFile.close();
+  std::cout << "Pressure: " << pressure;
+
+  //Output file index number
+  int fileNum = 1;
  
   double asphericity;
-  Lbfgsb solver(3*nodes.size(), m, factr, pgtol, iprint, maxIter );//(true);
+  Lbfgsb solver(3*nodes.size(), m, factr, pgtol, iprint, maxIter );
 
   //***************************  FOR_LOOP ***************************//
 
@@ -261,7 +273,8 @@ int main(int argc, char* argv[])
       delete bd;
     }
     MaterialType bending( KC, KG, C0, Y, nu );
-    bd = new LSB(bending, connectivities, nodes, quadOrder);    
+    bd = new LSB(bending, connectivities, nodes, quadOrder,pressure,
+		 0.0,0.0,1.0e4,1.0e6,1.0e4,multiplier,noConstraint,noConstraint);    
     bd->setOutput(paraview);
     bdc.push_back(bd);
     Model model(bdc,nodes);
@@ -287,7 +300,7 @@ int main(int argc, char* argv[])
     //Uncomment the following region if you want to print initial
     //shapes
     /*
-    sstm << fname <<".initial-" << q;
+    sstm << fname <<"-initial-" << q;
     iName = sstm.str();
 
     model.print(iName);
@@ -304,7 +317,7 @@ int main(int argc, char* argv[])
  
     //Selectively print the relaxed shape
     if(currPrintFlag){
-      sstm << fname <<".relaxedFVK-" <<gamma;
+      sstm << fname <<"-relaxed-" <<fileNum++;
       rName = sstm.str();
       
       model.print(rName);

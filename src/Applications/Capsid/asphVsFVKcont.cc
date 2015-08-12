@@ -187,14 +187,14 @@ int main(int argc, char* argv[])
   
   //Uncomment if you want to calculate FVK values by code
   /*
-  double expMin = .0; // log_10(1) = 0 -> FVK = 1
-  double expMax = 4.0; // log_10(10000) = 4 -> FVK = 10000
-  double FVK_steps = 1000;
+    double expMin = .0; // log_10(1) = 0 -> FVK = 1
+    double expMax = 4.0; // log_10(10000) = 4 -> FVK = 10000
+    double FVK_steps = 1000;
   
-  // Calculate increment to create 1000 evenly spaced exponents from 0
-  // to 4
-  double expIncr = (expMax-expMin)/FVK_steps;
-  double currExponent; // Used to calculate FVK number
+    // Calculate increment to create 1000 evenly spaced exponents from 0
+    // to 4
+    double expIncr = (expMax-expMin)/FVK_steps;
+    double currExponent; // Used to calculate FVK number
   */
 
   // The Young's modulus and bending modulus
@@ -208,6 +208,7 @@ int main(int argc, char* argv[])
 
   typedef FVK MaterialType;  	
   typedef LoopShellBody<MaterialType> LSB;
+  typedef LoopShell<MaterialType> LS;
 
   LSB * bd;
 
@@ -232,6 +233,7 @@ int main(int argc, char* argv[])
  
   double asphericity;
   Lbfgsb solver(3*nodes.size(), m, factr, pgtol, iprint, maxIter );//(true);
+  int fileNum=1;
 
   //***************************  FOR_LOOP ***************************//
   
@@ -241,8 +243,8 @@ int main(int argc, char* argv[])
     
     //Uncomment if you want to calculate FVK values by code
     /*
-    currExponent = expMin + q*expIncr;
-    gamma = pow(10.0,currExponent);
+      currExponent = expMin + q*expIncr;
+      gamma = pow(10.0,currExponent);
     */
     
     double gamma = (*q)[0];
@@ -287,13 +289,13 @@ int main(int argc, char* argv[])
     //Uncomment the following region if you want to print initial
     //shapes
     /*
-    sstm << fname <<".initial-" << q;
-    iName = sstm.str();
+      sstm << fname <<".initial-" << q;
+      iName = sstm.str();
 
-    model.print(iName);
+      model.print(iName);
 
-    sstm.str("");
-    sstm.clear(); // Clear state flags.
+      sstm.str("");
+      sstm.clear(); // Clear state flags.
     */
 
     // relax initial shape
@@ -305,7 +307,7 @@ int main(int argc, char* argv[])
     //Uncomment the following region if you want to print relaxed
     //shapes
     if(currPrintFlag){// Print relaxed shape for selected FVK
-      sstm << fname <<".relaxedFVK-" <<gamma;
+      sstm << fname <<"-relaxed-" <<fileNum++;
       rName = sstm.str();
       
       model.print(rName);
