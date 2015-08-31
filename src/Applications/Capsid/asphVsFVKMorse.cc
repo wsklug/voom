@@ -5,6 +5,8 @@
 #include <fstream>
 #include <unistd.h>
 #include <tvmet/Vector.h>
+#include <iomanip>
+#include <limits>
 #include "Node.h"
 #include "FVK.h"
 #include "LoopShellBody.h"
@@ -32,6 +34,7 @@
 #include <vtkLine.h>
 
 #include "Morse.h"
+#include "SpringPotential.h"
 #include "PotentialBody.h"
 #include "Utils/PrintingProtein.h"
 
@@ -43,7 +46,12 @@ using namespace tvmet;
 using namespace std;
 using namespace voom;
 
+// Function declarations
 void writeEdgeStrainVtk(std::string fileName, double avgEdgeLen);
+
+std::vector<double> calcEdgeLenAndStdDev
+(std::vector< DeformationNode<3>* > a, 
+ vector< tvmet::Vector<int,3> > b);
 
 int main(int argc, char* argv[])
 {
@@ -141,7 +149,6 @@ int main(int argc, char* argv[])
     for(int a=0; a<3; a++) c[a] = mesh->GetCell(i)->GetPointId(a);
     connectivities.push_back(c);
   }
-
   
   // Rescale size of the capsid
   for(int i=0; i<defNodes.size(); i++) {
@@ -154,47 +161,20 @@ int main(int argc, char* argv[])
   
   Ravg = 1.0;//At least, we expect it to be 1.0 now
     
-  // Calculate side lengths of the equilateral triangles
-  double EquilateralEdgeLength = 0.0;
-  for(int i=0; i<connectivities.size(); i++) {
-    std::vector<int> cm(3);
-    for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
-    // Edge vectors in current config.
-    tvmet::Vector<double,3> 
-      e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
-      e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
-      e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
-      eCent(defNodes[cm[2]]->point());
-    // Compute average edge length for each triangle
-    EquilateralEdgeLength += 
-      (tvmet::norm2(e31) + tvmet::norm2(e32) + tvmet::norm2(e12))/3.0;
-  }
-  EquilateralEdgeLength /= connectivities.size();
-  std::cout<<"Average equilateral triangle edge length:"
-	   <<EquilateralEdgeLength<<endl;
+  // Calculate side lengths average and std dev of the 
+  //equilateral triangles
+  std::vector<double> lengthStat = 
+    calcEdgeLenAndStdDev(defNodes,connectivities);  
+  double EdgeLength = lengthStat[0];
+  double stdDevEdgeLen = lengthStat[1];
+  std::cout<<"Before any relaxation :" << endl
+	   <<"   Average triangle edge length = "<< std::setprecision(10)
+	   << EdgeLength << endl
+	   <<"   Standard deviation = " << std::setprecision(10)
+	   << stdDevEdgeLen << endl;
+  std::cout.precision(6);
 
-  // Calculate the standard deviation of side lengths of the
-  // equilateral triangles
-  double stdDevEdgeLen = 0.0;
-  for(int i=0; i<connectivities.size(); i++) {
-    std::vector<int> cm(3);
-    for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
-    // Edge vectors in current config.
-    tvmet::Vector<double,3> 
-      e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
-      e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
-      e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
-      eCent(defNodes[cm[2]]->point());
-    stdDevEdgeLen = std::pow(tvmet::norm2(e31) - EquilateralEdgeLength,2.0) +
-      std::pow(tvmet::norm2(e32) - EquilateralEdgeLength,2.0) +
-      std::pow(tvmet::norm2(e12) - EquilateralEdgeLength,2.0);
-  }
-  stdDevEdgeLen /= connectivities.size();
-  stdDevEdgeLen = sqrt(stdDevEdgeLen);
-  std::cout<<"Standard deviation in equilateral triangle edge length:"
-	   <<stdDevEdgeLen<<endl;
-
-  //******************* READ FVK DATA FROM FILE *************************//
+  //******************* READ FVK DATA FROM FILE ********************//
 
   
   // We want variable number of FVK increments in different ranges. So
@@ -240,7 +220,7 @@ int main(int argc, char* argv[])
   int iprint = 1;
   Lbfgsb solver(3*nodes.size(), m, factr, pgtol, iprint, maxIter );
 
-  int nameSuffix = 1;
+  int nameSuffix = 0;
 
   typedef FVK MaterialType;
   typedef LoopShellBody<MaterialType> LSB;
@@ -265,10 +245,76 @@ int main(int argc, char* argv[])
 	      >> temp >> pressureFactor;
   miscInpFile.close();
 
-  double Rshift = EquilateralEdgeLength;
+  double Rshift = EdgeLength;
   double sigma  = (sigmaFactor/Rshift)*log(2.0);
-  double PotentialSearchRF=1.5; 
+  double PotentialSearchRF=1.2*Rshift; 
   double springConstant = 2*sigma*sigma*epsilon;
+  double pressure = pressureFactor*(3.82)*sigma*epsilon/(Rshift*Rshift);
+
+  //****** Relax the initial mesh using harmonic potential ****** //
+
+  double gamma = gammaVec[0][0];
+  double Y = 2.0/sqrt(3)*springConstant; // Young's modulus
+  double nu = 1.0/3.0;
+  double KC = Y*Ravg*Ravg/gamma; 
+  double KG = -2*(1-nu)*KC; // Gaussian modulus
+  double C0 = 0.0;
+  int quadOrder = 2;
+
+  MaterialType bending(KC,KG,C0,0.0,0.0);
+  LSB * bd1 = new LSB(bending, connectivities, nodes, quadOrder, 
+		      pressure, 0.0,0.0,1.0e4,1.0e6,1.0e4,
+		      multiplier,noConstraint,noConstraint);
+  bd1->setOutput(paraview);
+  SpringPotential SpringMat(springConstant, Rshift);
+  PotentialBody * SpringBody = new 
+    PotentialBody(&SpringMat, defNodes, PotentialSearchRF);
+
+  //Create Model
+  Model::BodyContainer bdc1;
+  bdc1.push_back(SpringBody);
+  bdc1.push_back(bd1);    
+  Model model1(bdc1,nodes);
+     
+  std::cout<< "Spring constant: " << springConstant << endl;
+  std::cout<< "Relaxing the mesh using harmonic potential..."<< endl;     
+  SpringBody->compute(true, false, false);     
+  for(int n=0; n<nodes.size(); n++) {
+    for(int i=0; i<nodes[n]->dof(); i++) nodes[n]->setForce(i,0.0);
+  }     
+  for(int b=0; b<bdc1.size(); b++) {
+    std::cout << "bdc1[" << b << "]->compute()" << std::endl;
+    bdc1[b]->compute(true,true,false);  
+  }       
+  solver.solve( &model1 );
+  std::cout<<"Harmonic potential relaxation completed." << endl;
+
+  //Print to VTK file
+  sstm << fname <<"-relaxed-" << nameSuffix++;
+  rName = sstm.str();
+  model1.print(rName);
+  sstm <<"-bd1.vtk";
+  rName = sstm.str();
+  writeEdgeStrainVtk(rName, Rshift);      
+  sstm.str("");
+  sstm.clear();
+
+  //Release allocated memory
+  delete bd1;
+  delete SpringBody;
+
+  //Recalculate edge lengths and dependent quantities
+  lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);  
+  EdgeLength = lengthStat[0];
+  Rshift = EdgeLength;
+  sigma  = (sigmaFactor/Rshift)*log(2.0);  
+  springConstant = 2*sigma*sigma*epsilon;
+  std::cout<<"After relaxing with harmonic potential: "<< endl
+	   <<"   Average triangle edge length = "<< std::setprecision(10)
+	   << EdgeLength << endl
+	   <<"   Standard deviation = " << std::setprecision(10)
+	   << stdDevEdgeLen << endl;
+  std::cout.precision(6);  
 
   //***************************  SOLUTION LOOP ***************************//
 
@@ -276,45 +322,28 @@ int main(int argc, char* argv[])
   //asphericity
 
   for(std::vector<vector<double> >::iterator q=gammaVec.begin();
-      q!=gammaVec.end();++q){
+      q!=gammaVec.end();++q){  
 
-    /*
-      currExponent = expMin + q*expIncr;
-      double gamma = pow(10.0,currExponent);
-    */
-
-    double gamma = (*q)[0];
+    gamma = (*q)[0];
     double currPrintFlag = (*q)[1];    
+
+    // Bending body parameters
+    Y = 2.0/sqrt(3)*springConstant; // Young's modulus
+    KC = Y*Ravg*Ravg/gamma; // Bending modulus
+    KG = -2*(1-nu)*KC; // Gaussian modulus
+    pressure = pressureFactor*(3.82)*sigma*epsilon/(Rshift*Rshift);
     
-    // //****************  Protein body parameters ****************//
-
-    // //For Morse material 
-    // double Rshift = EquilateralEdgeLength;
-    // double epsilon = 0.0023;
-    // double sigma = (5.0/Rshift)*log(2.0);
-    // double springConstant = 2*sigma*sigma*epsilon;    
-    // double PotentialSearchRF=1.5;    
-
-    //*************** Bending body parameters ***************//
-    double Y = 2.0/sqrt(3)*springConstant; // Young's modulus
-    double nu = 1.0/3.0;
-    double KC = Y*Ravg*Ravg/gamma; // Bending modulus calculated from gamma and Y
-    double KG = -2*(1-nu)*KC; // Gaussian modulus
-    double C0 = 0.0;
-    int quadOrder = 2;
-    double pressure = pressureFactor*(3.82)*sigma*epsilon/(Rshift*Rshift);
-    
-    //**************** The Bodies *****************//
-
+    //The Bodies
     MaterialType bending(KC,KG,C0,0.0,0.0);
     LSB * bd = new LSB(bending, connectivities, nodes, quadOrder, pressure,
 		       0.0,0.0,1.0e4,1.0e6,1.0e4,multiplier,noConstraint,noConstraint);
     bd->setOutput(paraview);
 
     Morse Mat(epsilon,sigma,Rshift);
+    PotentialSearchRF = 1.5;
     PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);
 
-    //********************** Create Model ********************//
+    //Create Model
     Model::BodyContainer bdc;
     bdc.push_back(PrBody);
     bdc.push_back(bd);    
@@ -344,21 +373,9 @@ int main(int argc, char* argv[])
     std::cout << "Initial Shape." << std::endl
 	      << "Energy = " << solver.function() << std::endl;
 
-    solver.solve( &model );
-
-    //Uncomment the following region if you want to print initial
-    //shapes
-    /*
-      sstm << fname <<".initial-" <<nameSuffix++;
-      iName = sstm.str();
-       
-      model.print(iName);
-       
-      sstm.str("");
-      sstm.clear(); // Clear state flags.
-    */
+    solver.solve( &model );   
     
-    //************************************ REMESHING ******************************//
+    // REMESHING
     bool remesh = true;
     double ARtol = 1.5;
     uint elementsChanged = 0;
@@ -373,14 +390,11 @@ int main(int argc, char* argv[])
 
 	//If some elements have changed then we need to reset the
 	//reference configuration with average side lengths
-	bd->SetRefConfiguration(EquilateralEdgeLength);
+	bd->SetRefConfiguration(EdgeLength);
 
 	//We also need to recompute the neighbors for PotentialBody
 	PrBody->recomputeNeighbors(PotentialSearchRF);
       }
-
-      //TODO: MAY HAVE TO CALL RECOMPUTENEIGHBOUR AGAIN FOR VERY SMALL
-      //PotentialSearchRad
 
     }// Remeshing ends here     
 
@@ -406,45 +420,16 @@ int main(int argc, char* argv[])
     
     }
 
-    //Re-calculate average equilateral triangle edge length
-    double TriangleEdgeLength = 0.0;
-    for(int i=0; i<connectivities.size(); i++) {
-      std::vector<int> cm(3);
-      for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
-      // Edge vectors in current config.
-      tvmet::Vector<double,3> 
-	e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
-	e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
-	e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
-	eCent(defNodes[cm[2]]->point());
-      // Compute average edge length for each triangle
-      TriangleEdgeLength += 
-	(tvmet::norm2(e31) + tvmet::norm2(e32) + tvmet::norm2(e12))/3.0;
-    }
-    TriangleEdgeLength /= connectivities.size();
-    std::cout<<"Average equilateral triangle edge length after relaxing:"
-	     <<TriangleEdgeLength<<endl;
-
-    // Calculate the standard deviation of side lengths of the
-    // equilateral triangles after relaxation
-    stdDevEdgeLen = 0.0;
-    for(int i=0; i<connectivities.size(); i++) {
-      std::vector<int> cm(3);
-      for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
-      // Edge vectors in current config.
-      tvmet::Vector<double,3> 
-	e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
-	e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
-	e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
-	eCent(defNodes[cm[2]]->point());
-      stdDevEdgeLen = std::pow(tvmet::norm2(e31) - TriangleEdgeLength,2.0) +
-	std::pow(tvmet::norm2(e32) - TriangleEdgeLength,2.0) +
-	std::pow(tvmet::norm2(e12) - TriangleEdgeLength,2.0);
-    }
-    stdDevEdgeLen /= connectivities.size();
-    stdDevEdgeLen = sqrt(stdDevEdgeLen);
-    std::cout<<"Standard deviation in equilateral triangle edge length after relaxing:"
-	     <<stdDevEdgeLen<<endl;    
+    //Re-calculate triangle edge length mean and deviation
+    lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);
+    EdgeLength = lengthStat[0];
+    stdDevEdgeLen = lengthStat[1];
+    std::cout<<"After relaxing with Morse potential: "<< endl
+	     <<"   Average triangle edge length = "<< std::setprecision(10)
+	     << EdgeLength << endl
+	     <<"   Standard deviation = " << std::setprecision(10)
+	     << stdDevEdgeLen << endl;
+    std::cout.precision(6);    
 
     //Calculate centre of sphere as average of position vectors of all nodes.
     tvmet::Vector<double,3> Xavg(0.0);
@@ -501,10 +486,11 @@ int main(int argc, char* argv[])
   std::cout<<"Total execution time: "<<diff/CLOCKS_PER_SEC
 	   <<" seconds"<<std::endl;
 }
-    
-///////////////////////// WRITEEDGESTRAINVTK BEGINS ///////////////////////////
-/////////////////////////                           //////////////////////////
-
+///////////////////////////////////////////////////////////////////////////////
+//                                                                           //    
+//                        WRITEEDGESTRAINVTK BEGINS                          //
+//                                                                           //
+///////////////////////////////////////////////////////////////////////////////
 //The method writeEdgeStrainVtk() inserts edge strain information in a vtk file
 //The calling method must ensure that 'fileName' exists and is a valid vtk file.
 //MUST use the extension '.vtk' in 'fileName'.
@@ -564,17 +550,84 @@ void writeEdgeStrainVtk(std::string fileName, double avgEdgeLen){
   }
   wireFrame->GetCellData()->SetScalars(edgeStrain);
 
+  /*
+    The next few lines of code involve string manipulations to comeup
+    with good file-names that Paraview can recognize to be sequence of
+    the same simulation. A file name like "T7-relaxed-10-bd1.vtk" is
+    converted to "T7-EdgeStrain-10.vtk"
+  */
   int pos = fileName.find("-bd1.vtk");
-  fileName.erase(pos,string::npos);
+  if(pos != -1){
+    fileName.erase(pos,string::npos);
+  }
   pos = fileName.find("relaxed-");
-  fileName.erase(pos,8);
-  pos = fileName.find("-");
-  string serialNum = fileName.substr(pos+1,string::npos);
-  fileName.erase(pos,string::npos);
-  fileName = "./" + fileName + "-EdgeStrain-"+ serialNum + ".vtk";
-
+  if(pos != -1){
+    fileName.erase(pos,8);
+    pos = fileName.find("-");
+    string serialNum = fileName.substr(pos+1,string::npos);
+    fileName.erase(pos,string::npos);
+    fileName = "./" + fileName + "-EdgeStrain-" + serialNum + ".vtk";
+  }
+  else{
+    fileName = "./" + fileName + "-EdgeStrain.vtk";
+  }
+  
   vtkNew<vtkPolyDataWriter> writer;
   writer->SetFileName(fileName.c_str());
   writer->SetInput(wireFrame);
   writer->Write();
+}
+
+///////////////////////////////////////////////////////////////////////////
+//                                                                       //
+//                    CALCEDGELENANDSTDDEV BEGINS                        //
+//                                                                       //
+///////////////////////////////////////////////////////////////////////////
+/*
+  Calculates average edge lengths of triangles in the mesh and the
+  standard deviation in the edge lengths.
+*/
+
+std::vector<double> calcEdgeLenAndStdDev
+(std::vector< DeformationNode<3>* > defNodes, 
+ vector< tvmet::Vector<int,3> > connectivities){
+  double EdgeLength = 0.0;
+  for(int i=0; i<connectivities.size(); i++) {
+    std::vector<int> cm(3);
+    for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
+    // Edge vectors in current config.
+    tvmet::Vector<double,3> 
+      e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
+      e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
+      e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
+      eCent(defNodes[cm[2]]->point());
+    // Compute average edge length for each triangle
+    EdgeLength += 
+      (tvmet::norm2(e31) + tvmet::norm2(e32) + tvmet::norm2(e12))/3.0;
+  }
+  EdgeLength /= connectivities.size();  
+
+  // Calculate the standard deviation of side lengths of the
+  // equilateral triangles
+  double stdDevEdgeLen = 0.0;
+  for(int i=0; i<connectivities.size(); i++) {
+    std::vector<int> cm(3);
+    for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
+    // Edge vectors in current config.
+    tvmet::Vector<double,3> 
+      e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
+      e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
+      e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
+      eCent(defNodes[cm[2]]->point());
+    stdDevEdgeLen = std::pow(tvmet::norm2(e31) - EdgeLength,2.0) +
+      std::pow(tvmet::norm2(e32) - EdgeLength,2.0) +
+      std::pow(tvmet::norm2(e12) - EdgeLength,2.0);
+  }
+  stdDevEdgeLen /= connectivities.size();
+  stdDevEdgeLen = sqrt(stdDevEdgeLen);
+
+  std::vector<double> result;
+  result.push_back(EdgeLength);
+  result.push_back(stdDevEdgeLen);
+  return result;
 }
