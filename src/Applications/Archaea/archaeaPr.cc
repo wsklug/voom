@@ -74,6 +74,9 @@ int main(int argc, char* argv[])
   int NT = 0;
   int KMCflag  = 0;
 
+  // Geometry parameters to set periodic BC and compute average mean squared displacement in different regions
+  double Length = -1.0, Zmin = 0.0, Zmax = 0.0;
+
   // Reading input from file passed as argument
   ifstream inp;
   inp.open(parameterFileName.c_str(), ios::in);
@@ -86,7 +89,7 @@ int main(int argc, char* argv[])
   inp >> temp >> modelName;
   inp >> temp >> outputFileName;
   inp >> temp >> initialConf;
-  inp >> temp >> fixedList;;
+  inp >> temp >> fixedList;
   inp >> temp >> ICprovided;
   inp >> temp >> ICtol;
   inp >> temp >> VTKflag;
@@ -110,6 +113,9 @@ int main(int argc, char* argv[])
   inp >> temp >> StepWise;
   inp >> temp >> NT;
   inp >> temp >> KMCflag;
+  inp >> temp >> Length;
+  inp >> temp >> Zmin;
+  inp >> temp >> Zmax;
 
   inp.close();
 
@@ -140,7 +146,10 @@ int main(int argc, char* argv[])
        << " Print .vtk file every   : " << PrintEvery        << endl
        << " Step wise change in T   : " << StepWise          << endl
        << " Number of Delta T       : " << NT                << endl
-       << " KMCflag                 : " << KMCflag           << endl;
+       << " KMCflag                 : " << KMCflag           << endl
+       << " Length                  : " << Length            << endl
+       << " Zmin                    : " << Zmin              << endl
+       << " Zmax                    : " << Zmax              << endl;
 
 
 
@@ -217,14 +226,14 @@ int main(int argc, char* argv[])
     if (ICprovided == 1) {
       if (VTKflag == 1) {
 	if (i < NumIC) {
-	  ProteinNode * PrNode = new ProteinNode(n);
+	  ProteinNode * PrNode = new ProteinNode(n, Length);
 	  Proteins.push_back(PrNode);
 	}
       }
       else if (VTKflag == 2) {
 	for (uint k = 0; k < NumIC; k++) {
 	  if (tvmet::norm2(IC[k] - x) < ICtol && ICcheck[k] == 1) {
-	    ProteinNode * PrNode = new ProteinNode(n);
+	    ProteinNode * PrNode = new ProteinNode(n, Length);
 	    Proteins.push_back(PrNode);
 	    ICcheck[k] = 0;
 	    break;
@@ -235,7 +244,7 @@ int main(int argc, char* argv[])
     else {
       if (i == NextProtein && Proteins.size() < PrMaxNum) { // create a protein every NodePr nodes and additional conditions
 	// if (x(2) > 1.0) { // just for cone example - start from proteins packed close to the tip
-	ProteinNode * PrNode = new ProteinNode(n);
+	ProteinNode * PrNode = new ProteinNode(n, Length);
 	Proteins.push_back(PrNode);
 	NextProtein += (rand() % NnodePr) + 1;
 	// }
@@ -385,7 +394,7 @@ int main(int argc, char* argv[])
     MCsolver.solve(CompNeighInterval, PotentialSearchRF);
   }
   else { 
-    KMCprotein KMCsolver(FreeProteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, PrintEvery, nMCsteps, NT);
+    KMCprotein KMCsolver(FreeProteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, PrintEvery, nMCsteps, NT, Zmin, Zmax);
     if (StepWise == 0) {
       KMCsolver.SetTempSchedule(KMCsolver.EXPONENTIAL, T01, T02, FinalRatio); }
       // KMCsolver.SetTempSchedule(KMCsolver.LINEAR, T01, T02, FinalRatio); }
