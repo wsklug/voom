@@ -121,7 +121,8 @@ namespace voom {
 
       if ( _Tsched == STEPWISE) {
 	// Print uAvgSq at each step
-	ofsE << _time << " " <<  this->ComputeUavgSquare(OriginalLocations) << std::endl;
+	vector<double > uSQavg = this->ComputeUavgSquare(OriginalLocations);
+	ofsE << _time << " " << uSQavg[0] << " " << uSQavg[1] << " " << uSQavg[2] << endl;
       }
       	
       // Print values of interest (energy, acceptance, Ravg)
@@ -239,17 +240,30 @@ namespace voom {
 
 
 
-  double KMCprotein::ComputeUavgSquare(vector<DeformationNode<3>::Point > & OriginalLocations) 
+  vector<double > KMCprotein::ComputeUavgSquare(vector<DeformationNode<3>::Point > & OriginalLocations) 
   {
-    double uSQavg = 0.0;
+    double uSQavgTot = 0.0, uSQavgTails = 0.0, uSQavgCenter = 0.0, Increment = 0.0;
+    int indTail = 0, indCenter = 0;
 
     for(uint pt = 0; pt < _proteinsSize; pt++) {
       DeformationNode<3>::Point b = (_proteins[pt]->getHost())->point();
-      uSQavg += pow(tvmet::norm2(OriginalLocations[pt]-b), 2.0);
+      Increment = pow(tvmet::norm2(OriginalLocations[pt]-b), 2.0);
+      uSQavgTot += Increment;
+      if (b(2) <= _Zmin || b(2) >= _Zmax) {
+	uSQavgTails += Increment;
+	indTail++;
+      } else {
+	uSQavgCenter += Increment;
+	indCenter++;
+      }
+	
     }
     
-    uSQavg = uSQavg/double(_proteinsSize);
-
+    vector<double > uSQavg(3, 0.0);
+    uSQavg[0] = uSQavgTot   /double(_proteinsSize);
+    uSQavg[1] = uSQavgTails /double(indTail);
+    uSQavg[2] = uSQavgCenter/double(indCenter);
+   
     return uSQavg;
   }
 
