@@ -24,6 +24,7 @@ PrMaxNum	1350
 PrintEvery	50
 StepWise	1
 NT		2
-Zmin		-1.29016
-Zmax		1.29016
 KMCflag		1
+Length		7.74094
+Zmin            -1.29016
+Zmax            1.29016
