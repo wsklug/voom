@@ -246,8 +246,15 @@ namespace voom {
     int indTail = 0, indCenter = 0;
 
     for(uint pt = 0; pt < _proteinsSize; pt++) {
-      DeformationNode<3>::Point b = (_proteins[pt]->getHost())->point();
-      Increment = pow(tvmet::norm2(OriginalLocations[pt]-b), 2.0);
+      DeformationNode<3>::Point a = OriginalLocations[pt], b = (_proteins[pt]->getHost())->point();
+
+      // LP: This should be coded in one place only and not everywhere - Body, ProteinPotential, KMCsolver ....
+      double DeltaZ = fabs(a(2) - b(2));
+      double DeltaZperiodic = fabs(_length - DeltaZ); // 1) if _length < 0 then no periodic BC; 2) assume peridic BC are in Z
+      if (DeltaZperiodic < DeltaZ) 
+	{ a(2) = 0.0; b(2) = DeltaZperiodic; };
+      Increment = pow(tvmet::norm2(a - b), 2.0);
+
       uSQavgTot += Increment;
       if (b(2) <= _Zmin || b(2) >= _Zmax) {
 	uSQavgTails += Increment;
