@@ -33,6 +33,7 @@ namespace voom {
     virtual ~ProteinNode() {};
     
     DeformationNode<3>::Point getHostPosition() { return _host->point(); };
+
     double getDistance(ProteinNode *B) {
       DeformationNode<3>::Point a = _host->point(), b = B->getHostPosition();
       // double R = tvmet::norm2(a);
