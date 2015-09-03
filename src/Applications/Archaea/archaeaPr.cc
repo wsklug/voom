@@ -394,7 +394,7 @@ int main(int argc, char* argv[])
     MCsolver.solve(CompNeighInterval, PotentialSearchRF);
   }
   else { 
-    KMCprotein KMCsolver(FreeProteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, PrintEvery, nMCsteps, NT, Zmin, Zmax);
+    KMCprotein KMCsolver(FreeProteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, PrintEvery, nMCsteps, NT, Length, Zmin, Zmax);
     if (StepWise == 0) {
       KMCsolver.SetTempSchedule(KMCsolver.EXPONENTIAL, T01, T02, FinalRatio); }
       // KMCsolver.SetTempSchedule(KMCsolver.LINEAR, T01, T02, FinalRatio); }
