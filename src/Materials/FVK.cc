@@ -72,4 +72,13 @@ namespace voom
 
     return;
   }
+  
+  //! Returns Green-Lagrange Strain tensor
+  Tensor2D FVK::getStrain() const{
+    const Tensor2D& metric = _deformedGeometry.metricTensor();
+    const Tensor2D& refMetric = _referenceGeometry.metricTensor();
+    Tensor2D strain;
+    strain = 0.5*(metric-refMetric);
+    return strain;
+  }
 }

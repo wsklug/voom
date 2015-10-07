@@ -814,6 +814,17 @@ namespace voom
     }
     ofs << std::endl;
     
+    //  output highest eigen value of right Cauchy-Green Strain across
+    //  all Gauss points for each element
+    ofs << "SCALARS    MaxPrincipalStrain    float    1" << endl;
+    ofs << "LOOKUP_TABLE default" << endl;
+    std::vector<double> maxPrincipalStrain = 
+      LoopShellBody<Material_t>::calcMaxPrincipalStrains();
+    for(int e = 0; e < maxPrincipalStrain.size(); e++)
+      ofs << maxPrincipalStrain[e] << endl; 
+
+    ofs << endl;    
+
     ofs << endl << "POINT_DATA " << _shellNodes.size() << endl
 	<< "VECTORS displacements double" << endl;
     /*     << "LOOKUP_TABLE displacements" << endl; */
@@ -921,8 +932,64 @@ namespace voom
     
     AvgEdgeLength /= double(_shells.size()*3);
     return AvgEdgeLength;
-  }
+  }//AverageEdgeLength ENDS
 
+
+  // Calculate maximum Principal Strains for all elements (largest
+  // eigen value of right Cauchy-Green Strain tensor)
+  template < class Material_t>
+    std::vector< double > LoopShellBody< Material_t >::calcMaxPrincipalStrains() const{
+
+    std::vector<double> eval1, eval2;
+
+    int nActiveElements = 0, e = 0;
+    for(e = 0; e < _shells.size(); e++) {
+      if(_active[e]) nActiveElements++;
+    }
+
+    // calculate the eigenvalues of E=0.5*(C-I)
+    ConstFeElementIterator pe;
+    typename FeElement_t::ConstQuadPointIterator p; 
+    for (pe = _shells.begin(), e = 0; pe != _shells.end(); pe++, e++)
+      {
+	if(!_active[e])  continue;
+	for(p = (*pe)->quadraturePoints().begin(); 
+	    p != (*pe)->quadraturePoints().end(); p++)
+	  {
+	    Tensor2D strain = p->material.getStrain();
+
+	    // compute Eigenvalues and Eigenvectors by calling LAPACK library
+	    char jobz = 'N';
+	    char uplo = 'L';
+	    int  n    = 2;
+	    int  lda  = n;
+	    int  lwork = 2*n-1;
+	    int  info;
+	    double evalues[2];
+	    double work[lwork];
+      
+	    // calling lapack function here to compute
+	    dsyev_(&jobz, &uplo, &n, strain.data(),&lda, evalues, work, &lwork, &info);
+	    if (info != 0) {
+	      cout << "Something is wrong in DSYEV_" << endl;
+	      exit(0);
+	    }	    
+	    eval1.push_back(evalues[0]);
+	    eval2.push_back(evalues[1]);
+	  }
+      }
+
+    // Calculate max principal strain for each element
+    std::vector<double> maxPrincStrain;
+    for (e = 0; e < nActiveElements; e++){
+      double a = eval1[e];
+      double b = eval2[e];
+      double temp = (a > b)? a : b;
+      maxPrincStrain.push_back(temp);   
+    }
+
+    return maxPrincStrain;
+  }// calcMaxPrincipalStrains ENDS
 
 
   // Compute element neighbors

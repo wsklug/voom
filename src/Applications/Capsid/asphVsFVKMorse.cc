@@ -1,5 +1,6 @@
 #include <string>
 #include <iostream>
+#include <iomanip>
 #include <time.h>
 #include <vector>
 #include <fstream>
@@ -209,7 +210,8 @@ int main(int argc, char* argv[])
 
   ofstream myfile;
   myfile.open ("asphVsFVKMorse.dat");
-  myfile << "Ravg,Y,asphericity,FVKin,FVKout" << endl;
+  myfile << "#Ravg\tY\tasphericity\tFVKin\tFVKout\tAvgStrain" << endl;
+  myfile<< showpoint;
 
   
   //Parameters for the l-BFGS solver
@@ -471,9 +473,18 @@ int main(int argc, char* argv[])
 
     double asphericity = dRavg2/(Ravg*Ravg);
     double gammaCalc = Y*Ravg*Ravg/KC;
-  
-    myfile<<Ravg<<","<<Y<<","<<asphericity
-	  <<","<<gamma<<","<<gammaCalc<<endl;
+    
+    //Calculate Average Principal Strain
+    std::vector<double> maxStrain =  bd->getMaxPrincipalStrains();
+    double avgStrain = 0.0;
+    for(int e=0; e < maxStrain.size(); e++){
+      avgStrain += maxStrain[e];
+    }
+    avgStrain /= maxStrain.size();
+
+    myfile<< Ravg <<"\t"<< Y <<"\t"<< asphericity
+	  <<"\t"<< gamma <<"\t"<< gammaCalc
+	  <<"\t"<< avgStrain << endl;
     
     //Release the dynamically allocated memory
     delete bd;

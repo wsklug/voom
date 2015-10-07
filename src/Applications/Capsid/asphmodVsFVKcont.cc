@@ -228,7 +228,8 @@ int main(int argc, char* argv[])
 
   ofstream myfile;
   myfile.open ("asphVsFVKcont.dat");
-  myfile << "Ravg,Y,asphericity,FVK"<< endl;
+  myfile << "#Ravg\tY\tasphericity\tFVK\tAvgStrain"<< endl;
+  myfile << showpoint;
 
   //Read pressure value from input file
   double pressure;
@@ -368,7 +369,16 @@ int main(int argc, char* argv[])
     asphericity = dRavg2/(Ravg*Ravg);
     double gammaCalc = Y*Ravg*Ravg/KC;
 
-    myfile <<Ravg<<","<<Y<<","<<asphericity<<","<<gammaCalc<<endl;
+    //Calculate Average Principal Strain
+    std::vector<double> maxStrain =  bd->calcMaxPrincipalStrains();
+    double avgStrain = 0.0;
+    for(int e=0; e < maxStrain.size(); e++){
+      avgStrain += maxStrain[e];
+    }
+    avgStrain /= maxStrain.size();
+
+    myfile <<Ravg<<"\t"<<Y<<"\t"<<asphericity<<"\t"<<gammaCalc
+	   <<"\t"<<avgStrain<<endl;
 
   }
   myfile.close();

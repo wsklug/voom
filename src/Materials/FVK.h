@@ -51,6 +51,8 @@ namespace voom
     double poissonRatio() const { return _nu; }
 
     void setSpontaneousCurvature( double C0 ) { _C0 = C0; }
+    
+    Tensor2D getStrain() const;
 
     virtual double bendingEnergy() const {return _W - _Ws;}
     virtual double stretchingEnergy() const {return _Ws;}

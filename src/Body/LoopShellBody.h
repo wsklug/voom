@@ -200,7 +200,7 @@ namespace voom
     void createOpenDXData(const std::string& fileName, 
 			  const int nWhichForce = 2);
 
-    void printParaview(const std::string fileName) const ;
+    void printParaview(const std::string fileName) const;
 
     void printObj(const std::string name) const;
     
@@ -278,6 +278,13 @@ namespace voom
     // Create Shell FE
     void CreateLoopFE(ConnectivityContainer & connectivities, Material_t material, uint quadOrder, bool remeshing);
 
+    // Calculate and return maximum principal strain (using right
+    // Cauchy-Green strain) for all active elements
+    std::vector<double> calcMaxPrincipalStrains() const;
+
+    //Get Maximum Principal Strains
+    //std::vector<double> getMaxPrincipalStrains() {return _maxPrincipalStrain;};
+
     void setAreaConstraint(GlobalConstraint AreaConstr) {_areaConstraint = AreaConstr;};
     void setVolumeConstraint(GlobalConstraint VolConstr) {_volumeConstraint = VolConstr;};
     // ----------------------------------------- //
@@ -297,6 +304,10 @@ namespace voom
 
     //! vector of boolean flags to activate/deactivate elements
     std::vector<bool> _active;
+
+    //! vector of largest eigen value of right Cauchy Green strain for
+    //! each element
+    //std::vector<double> _maxPrincipalStrain;
 
     // for volume constraint
     GlobalConstraint _volumeConstraint;
