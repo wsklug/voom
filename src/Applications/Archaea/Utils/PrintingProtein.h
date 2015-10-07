@@ -126,11 +126,12 @@ namespace voom
       }
 
       uint NumProteins = _proteins.size();
-      vector<DeformationNode<3>::Point > ProteinPositions(NumProteins, Vector3D(0.0) );
+      /*vector<DeformationNode<3>::Point > ProteinPositions(NumProteins, Vector3D(0.0) );
       for (uint i = 0; i < NumProteins; i++)
       {
 	ProteinPositions[i] = (_proteins[i]->getHost())->point();
       }
+      */
 
       // Node data section
       vector<uint > Valence20(NumProteins, 0),  Valence50(NumProteins, 0),  Valence80(NumProteins, 0);
@@ -139,9 +140,11 @@ namespace voom
       {
 	vector<double> NeighborDist;
 	double MinDist = _RconnSearch;
+	ProteinNode* A = _proteins[i];
 	for (uint j = 0; j < NumProteins; j++)
 	{
-	  double R = tvmet::norm2(ProteinPositions[i] - ProteinPositions[j]);
+	  // double R = tvmet::norm2(ProteinPositions[i] - ProteinPositions[j]);
+	  double R = A->getDistance(_proteins[j]);
 	  if ( i != j && R < _RconnSearch )
 	  {
 	    NeighborDist.push_back(R);
@@ -177,7 +180,7 @@ namespace voom
       // Output nodal postions
       for (uint i = 0; i < NumProteins; i++)
       {
-	DeformationNode<3>::Point A = ProteinPositions[i];
+	DeformationNode<3>::Point A = (_proteins[i]->getHost())->point();
 	ofs1 << std::setprecision(16) 
 	     << A(0) << "  " << A(1) << " " << A(2) << std::endl;
       }

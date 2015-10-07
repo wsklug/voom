@@ -63,13 +63,16 @@ namespace voom
 		      int Method,
 		      PrintingProtein * PrintProtein,
 		      int PrintEvery = 1,
-		      unsigned int NSteps = 1000,
+	              unsigned int NSteps = 1000,
 	              int NT = 10,
+	              double Length = 0.0,
+	              double Zmin = 0.0,
+	              double Zmax = 0.0,
 		      bool print = false): 
       _proteins(Proteins), _body(Body), _possibleHosts(PossibleHosts),
       _method(Method),
       _printProtein(PrintProtein), _printEvery(PrintEvery),
-      _nSteps(NSteps), _NT(NT), _print(print), 
+      _nSteps(NSteps), _NT(NT), _length(Length), _Zmin(Zmin), _Zmax(Zmax), _print(print), 
       _fSaved(0.0), _time(0.0), _approxTime(0.0), _rmax(0.0) 
     {
       _proteinsSize = Proteins.size();
@@ -106,7 +109,7 @@ namespace voom
       _FinalTratio = FinalTratio;
     }
 
-    double ComputeUavgSquare(vector<DeformationNode<3>::Point > & OriginalLocations);
+    vector<double > ComputeUavgSquare(vector<DeformationNode<3>::Point > & OriginalLocations);
     
   private:	
 
@@ -126,6 +129,9 @@ namespace voom
     int _printEvery;
     unsigned int _nSteps;
     int _NT;
+    double _length;
+    double _Zmin;
+    double _Zmax;
     bool _print;
 
     double _fSaved;

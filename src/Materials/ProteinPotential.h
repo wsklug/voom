@@ -28,11 +28,12 @@ namespace voom {
   class ProteinNode 
   {
   public:
-    ProteinNode(DeformationNode<3> *Host): _host(Host) {};
+    ProteinNode(DeformationNode<3> *Host, double Length): _host(Host), _length(Length) {};
 
     virtual ~ProteinNode() {};
     
     DeformationNode<3>::Point getHostPosition() { return _host->point(); };
+
     double getDistance(ProteinNode *B) {
       DeformationNode<3>::Point a = _host->point(), b = B->getHostPosition();
       // double R = tvmet::norm2(a);
@@ -41,7 +42,11 @@ namespace voom {
       // double theta = acos(dot(a,b));
       // return R*theta;
       // cout << "test " << tvmet::norm2(a-b) << " " << norm2(a-b) << endl;
-      return tvmet::norm2(a-b);
+      double DeltaZ = fabs(a(2) - b(2));
+      double DeltaZperiodic = fabs(_length - DeltaZ); // 1) if _length < 0 then no periodic BC; 2) assume peridic BC are in Z
+      if (DeltaZperiodic < DeltaZ) 
+	{ a(2) = 0.0; b(2) = DeltaZperiodic; };
+      return tvmet::norm2(a - b);
     }
 
     DeformationNode<3> * getHost() { return _host; };
@@ -49,6 +54,7 @@ namespace voom {
     
   protected:
     DeformationNode<3> * _host;
+    double _length;
   };
   
 

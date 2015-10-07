@@ -29,7 +29,6 @@
 
 #include "LennardJones.h"
 #include "PotentialBody.h"
-#include "Utils/PrintingProtein.h"
 
 #if defined(_OPENMP)
 #include <omp.h>
