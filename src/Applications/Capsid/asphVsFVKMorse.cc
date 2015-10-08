@@ -474,7 +474,7 @@ int main(int argc, char* argv[])
     double gammaCalc = Y*Ravg*Ravg/KC;
     
     //Calculate Average Principal Strain
-    std::vector<double> maxStrain =  bd->getMaxPrincipalStrains();
+    std::vector<double> maxStrain =  bd->calcMaxPrincipalStrains();
     double avgStrain = 0.0;
     for(int e=0; e < maxStrain.size(); e++){
       avgStrain += maxStrain[e];
