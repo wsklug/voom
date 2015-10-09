@@ -227,7 +227,9 @@ int main(int argc, char* argv[])
 
   ofstream myfile;
   myfile.open ("asphVsFVKcont.dat");
-  myfile << "#Ravg\tY\tasphericity\tFVK\tAvgStrain"<< endl;
+  myfile << setw(8) << "#Ravg" << "\t"<< setw(7) << "Y" << "\t"
+	 << "asphericity" << "\t" <<setw(7) << "FVK" <<"\t"
+	 << setw(11) <<"AvgStrain"<< endl;
   myfile << showpoint;
 
   //Read pressure value from input file

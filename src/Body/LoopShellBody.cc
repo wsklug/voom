@@ -963,7 +963,7 @@ namespace voom
 	    char uplo = 'L';
 	    int  n    = 2;
 	    int  lda  = n;
-	    int  lwork = 2*n-1;
+	    int  lwork = 3*n-1;
 	    int  info;
 	    double evalues[2];
 	    double work[lwork];

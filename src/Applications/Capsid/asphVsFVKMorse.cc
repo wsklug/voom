@@ -209,7 +209,9 @@ int main(int argc, char* argv[])
 
   ofstream myfile;
   myfile.open ("asphVsFVKMorse.dat");
-  myfile << "#Ravg\tY\tasphericity\tFVKin\tFVKout\tAvgStrain" << endl;
+  myfile << setw(8) << "#Ravg" << "\t"<< setw(7) << "Y" << "\t"
+	 << "asphericity" << "\t" <<setw(7) << "FVKin" <<"\t"
+	 <<setw(7) << "FVKout" << "\t" << setw(11) <<"AvgStrain"<< endl;
   myfile<< showpoint;
 
   
