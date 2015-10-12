@@ -384,7 +384,7 @@ int main(int argc, char* argv[])
 
 
   if (KMCflag == 0) {
-    MontecarloProtein MCsolver(FreeProteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, ResetT, PrintEvery, nMCsteps, NT); 
+    MontecarloProtein MCsolver(FreeProteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, ResetT, PrintEvery, nMCsteps, NT, Length, Zmin, Zmax); 
     if (StepWise == 0) {
       MCsolver.SetTempSchedule(MCsolver.EXPONENTIAL, T01, T02, FinalRatio); }
       // MCsolver.SetTempSchedule(MCsolver.LINEAR, T01, T02, FinalRatio); }
