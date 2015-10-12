@@ -72,11 +72,13 @@ namespace voom {
     unsigned accepted = 0,  accepReq = 0, step = 1, pt = 0, j = 0;
     unsigned int StepPerInterval = 0, Interval = 0;
     vector<DeformationNode<3>::Point > OriginalLocations;
+    vector<DeformationNode<3>* > OriginalHost;
     unsigned int adjust = 0;
     ProteinPotential * Mat = _body->getPotential();
     for(pt = 0; pt < _proteins.size(); pt++)
     {
       OriginalLocations.push_back((_proteins[pt]->getHost())->point());
+      OriginalHost.push_back( _proteins[pt]->getHost() );
     }
 
     StepPerInterval = _nSteps/_NT;
@@ -145,12 +147,13 @@ namespace voom {
       } // End of addtion for method == 2
 
       
-
       if ( _Tsched == STEPWISE) {
-	// Print energy values on file for every sub-step
-	ofsE << step-(StepPerInterval*Interval) << " " <<  this->ComputeUavgSquare(OriginalLocations) << std::endl;
+	// Print uAvgSq at each step
+	vector<double > uSQavg = this->ComputeUavgSquare(OriginalLocations);
+	ofsE << step-(StepPerInterval*Interval) << " " << uSQavg[0] << " " << uSQavg[1] << " " << uSQavg[2] << endl;
       }
-      	
+      
+	
       // Print values of interest (energy, acceptance, Ravg)
       std::cout << "MTS iteration = " << step     << std::endl 
 		<< "accepted      = " << accepted << std::endl 
@@ -209,9 +212,18 @@ namespace voom {
 	  // Prepare for computing average u square at next temperature
 	  for(pt = 0; pt < _proteins.size(); pt++)
 	  {
-	    OriginalLocations[pt] = (_proteins[pt]->getHost())->point();
+	    // OriginalLocations[pt] = (_proteins[pt]->getHost())->point();
+	    _proteins[pt]->setHost(OriginalHost[pt]);
 	  }
+	  _body->recomputeNeighbors(Rsearch);
+	  _printProtein->printMaster(-step, 0);
 
+	  _body->compute(true, false, false);
+	  _fSaved = _body->energy();
+	  std::cout << "Initial energy = " << _fSaved << std::endl;
+	  
+	  fBest = _fSaved;
+	  fWorst = _fSaved;
 	}
 	break;
       }
@@ -343,20 +355,54 @@ namespace voom {
 
 
 
-  double MontecarloProtein::ComputeUavgSquare(vector<DeformationNode<3>::Point > & OriginalLocations) 
+  vector<double > MontecarloProtein::ComputeUavgSquare(vector<DeformationNode<3>::Point > & OriginalLocations) 
   {
-    double uSQavg = 0.0;
+    double uSQavgTot = 0.0, uSQavgTails = 0.0, uSQavgCenter = 0.0, Increment = 0.0;
+    int indTail = 0, indCenter = 0;
 
-    uint Psize = _proteins.size();
-    for(uint pt = 0; pt < Psize; pt++) {
-      DeformationNode<3>::Point b = (_proteins[pt]->getHost())->point();
-      uSQavg += pow(tvmet::norm2(OriginalLocations[pt]-b), 2.0);
+    for(uint pt = 0; pt < _proteins.size(); pt++) {
+      DeformationNode<3>::Point a = OriginalLocations[pt], b = (_proteins[pt]->getHost())->point();
+
+      // LP: This should be coded in one place only and not everywhere - Body, ProteinPotential, KMCsolver ....
+      double DeltaZ = fabs(a(2) - b(2));
+      double DeltaZperiodic = fabs(_length - DeltaZ); // 1) if _length < 0 then no periodic BC; 2) assume peridic BC are in Z
+      if (DeltaZperiodic < DeltaZ) 
+	{ a(2) = 0.0; b(2) = DeltaZperiodic; };
+      Increment = pow(tvmet::norm2(a - b), 2.0);
+
+      uSQavgTot += Increment;
+      if (b(2) <= _Zmin || b(2) >= _Zmax) {
+	uSQavgTails += Increment;
+	indTail++;
+      } else {
+	uSQavgCenter += Increment;
+	indCenter++;
+      }
+	
     }
     
-    uSQavg = uSQavg/double(Psize);
-
+    vector<double > uSQavg(3, 0.0);
+    uSQavg[0] = uSQavgTot   /double(_proteins.size());
+    uSQavg[1] = uSQavgTails /double(indTail);
+    uSQavg[2] = uSQavgCenter/double(indCenter);
+   
     return uSQavg;
   }
+
+  // double MontecarloProtein::ComputeUavgSquare(vector<DeformationNode<3>::Point > & OriginalLocations) 
+  // {
+  //   double uSQavg = 0.0;
+
+  //   uint Psize = _proteins.size();
+  //   for(uint pt = 0; pt < Psize; pt++) {
+  //     DeformationNode<3>::Point b = (_proteins[pt]->getHost())->point();
+  //     uSQavg += pow(tvmet::norm2(OriginalLocations[pt]-b), 2.0);
+  //   }
+    
+  //   uSQavg = uSQavg/double(Psize);
+
+  //   return uSQavg;
+  // }
 
 
 
