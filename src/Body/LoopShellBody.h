@@ -280,10 +280,10 @@ namespace voom
 
     // Calculate and return maximum principal strain (using right
     // Cauchy-Green strain) for all active elements
-    std::vector<double> calcMaxPrincipalStrains() const;
+    void calcMaxPrincipalStrains();
 
     //Get Maximum Principal Strains
-    //std::vector<double> getMaxPrincipalStrains() {return _maxPrincipalStrain;};
+    std::vector<double> getMaxPrincipalStrains() {return _maxPrincipalStrain;};
 
     void setAreaConstraint(GlobalConstraint AreaConstr) {_areaConstraint = AreaConstr;};
     void setVolumeConstraint(GlobalConstraint VolConstr) {_volumeConstraint = VolConstr;};
@@ -307,7 +307,7 @@ namespace voom
 
     //! vector of largest eigen value of right Cauchy Green strain for
     //! each element
-    //std::vector<double> _maxPrincipalStrain;
+    std::vector<double> _maxPrincipalStrain;
 
     // for volume constraint
     GlobalConstraint _volumeConstraint;

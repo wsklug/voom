@@ -52,7 +52,7 @@ namespace voom
 
     void setSpontaneousCurvature( double C0 ) { _C0 = C0; }
     
-    Tensor2D getStrain() const;
+    double getMaxStrain() const;
 
     virtual double bendingEnergy() const {return _W - _Ws;}
     virtual double stretchingEnergy() const {return _Ws;}

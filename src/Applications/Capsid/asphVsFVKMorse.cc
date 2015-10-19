@@ -404,6 +404,9 @@ int main(int argc, char* argv[])
     //Relax again after remeshing
     solver.solve( &model );
 
+    //Calculate maximum principal strains in all elements
+    bd->calcMaxPrincipalStrains();
+
     std::cout << "Shape relaxed." << std::endl
 	      << "Energy = " << solver.function() << std::endl;
      
@@ -476,7 +479,7 @@ int main(int argc, char* argv[])
     double gammaCalc = Y*Ravg*Ravg/KC;
     
     //Calculate Average Principal Strain
-    std::vector<double> maxStrain =  bd->calcMaxPrincipalStrains();
+    std::vector<double> maxStrain =  bd->getMaxPrincipalStrains();
     double avgStrain = 0.0;
     for(int e=0; e < maxStrain.size(); e++){
       avgStrain += maxStrain[e];

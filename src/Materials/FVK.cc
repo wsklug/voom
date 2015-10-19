@@ -73,12 +73,27 @@ namespace voom
     return;
   }
   
-  //! Returns Green-Lagrange Strain tensor
-  Tensor2D FVK::getStrain() const{
+  //! Returns principal strains of Green-Lagrange Strain tensor
+  double FVK::getMaxStrain() const{
+
     const Tensor2D& metric = _deformedGeometry.metricTensor();
     const Tensor2D& refMetric = _referenceGeometry.metricTensor();
+    const Tensor2D& refMetricInv = _referenceGeometry.metricTensorInverse();
+
     Tensor2D strain;
     strain = 0.5*(metric-refMetric);
-    return strain;
+    //To calculate the eigen values using same ways as we would for a
+    //Cartesian coordinates matrix we need to transform the strain
+    //tensor as follows
+    strain = refMetricInv*strain;
+
+    //Calculate eigen-values of strain.
+    double T = strain(0,0) + strain(1,1);
+    double D = strain(0,0)*strain(1,1) - strain(0,1)*strain(1,0);    
+    double L1 = (0.5*T) + sqrt(0.25*T*T - D);
+    double L2 = (0.5*T) - sqrt(0.25*T*T - D);
+    
+    //Return higher of two eigen values
+    return (L1 > L2)? L1: L2;
   }
 }
