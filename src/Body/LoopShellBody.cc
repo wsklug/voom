@@ -292,6 +292,7 @@ namespace voom
     _prescribedTotalCurvature = _totalCurvature;
     //std::cout << "Set prescribed total curvature: " << _prescribedTotalCurvature << std::endl;
 
+    _maxPrincipalStrain.reserve(_shells.size());
 
   }
 
