@@ -16,6 +16,7 @@
 
 #include <iostream>
 #include "FVK.h"
+#include <math.h>
 
 namespace voom 
 {
@@ -80,19 +81,34 @@ namespace voom
     const Tensor2D& refMetric = _referenceGeometry.metricTensor();
     const Tensor2D& refMetricInv = _referenceGeometry.metricTensorInverse();
 
-    Tensor2D strain;
+    Tensor2D strain, modifiedStrain;
     strain = 0.5*(metric-refMetric);
     //To calculate the eigen values using same ways as we would for a
     //Cartesian coordinates matrix we need to transform the strain
     //tensor as follows
-    strain = refMetricInv*strain;
+    modifiedStrain = refMetricInv*strain;
 
     //Calculate eigen-values of strain.
-    double T = strain(0,0) + strain(1,1);
-    double D = strain(0,0)*strain(1,1) - strain(0,1)*strain(1,0);    
-    double L1 = (0.5*T) + sqrt(0.25*T*T - D);
-    double L2 = (0.5*T) - sqrt(0.25*T*T - D);
-    
+    double T = modifiedStrain(0,0) + modifiedStrain(1,1);
+    double D = modifiedStrain(0,0)*modifiedStrain(1,1) - 
+      modifiedStrain(0,1)*modifiedStrain(1,0);
+
+    double L1,L2;
+    //To avoid floating point errors we need to calculate quadratic
+    //roots as follows
+    if((T-0.0) > 1e-16){
+      L1 = 2.0*D/(T + sqrt(T*T-4*D));
+      L2 = (T+sqrt(T*T-4*D))/2.0;
+    }
+    else{
+      L1 = (T-sqrt(T*T-4*D))/2.0;
+      L2 = 2.0*D/(T - sqrt(T*T-4*D));
+    }
+    if(isnan(L1) || isnan(L2)){
+      std::cout<< "~~~~~~~~~~ NaN EigenValue Found ~~~~~~~~~~~" 
+	       << std::endl;
+    }
+
     //Return higher of two eigen values
     return (L1 > L2)? L1: L2;
   }

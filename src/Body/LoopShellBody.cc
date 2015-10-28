@@ -292,7 +292,7 @@ namespace voom
     _prescribedTotalCurvature = _totalCurvature;
     //std::cout << "Set prescribed total curvature: " << _prescribedTotalCurvature << std::endl;
 
-    _maxPrincipalStrain.reserve(_shells.size());
+    _maxPrincipalStrain.resize(_shells.size(),0.0);
 
   }
 
@@ -948,7 +948,7 @@ namespace voom
 #pragma omp parallel for 			\
   schedule(static) default(shared)		
 #endif	 
-    for (e = 0; e <= _shells.size(); e++)
+    for (e = 0; e < _shells.size(); e++)
       {
 	if(!_active[e])  continue;	
 	for(p = (_shells[e])->quadraturePoints().begin(); 
