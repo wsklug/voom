@@ -18,7 +18,7 @@ namespace voom {
     double r = A->getDistance(B);
     // Morse potential type energy
     // return _epsilon*pow(1.0 - exp(-_sigma*(r - _Rshift)),2.0);
-    return 0.5*_epsilon*pow(1.0 - exp(-_sigma*(r - _Rshift)),2.0);
+    return 0.5*_epsilon*( pow(1.0 - exp(-_sigma*(r - _Rshift)),2.0) - 1.0 );
    
     // if (fl1) {
     //   // Morse forces
