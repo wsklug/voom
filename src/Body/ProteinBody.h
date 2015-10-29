@@ -45,7 +45,7 @@ namespace voom
     ~ProteinBody() {};
     
     //! Do mechanics on Body
-    void compute( bool f0, bool f1, bool f2 );
+    void virtual compute( bool f0, bool f1, bool f2 );
     double computedWdEqPar();
     double computeddWddEqPar();
     
@@ -60,7 +60,7 @@ namespace voom
       // Not implemented
     };
 
-  private:
+  protected:
     vector<ProteinNode* > & _proteins;
 
     // Protein elements
