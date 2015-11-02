@@ -55,7 +55,7 @@ namespace voom {
     double r = A->getDistance(B);
     // ddW/dd_Rshift
     // return 2.0*_epsilon*exp(_sigma*(_Rshift-r))*(-1.0 + 2.0*exp(_sigma*(_Rshift-r)))*pow(_sigma, 2.0);
-    return _epsilon*exp(_sigma*(_Rshift-r))*(-1.0 + 2.0*exp(_sigma*(_Rshift-r)))*pow(_sigma, 2.0);
+    return _epsilon*exp(_sigma*(_Rshift-r))*(-1.0 + 2.0*exp(_sigma*(_Rshift-r)))*pow(_sigma, 2.0); // Should it be minus this expression ?
   }
 
 } // namespace voom
