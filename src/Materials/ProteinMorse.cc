@@ -47,7 +47,7 @@ namespace voom {
     double r = A->getDistance(B);
     // dW/d_Rshift
     // return 2.0*_epsilon*exp(_sigma*(_Rshift-r))*(-1.0 + exp(_sigma*(_Rshift-r)))*_sigma;
-    return _epsilon*exp(_sigma*(_Rshift-r))*(-1.0 + exp(_sigma*(_Rshift-r)))*_sigma;
+    return _epsilon*exp(_sigma*(_Rshift-r))*(-1.0 + exp(_sigma*(_Rshift-r)))*_sigma; // Should it be minus this expression ??
   }
 
   double ProteinMorse::computeddWddEqPar(ProteinNode * A,  ProteinNode *B)
