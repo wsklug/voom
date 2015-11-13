@@ -227,9 +227,9 @@ int main(int argc, char* argv[])
 
   ofstream myfile;
   myfile.open ("asphVsFVKcont.dat");
-  myfile << setw(8) << "#Ravg" << "\t"<< setw(7) << "Y" << "\t"
-	 << "asphericity" << "\t" <<setw(7) << "FVK" <<"\t"
-	 << setw(11) <<"AvgStrain"<< endl;
+  myfile << setw(9) << "#Ravg" << "\t"<< setw(8) << "Y" << "\t"
+	 << "asphericity" << "\t" <<setw(8) << "FVK" <<"\t"
+	 << setw(12) <<"AvgStrain"<< "Energy" << endl;
   myfile << showpoint;
 
   //Read pressure value from input file
@@ -380,7 +380,7 @@ int main(int argc, char* argv[])
     avgStrain /= maxStrain.size();
 
     myfile <<Ravg<<"\t"<<Y<<"\t"<<asphericity<<"\t"<<gammaCalc
-	   <<"\t"<<avgStrain<<endl;
+	   <<"\t"<<avgStrain<<solver.function()<<endl;
 
   }
   myfile.close();

@@ -33,6 +33,8 @@
 #include <vtkDataSet.h>
 #include <vtkNew.h>
 #include <vtkLine.h>
+#include <vtkIdList.h>
+#include <vtkUnsignedIntArray.h>
 
 #include "Morse.h"
 #include "SpringPotential.h"
@@ -48,6 +50,8 @@ using namespace voom;
 
 // Function declarations
 void writeEdgeStrainVtk(std::string fileName, double avgEdgeLen);
+void insertValenceInVtk(const std::string fileName,\
+			vtkSmartPointer<vtkPolyData> mesh);
 
 std::vector<double> calcEdgeLenAndStdDev
 (std::vector< DeformationNode<3>* > a, 
@@ -209,9 +213,10 @@ int main(int argc, char* argv[])
 
   ofstream myfile;
   myfile.open ("asphVsFVKMorse.dat");
-  myfile << setw(8) << "#Ravg" << "\t"<< setw(7) << "Y" << "\t"
-	 << "asphericity" << "\t" <<setw(7) << "FVKin" <<"\t"
-	 <<setw(7) << "FVKout" << "\t" << setw(11) <<"AvgStrain"<< endl;
+  myfile << setw(9) << "#Ravg" << "\t"<< setw(8) << "Y" << "\t"
+	 << "asphericity" << "\t" <<setw(8) << "FVKin" <<"\t"
+	 <<setw(8) << "FVKout" << "\t" << setw(12) <<"AvgStrain"
+	 << setw(12)  << "Energy" <<  endl;
   myfile<< showpoint;
 
   
@@ -233,10 +238,10 @@ int main(int argc, char* argv[])
 
   //For Morse material 
   double epsilon;
-  double sigmaFactor;
+  double percentStrain;
   double pressureFactor;
 
-  //Read epsilon and sigmaFactor from input file. sigmaFactor is
+  //Read epsilon and percentStrain from input file. percentStrain is
   //calculated so as to set the inflection point of Morse potential
   //at a fixed distance relative to the equilibrium separation
   //e.g. 1.1*R_eq, 1.5*R_eq etc.
@@ -244,15 +249,28 @@ int main(int argc, char* argv[])
   assert(miscInpFile);
   string temp;
   miscInpFile >> temp >> epsilon
-	      >> temp >> sigmaFactor
+	      >> temp >> percentStrain
 	      >> temp >> pressureFactor;
   miscInpFile.close();
 
   double Rshift = EdgeLength;
-  double sigma  = (sigmaFactor/Rshift)*log(2.0);
+  double sigma  = (100/(Rshift*percentStrain))*log(2.0);
   double PotentialSearchRF=1.2*Rshift; 
   double springConstant = 2*sigma*sigma*epsilon;
-  double pressure = pressureFactor*(3.82)*sigma*epsilon/(Rshift*Rshift);
+  double pressure = 12*sigma*epsilon
+    *(exp(-2*sigma*Rshift)- exp(-sigma*Rshift)
+      + exp(-1.46410*sigma*Rshift) - exp(-0.7321*sigma*Rshift))
+    /(3*Ravg*Ravg);
+
+  if(pressure < 0.0){
+    pressure = pressure*(-1);
+  }
+
+  double fracturePressure = (3.82)*sigma*epsilon/(Rshift*Rshift);
+  std::cout<<"Fracture Pressure = "<< fracturePressure << endl
+	   <<"Minimum Pressure = "<< pressure << endl;
+  pressure *= pressureFactor;
+  std::cout<<"Pressure in use = "<< pressure << endl;
 
   //****** Relax the initial mesh using harmonic potential ****** //
 
@@ -298,6 +316,7 @@ int main(int argc, char* argv[])
   model1.print(rName);
   sstm <<"-bd1.vtk";
   rName = sstm.str();
+  insertValenceInVtk(rName,mesh);
   writeEdgeStrainVtk(rName, Rshift);      
   sstm.str("");
   sstm.clear();
@@ -310,7 +329,7 @@ int main(int argc, char* argv[])
   lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);  
   EdgeLength = lengthStat[0];
   Rshift = EdgeLength;
-  sigma  = (sigmaFactor/Rshift)*log(2.0);  
+  sigma  = (100/(Rshift*percentStrain))*log(2.0);
   springConstant = 2*sigma*sigma*epsilon;
   std::cout<<"After relaxing with harmonic potential: "<< endl
 	   <<"   Average triangle edge length = "<< std::setprecision(10)
@@ -334,7 +353,16 @@ int main(int argc, char* argv[])
     Y = 2.0/sqrt(3)*springConstant; // Young's modulus
     KC = Y*Ravg*Ravg/gamma; // Bending modulus
     KG = -2*(1-nu)*KC; // Gaussian modulus
-    pressure = pressureFactor*(3.82)*sigma*epsilon/(Rshift*Rshift);
+    
+    pressure = pressureFactor*12*sigma*epsilon
+      *(exp(-2*sigma*Rshift)- exp(-sigma*Rshift)
+	+ exp(-1.46410*sigma*Rshift) - exp(-0.7321*sigma*Rshift))
+      /(3*Ravg*Ravg);
+    if(pressure < 0.0){
+      pressure = pressure*(-1);
+    }
+
+    //pressure = pressureFactor*(3.82)*sigma*epsilon/(Rshift*Rshift);
     
     //The Bodies
     MaterialType bending(KC,KG,C0,0.0,0.0);
@@ -419,6 +447,7 @@ int main(int argc, char* argv[])
       //Insert EdgeStrain data in the printed FVK file      
       sstm <<"-bd1.vtk";
       rName = sstm.str();
+      insertValenceInVtk(rName,mesh);
       writeEdgeStrainVtk(rName, Rshift);
       
       sstm.str("");
@@ -488,7 +517,8 @@ int main(int argc, char* argv[])
 
     myfile<< Ravg <<"\t"<< Y <<"\t"<< asphericity
 	  <<"\t"<< gamma <<"\t"<< gammaCalc
-	  <<"\t"<< avgStrain << endl;
+	  <<"\t"<< avgStrain << "\t" << solver.function() 
+	  << endl;
     
     //Release the dynamically allocated memory
     delete bd;
@@ -645,4 +675,67 @@ std::vector<double> calcEdgeLenAndStdDev
   result.push_back(EdgeLength);
   result.push_back(stdDevEdgeLen);
   return result;
+}
+
+///////////////////////// INSERTVALENCEINVTK BEGINS ///////////////////////////
+/////////////////////////                           //////////////////////////
+
+//The method insertValenceInVtk() inserts valence information in a vtk file
+//The calling method must ensure that 'fileName' exists and is a valid vtk file.
+//MUST use the extension '.vtk' in 'fileName'.
+//'mesh' is a pointer to a vtkPolyData
+
+void insertValenceInVtk(const std::string fileName, vtkSmartPointer<vtkPolyData> mesh){
+  ofstream * appendTo;
+
+  //Check that the file exists
+  assert(ifstream(fileName.c_str()));
+
+  vtkDataSetReader * reader = vtkDataSetReader::New();
+  reader->SetFileName(fileName.c_str());
+  
+  vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();  
+  ds->Update();
+  
+  //The following vtkUnsignedIntArray will be used to store the
+  //number of CELLS in the mesh that share the POINT denoted by the
+  //index of the vector
+  vtkSmartPointer<vtkUnsignedIntArray> countPointCells = 
+    vtkSmartPointer<vtkUnsignedIntArray>::New();
+  countPointCells->SetNumberOfValues(mesh->GetNumberOfPoints());
+  countPointCells->SetName("Valence");
+  
+  //cellIds will be used to temporarily hold the CELLS that use a
+  //point specified by a point id.
+  vtkSmartPointer<vtkIdList> cellIds = 
+    vtkSmartPointer<vtkIdList>::New();
+  
+  //We will use a vtkPolyDataWriter to write our modified output
+  //files that will have Capsomer information as well
+  vtkSmartPointer<vtkDataWriter> writer = 
+    vtkSmartPointer<vtkDataWriter>::New();
+  
+  if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
+    vtkSmartPointer<vtkUnstructuredGrid> usg 
+      = vtkUnstructuredGrid::SafeDownCast(ds);
+    usg->BuildLinks();
+    for(int p=0; p<ds->GetNumberOfPoints(); p++){
+      usg->GetPointCells(p,cellIds);
+      countPointCells->SetValue(p,cellIds->GetNumberOfIds());
+      cellIds->Reset();
+    }      
+  }                  
+  else if(ds->GetDataObjectType() == VTK_POLY_DATA){
+    vtkSmartPointer<vtkPolyData> pd = vtkPolyData::SafeDownCast(ds);
+    pd->BuildLinks();
+    for(int p=0; p<ds->GetNumberOfPoints(); p++){
+      pd->GetPointCells(p,cellIds);
+      countPointCells->SetValue(p,cellIds->GetNumberOfIds());
+      cellIds->Reset();
+    }	
+  }
+  ds->GetFieldData()->AddArray(countPointCells);
+  appendTo = new ofstream(fileName.c_str(),ofstream::app);
+  writer->WriteFieldData(appendTo,ds->GetFieldData());
+  appendTo->close();
 }
