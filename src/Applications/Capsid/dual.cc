@@ -22,6 +22,8 @@
 #include <vtkSmartPointer.h>
 #include <vtkUnstructuredGrid.h>
 #include <vtkGeometryFilter.h>
+#include <vtkDataArray.h>
+#include <vtkPointData.h>
 
 #if defined(_OPENMP)
 #include <omp.h>
@@ -48,9 +50,13 @@ int main(int argc, char* argv[])
   bool debug=true;
 
   // read in vtk file
-  string modelName = argv[1];
+  string inputFileName = argv[1];  
+  int found = inputFileName.find(".vtk");
 
-  string inputFileName = modelName + ".vtk";
+  string modelName;
+  if(found!=std::string::npos){ 
+    modelName = inputFileName.substr(0,found);
+  }
 
   vtkDataSetReader * reader = vtkDataSetReader::New();
   reader->SetFileName( inputFileName.c_str() );
@@ -94,6 +100,23 @@ int main(int argc, char* argv[])
   for(int a=0; a<npts; a++) {
     vtkMeshOld->GetPoint(a, &(points[a](0)));
   }
+
+  //Can we add displacements to vertex positions before generatinng
+  //the dual mesh - Amit
+  
+  //get displacements
+  //std::vector< tvmet::Vector<double,3> > displacements( npts );
+  string vectorName="displacements";
+  vtkSmartPointer<vtkDataArray> displacements = vtkMeshOld->GetPointData()->
+    GetVectors(vectorName.c_str());
+  double currDisp[3];
+  for(int a=0; a<npts; a++){
+    displacements->GetTuple(a,currDisp);
+    points[a][0] += currDisp[0];
+    points[a][1] += currDisp[1];
+    points[a][2] += currDisp[2];
+  }
+
 
   // get connectivities
   int ntriOld=vtkMeshOld->GetNumberOfCells();  
