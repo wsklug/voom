@@ -96,7 +96,7 @@ namespace voom
     double L1,L2;
     //To avoid floating point errors we need to calculate quadratic
     //roots as follows
-    if((T-0.0) > 1e-16){
+    if(T > 1e-16){
       L1 = 2.0*D/(T + sqrt(T*T-4*D));
       L2 = (T+sqrt(T*T-4*D))/2.0;
     }
