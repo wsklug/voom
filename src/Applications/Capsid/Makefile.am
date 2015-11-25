@@ -1,4 +1,4 @@
-bin_PROGRAMS    = relax countValence refine disassemble grow dual indentWparticles indent asphVsFVK asphVsFVKcont asphmodVsFVK asphmodVsFVKcont asphVsFVKMorse indentMorse
+bin_PROGRAMS    = relax countValence refine disassemble grow dual indentWparticles indent asphVsFVK asphVsFVKcont asphmodVsFVK asphmodVsFVKcont asphVsFVKMorse indentMorse asphNoRescale
 AM_CPPFLAGS =-I$(srcdir)/../../       		\
 		-I$(srcdir)/../../Body/		\
 		-I$(srcdir)/../../Model/		\
@@ -85,3 +85,5 @@ asphmodVsFVKcont_SOURCES = asphmodVsFVKcont.cc
 asphVsFVKMorse_SOURCES = asphVsFVKMorse.cc
 #
 indentMorse_SOURCES = indentMorse.cc
+#
+asphNoRescale_SOURCES = asphNoRescale.cc

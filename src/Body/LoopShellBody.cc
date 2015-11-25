@@ -938,27 +938,35 @@ namespace voom
   //! Calculate maximum Principal Strain for all element
   template < class Material_t>
     void LoopShellBody< Material_t >::calcMaxPrincipalStrains() {
-
+    
     int nActiveElements = 0, e = 0;
-    for(e = 0; e < _shells.size(); e++) {
+    for(e = 0; e < _shells.size(); e++){
       if(_active[e]) nActiveElements++;
     }
+
     typename FeElement_t::ConstQuadPointIterator p; 
 #ifdef _OPENMP	
 #pragma omp parallel for 			\
   schedule(static) default(shared)		
-#endif	 
-    for (e = 0; e < _shells.size(); e++)
-      {
-	if(!_active[e])  continue;	
-	for(p = (_shells[e])->quadraturePoints().begin(); 
-	    p != (_shells[e])->quadraturePoints().end(); p++)
-	  {
-	    _maxPrincipalStrain[e] = p->material.getMaxStrain();	    
+#endif
+	 
+    for (e = 0; e < _shells.size(); e++){
+      double max = 0.0;
+      double currValue;
+      if(!_active[e]){
+	continue;
+      }
+      for(p = (_shells[e])->quadraturePoints().begin(); 
+	  p != (_shells[e])->quadraturePoints().end(); p++){
+	  currValue = p->material.getMaxStrain();
+	  if (std::abs(currValue) > std::abs(max)){
+	    max = currValue;
 	  }
-      }    
+	}
+      _maxPrincipalStrain[e] = max;
+    }  
   }// calcMaxPrincipalStrains ENDS
-
+  
 
   // Compute element neighbors
   template < class Material_t >
