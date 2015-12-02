@@ -39,6 +39,8 @@
 #include "Morse.h"
 #include "SpringPotential.h"
 #include "PotentialBody.h"
+#include "BrownianKick.h"
+#include "ViscousRegularizer.h"
 
 #if defined(_OPENMP)
 #include <omp.h>
@@ -56,6 +58,9 @@ void insertValenceInVtk(const std::string fileName,\
 std::vector<double> calcEdgeLenAndStdDev
 (std::vector< DeformationNode<3>* > a, 
  vector< tvmet::Vector<int,3> > b);
+
+typedef DeformationNode<3> Node; // nickname for mechanics nodes
+typedef std::vector< Node* > NodeContainer;
 
 int main(int argc, char* argv[])
 {
@@ -157,11 +162,11 @@ int main(int argc, char* argv[])
   /*
   // Rescale size of the capsid
   for(int i=0; i<defNodes.size(); i++) {
-    DeformationNode<3>::Point x;
-    x = defNodes[i]->point();
-    x *= Rcapsid/Ravg;
-    defNodes[i]->setPoint(x);
-    defNodes[i]->setPosition(x);
+  DeformationNode<3>::Point x;
+  x = defNodes[i]->point();
+  x *= Rcapsid/Ravg;
+  defNodes[i]->setPoint(x);
+  defNodes[i]->setPosition(x);
   }
   
   Ravg = 1.0;//At least, we expect it to be 1.0 now
@@ -243,6 +248,11 @@ int main(int argc, char* argv[])
   double percentStrain;
   double pressureFactor;
 
+  //Numerical viscosity input parameter
+  double temperature;
+  double viscosity_inp;
+  double dt; //time step
+
   //Read epsilon and percentStrain from input file. percentStrain is
   //calculated so as to set the inflection point of Morse potential
   //at a fixed distance relative to the equilibrium separation
@@ -252,7 +262,11 @@ int main(int argc, char* argv[])
   string temp;
   miscInpFile >> temp >> epsilon
 	      >> temp >> percentStrain
-	      >> temp >> pressureFactor;
+	      >> temp >> pressureFactor
+	      >> temp >> temperature
+	      >> temp >> viscosity_inp
+	      >> temp >> dt;
+
   miscInpFile.close();
 
   double Rshift = EdgeLength;
@@ -274,6 +288,17 @@ int main(int argc, char* argv[])
   pressure *= pressureFactor;
   std::cout<<"Pressure in use = "<< pressure << endl;
 
+  //Numerical Viscosity
+  double Cd = 18.85*viscosity_inp*(0.01*Rshift);//6*pi*eta*r
+  double minViscosity = 1.0e-6*Cd;
+  double diffusionCoeff = 1.38e-23*temperature/Cd; //kB*T/Cd;
+  double vrTol = 1.0e-10;
+
+  std::cout << "Viscosity Input Parameters:" << std::endl
+	    << " Cd = " << Cd << std::endl
+	    << "  D = " << diffusionCoeff << std::endl
+	    << " dt = " << std::endl;
+
   //****** Relax the initial mesh using harmonic potential ****** //
 
   double gamma = gammaVec[0][0];
@@ -292,6 +317,10 @@ int main(int argc, char* argv[])
   SpringPotential SpringMat(springConstant, Rshift);
   PotentialBody * SpringBody = new 
     PotentialBody(&SpringMat, defNodes, PotentialSearchRF);
+  ViscousRegularizer vr1(bd1->nodes(), viscosity_inp);
+  bd1->pushBack(&vr1);
+  BrownianKick bk1(defNodes,Cd,diffusionCoeff,dt);
+  bd1->pushBack(&bk1);
 
   //Create Model
   Model::BodyContainer bdc1;
@@ -300,16 +329,52 @@ int main(int argc, char* argv[])
   Model model1(bdc1,nodes);
      
   std::cout<< "Spring constant: " << springConstant << endl;
-  std::cout<< "Relaxing the mesh using harmonic potential..."<< endl;     
-  SpringBody->compute(true, false, false);     
-  for(int n=0; n<nodes.size(); n++) {
-    for(int i=0; i<nodes[n]->dof(); i++) nodes[n]->setForce(i,0.0);
-  }     
-  for(int b=0; b<bdc1.size(); b++) {
-    std::cout << "bdc1[" << b << "]->compute()" << std::endl;
-    bdc1[b]->compute(true,true,false);  
-  }       
-  solver.solve( &model1 );
+  std::cout<< "Relaxing the mesh using harmonic potential..."<< endl;
+
+  double vrEnergy;
+  double bdEnergy;
+  double PrEnergy;
+  
+  
+  int viterMax = 20;
+  for(int viter = 0; viter < viterMax; viter++) {
+
+    if(viter == viterMax-1) vr1.setViscosity(minViscosity);
+
+    std::cout << std::endl 
+	      << "VISCOUS ITERATION: " << viter 
+	      << "\t viscosity = " << vr1.viscosity()
+	      << std::endl
+	      << std::endl;
+
+    bk1.updateKick();
+
+    solver.solve( &model1 );
+
+    vrEnergy = vr1.energy();
+    bdEnergy = bd1->energy();
+    PrEnergy = SpringBody->energy();
+    
+    std::cout << "ENERGY:" << std::endl
+	      << "viscous energy = " << vrEnergy << std::endl
+	      << "protein energy = " << PrEnergy << std::endl
+	      << "bending energy = " << bdEnergy << std::endl
+	      << "  total energy = " << solver.function() << std::endl
+	      << std::endl;
+    std::cout << "VISCOSITY: " << std::endl
+	      << "          velocity = " << vr1.velocity() << std::endl
+	      << " updated viscosity = " << vr1.viscosity() << std::endl
+	      << std::endl;
+    
+    // step forward in "time", relaxing viscous energy & forces 
+    vr1.step();
+    
+    if(vrEnergy < std::abs(vrTol*(bdEnergy + PrEnergy)) && solver.projectedGradientNorm()<=pgtol) {
+      // viscous energy is small enough; exit
+      break;
+    }
+  } 
+  
   std::cout<<"Harmonic potential relaxation completed." << endl;
 
   //Print to VTK file
@@ -375,6 +440,10 @@ int main(int argc, char* argv[])
     Morse Mat(epsilon,sigma,Rshift);
     PotentialSearchRF = 1.5;
     PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);
+    ViscousRegularizer vr(bd->nodes(), viscosity_inp);
+    bd->pushBack(&vr);
+    BrownianKick bk(defNodes,Cd,diffusionCoeff,dt);
+    bd->pushBack(&bk);
 
     //Create Model
     Model::BodyContainer bdc;
@@ -386,27 +455,46 @@ int main(int argc, char* argv[])
 	     << "sigma = " << sigma <<" epsilon = " << epsilon
 	     << " Rshift = "<< Rshift <<endl;
 
-    std::cout << "Pressure :" << pressure << endl;
+    std::cout << "Pressure :" << pressure << endl; 
      
-    PrBody->compute(true, false, false);
-    std::cout << "Initial protein body energy = " << PrBody->energy() << endl;
-     
-    std::cout << "Relaxing shape for gamma = " << gamma<< std::endl
-	      << "Energy = " << solver.function() << std::endl;
-     
-    for(int n=0; n<nodes.size(); n++) {
-      for(int i=0; i<nodes[n]->dof(); i++) nodes[n]->setForce(i,0.0);
-    }
-     
-    for(int b=0; b<bdc.size(); b++) {
-      std::cout << "bdc[" << b << "]->compute()" << std::endl;
-      bdc[b]->compute(true,true,false);    
-    }
-     
+    std::cout << "Relaxing shape for gamma = " << gamma<< std::endl;     
     std::cout << "Initial Shape." << std::endl
 	      << "Energy = " << solver.function() << std::endl;
 
-    solver.solve( &model );   
+    for(int viter = 0; viter < viterMax; viter++) {
+      if(viter == viterMax-1) vr.setViscosity(minViscosity);
+      std::cout << std::endl 
+		<< "VISCOUS ITERATION: " << viter 
+		<< "\t viscosity = " << vr.viscosity()
+		<< std::endl
+		<< std::endl;
+      
+      bk.updateKick();
+
+      solver.solve( &model );
+      vrEnergy = vr.energy();
+      bdEnergy = bd->energy();
+      PrEnergy = PrBody->energy();
+    
+      std::cout << "ENERGY:" << std::endl
+		<< "viscous energy = " << vrEnergy << std::endl
+		<< "protein energy = " << PrEnergy << std::endl
+		<< "bending energy = " << bdEnergy << std::endl
+		<< "  total energy = " << solver.function() << std::endl
+		<< std::endl;
+      std::cout << "VISCOSITY: " << std::endl
+		<< "          velocity = " << vr.velocity() << std::endl
+		<< " updated viscosity = " << vr.viscosity() << std::endl
+		<< std::endl;
+      
+      // step forward in "time", relaxing viscous energy & forces 
+      vr.step();
+      
+      if(vrEnergy < std::abs(vrTol*bdEnergy) && solver.projectedGradientNorm() <= pgtol) {
+	// viscous energy is small enough; exit
+	break;
+      }
+    } 
     
     // REMESHING
     bool remesh = true;
@@ -432,14 +520,48 @@ int main(int argc, char* argv[])
     }// Remeshing ends here     
 
     //Relax again after remeshing
-    solver.solve( &model );
+    for(int viter = 0; viter < viterMax; viter++) {
+      if(viter == viterMax-1) vr.setViscosity(minViscosity);
+      std::cout << std::endl 
+		<< "VISCOUS ITERATION: " << viter 
+		<< "\t viscosity = " << vr.viscosity()
+		<< std::endl
+		<< std::endl;
+      
+      bk.updateKick();
+
+      solver.solve( &model );
+      vrEnergy = vr.energy();
+      bdEnergy = bd->energy();
+      PrEnergy = PrBody->energy();
+
+      std::cout << "ENERGY:" << std::endl
+		<< "viscous energy = " << vrEnergy << std::endl
+		<< "protein energy = " << PrEnergy << std::endl
+		<< "bending energy = " << bdEnergy << std::endl
+		<< "  total energy = " << solver.function() << std::endl
+		<< std::endl;   
+
+      std::cout << "VISCOSITY: " << std::endl
+		<< "          velocity = " << vr.velocity() << std::endl
+		<< " updated viscosity = " << vr.viscosity() << std::endl
+		<< std::endl;
+      
+      // step forward in "time", relaxing viscous energy & forces 
+      vr.step();
+      
+      if(vrEnergy < std::abs(vrTol*bdEnergy) && solver.projectedGradientNorm()<=pgtol) {
+	// viscous energy is small enough; exit
+	break;
+      }
+    }
+
+    std::cout << "Shape relaxed." << std::endl
+	      << "Energy = " << solver.function() << std::endl;
 
     //Calculate maximum principal strains in all elements
     bd->calcMaxPrincipalStrains();
 
-    std::cout << "Shape relaxed." << std::endl
-	      << "Energy = " << solver.function() << std::endl;
-     
     //Selectively print the relaxed shapes
     if(currPrintFlag){
       sstm << fname <<"-relaxed-" << nameSuffix++;
