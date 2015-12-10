@@ -154,19 +154,6 @@ int main(int argc, char* argv[])
     connectivities.push_back(c);
   }
   
-  /*
-  // Rescale size of the capsid
-  for(int i=0; i<defNodes.size(); i++) {
-    DeformationNode<3>::Point x;
-    x = defNodes[i]->point();
-    x *= Rcapsid/Ravg;
-    defNodes[i]->setPoint(x);
-    defNodes[i]->setPosition(x);
-  }
-  
-  Ravg = 1.0;//At least, we expect it to be 1.0 now
-  */  
-  
   // Calculate side lengths average and std dev of the 
   //equilateral triangles
   std::vector<double> lengthStat = 
@@ -179,6 +166,15 @@ int main(int argc, char* argv[])
 	   <<"   Standard deviation = " << std::setprecision(10)
 	   << stdDevEdgeLen << endl;
   std::cout.precision(6);
+  
+  // Rescale size of the capsid
+  for(int i=0; i<defNodes.size(); i++) {
+    DeformationNode<3>::Point x;
+    x = defNodes[i]->point();
+    x *= 1.0/EdgeLength;
+    defNodes[i]->setPoint(x);
+    defNodes[i]->setPosition(x);
+  }
 
   //******************* READ FVK DATA FROM FILE ********************//
 

@@ -34,9 +34,9 @@ namespace voom
 
   void BrownianKick::updateKick(){
     for(int i=0; i < _nodeCount; i++){
-      Vector3D currXi(_rng.random(),
+      Vector3D xi(_rng.random(),
 				     _rng.random(),_rng.random());
-      _delta_xB[i] = currXi*sqrt(_D*_dt);
+      _delta_xB[i] = xi*sqrt(_D*_dt);
     }
   }
 
@@ -46,11 +46,11 @@ namespace voom
     if( f0 ) {
       _energy = 0;
       for(int i=0; i < _nodeCount; i++){
-	double tempSum = 0;
+	//double tempSum = 0;
 	for(int j=0; j < 3; j++){
-	  tempSum += _delta_xB[i][j]*_nodes[i]->getPoint(j);
+	  _energy += -_Cd*_delta_xB[i][j]*_nodes[i]->getPoint(j);
 	}
-	_energy += -_Cd*tempSum;
+	//_energy += -_Cd*tempSum;
       }
     }
     

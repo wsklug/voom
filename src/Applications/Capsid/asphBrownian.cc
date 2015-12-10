@@ -123,7 +123,7 @@ int main(int argc, char* argv[])
 	    <<std::endl; 
 
   // create vector of nodes
-  //double Rcapsid = 1.0;
+
   int dof=0;
   std::vector< NodeBase* > nodes;
   std::vector< DeformationNode<3>* > defNodes;
@@ -158,20 +158,7 @@ int main(int argc, char* argv[])
     for(int a=0; a<3; a++) c[a] = mesh->GetCell(i)->GetPointId(a);
     connectivities.push_back(c);
   }
-  
-  /*
-  // Rescale size of the capsid
-  for(int i=0; i<defNodes.size(); i++) {
-  DeformationNode<3>::Point x;
-  x = defNodes[i]->point();
-  x *= Rcapsid/Ravg;
-  defNodes[i]->setPoint(x);
-  defNodes[i]->setPosition(x);
-  }
-  
-  Ravg = 1.0;//At least, we expect it to be 1.0 now
-  */  
-  
+
   // Calculate side lengths average and std dev of the 
   //equilateral triangles
   std::vector<double> lengthStat = 
@@ -184,6 +171,15 @@ int main(int argc, char* argv[])
 	   <<"   Standard deviation = " << std::setprecision(10)
 	   << stdDevEdgeLen << endl;
   std::cout.precision(6);
+
+  // Rescale size of the capsid by the average equilateral edge length
+  for(int i=0; i<defNodes.size(); i++) {
+  DeformationNode<3>::Point x;
+  x = defNodes[i]->point();
+  x *= 1.0/EdgeLength;
+  defNodes[i]->setPoint(x);
+  defNodes[i]->setPosition(x);
+  }
 
   //******************* READ FVK DATA FROM FILE ********************//
 
@@ -289,15 +285,13 @@ int main(int argc, char* argv[])
   std::cout<<"Pressure in use = "<< pressure << endl;
 
   //Numerical Viscosity
-  double Cd = 18.85*viscosity_inp*(0.01*Rshift);//6*pi*eta*r
-  double minViscosity = 1.0e-6*Cd;
-  double diffusionCoeff = 1.38e-23*temperature/Cd; //kB*T/Cd;
-  double vrTol = 1.0e-10;
+  double Cd = 18.85*viscosity_inp*(Rshift);//6*pi*eta*r
+  double diffusionCoeff = 0.1*epsilon/Cd; //kB*T/Cd;
 
   std::cout << "Viscosity Input Parameters:" << std::endl
 	    << " Cd = " << Cd << std::endl
 	    << "  D = " << diffusionCoeff << std::endl
-	    << " dt = " << std::endl;
+	    << " dt = " << dt << std::endl;
 
   //****** Relax the initial mesh using harmonic potential ****** //
 
@@ -339,8 +333,6 @@ int main(int argc, char* argv[])
   int viterMax = 20;
   for(int viter = 0; viter < viterMax; viter++) {
 
-    if(viter == viterMax-1) vr1.setViscosity(minViscosity);
-
     std::cout << std::endl 
 	      << "VISCOUS ITERATION: " << viter 
 	      << "\t viscosity = " << vr1.viscosity()
@@ -367,12 +359,7 @@ int main(int argc, char* argv[])
 	      << std::endl;
     
     // step forward in "time", relaxing viscous energy & forces 
-    vr1.step();
-    
-    if(vrEnergy < std::abs(vrTol*(bdEnergy + PrEnergy)) && solver.projectedGradientNorm()<=pgtol) {
-      // viscous energy is small enough; exit
-      break;
-    }
+    vr1.step();   
   } 
   
   std::cout<<"Harmonic potential relaxation completed." << endl;
@@ -438,7 +425,7 @@ int main(int argc, char* argv[])
     bd->setOutput(paraview);
 
     Morse Mat(epsilon,sigma,Rshift);
-    PotentialSearchRF = 1.5;
+    PotentialSearchRF = 1.5*Ravg;
     PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);
     ViscousRegularizer vr(bd->nodes(), viscosity_inp);
     bd->pushBack(&vr);
@@ -462,7 +449,7 @@ int main(int argc, char* argv[])
 	      << "Energy = " << solver.function() << std::endl;
 
     for(int viter = 0; viter < viterMax; viter++) {
-      if(viter == viterMax-1) vr.setViscosity(minViscosity);
+
       std::cout << std::endl 
 		<< "VISCOUS ITERATION: " << viter 
 		<< "\t viscosity = " << vr.viscosity()
@@ -489,11 +476,6 @@ int main(int argc, char* argv[])
       
       // step forward in "time", relaxing viscous energy & forces 
       vr.step();
-      
-      if(vrEnergy < std::abs(vrTol*bdEnergy) && solver.projectedGradientNorm() <= pgtol) {
-	// viscous energy is small enough; exit
-	break;
-      }
     } 
     
     // REMESHING
@@ -521,7 +503,7 @@ int main(int argc, char* argv[])
 
     //Relax again after remeshing
     for(int viter = 0; viter < viterMax; viter++) {
-      if(viter == viterMax-1) vr.setViscosity(minViscosity);
+      
       std::cout << std::endl 
 		<< "VISCOUS ITERATION: " << viter 
 		<< "\t viscosity = " << vr.viscosity()
@@ -549,11 +531,6 @@ int main(int argc, char* argv[])
       
       // step forward in "time", relaxing viscous energy & forces 
       vr.step();
-      
-      if(vrEnergy < std::abs(vrTol*bdEnergy) && solver.projectedGradientNorm()<=pgtol) {
-	// viscous energy is small enough; exit
-	break;
-      }
     }
 
     std::cout << "Shape relaxed." << std::endl
