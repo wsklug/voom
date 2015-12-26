@@ -176,6 +176,10 @@ int main(int argc, char* argv[])
     defNodes[i]->setPosition(x);
   }
 
+  //Recalculate edge lengths and dependent quantities
+  lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);  
+  EdgeLength = lengthStat[0];
+
   //******************* READ FVK DATA FROM FILE ********************//
 
   
@@ -369,7 +373,7 @@ int main(int argc, char* argv[])
     bd->setOutput(paraview);
 
     Morse Mat(epsilon,sigma,Rshift);
-    PotentialSearchRF = 1.5;
+    PotentialSearchRF = 1.5*Ravg;
     PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);
 
     //Create Model
