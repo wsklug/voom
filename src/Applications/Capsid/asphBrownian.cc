@@ -181,6 +181,10 @@ int main(int argc, char* argv[])
   defNodes[i]->setPosition(x);
   }
 
+  //Recalculate edge lengths and dependent quantities
+  lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);  
+  EdgeLength = lengthStat[0];
+
   //******************* READ FVK DATA FROM FILE ********************//
 
   
@@ -248,6 +252,7 @@ int main(int argc, char* argv[])
   double temperature;
   double viscosity_inp;
   double dt; //time step
+  int viterMax;
 
   //Read epsilon and percentStrain from input file. percentStrain is
   //calculated so as to set the inflection point of Morse potential
@@ -261,7 +266,8 @@ int main(int argc, char* argv[])
 	      >> temp >> pressureFactor
 	      >> temp >> temperature
 	      >> temp >> viscosity_inp
-	      >> temp >> dt;
+	      >> temp >> dt
+	      >> temp >> viterMax;
 
   miscInpFile.close();
 
@@ -311,10 +317,10 @@ int main(int argc, char* argv[])
   SpringPotential SpringMat(springConstant, Rshift);
   PotentialBody * SpringBody = new 
     PotentialBody(&SpringMat, defNodes, PotentialSearchRF);
-  ViscousRegularizer vr1(bd1->nodes(), viscosity_inp);
-  bd1->pushBack(&vr1);
-  BrownianKick bk1(defNodes,Cd,diffusionCoeff,dt);
-  bd1->pushBack(&bk1);
+  //ViscousRegularizer vr1(bd1->nodes(), viscosity_inp);
+  //bd1->pushBack(&vr1);
+  //BrownianKick bk1(defNodes,Cd,diffusionCoeff,dt);
+  //bd1->pushBack(&bk1);
 
   //Create Model
   Model::BodyContainer bdc1;
@@ -329,39 +335,46 @@ int main(int argc, char* argv[])
   double bdEnergy;
   double PrEnergy;
   
-  
-  int viterMax = 20;
-  for(int viter = 0; viter < viterMax; viter++) {
+  // for(int viter = 0; viter < viterMax; viter++) {
 
-    std::cout << std::endl 
-	      << "VISCOUS ITERATION: " << viter 
-	      << "\t viscosity = " << vr1.viscosity()
-	      << std::endl
-	      << std::endl;
+  //   std::cout << std::endl 
+  // 	      << "VISCOUS ITERATION: " << viter 
+  // 	      << "\t viscosity = " << vr1.viscosity()
+  // 	      << std::endl
+  // 	      << std::endl;
 
-    bk1.updateKick();
+  //   bk1.updateKick();
 
-    solver.solve( &model1 );
+  //   solver.solve( &model1 );
 
-    vrEnergy = vr1.energy();
-    bdEnergy = bd1->energy();
-    PrEnergy = SpringBody->energy();
+  //   vrEnergy = vr1.energy();
+  //   bdEnergy = bd1->energy();
+  //   PrEnergy = SpringBody->energy();
     
-    std::cout << "ENERGY:" << std::endl
-	      << "viscous energy = " << vrEnergy << std::endl
-	      << "protein energy = " << PrEnergy << std::endl
-	      << "bending energy = " << bdEnergy << std::endl
-	      << "  total energy = " << solver.function() << std::endl
-	      << std::endl;
-    std::cout << "VISCOSITY: " << std::endl
-	      << "          velocity = " << vr1.velocity() << std::endl
-	      << " updated viscosity = " << vr1.viscosity() << std::endl
-	      << std::endl;
+  //   std::cout << "ENERGY:" << std::endl
+  // 	      << "viscous energy = " << vrEnergy << std::endl
+  // 	      << "protein energy = " << PrEnergy << std::endl
+  // 	      << "bending energy = " << bdEnergy << std::endl
+  // 	      << "  total energy = " << solver.function() << std::endl
+  // 	      << std::endl;
+  //   std::cout << "VISCOSITY: " << std::endl
+  // 	      << "          velocity = " << vr1.velocity() << std::endl
+  // 	      << " updated viscosity = " << vr1.viscosity() << std::endl
+  // 	      << std::endl;
     
-    // step forward in "time", relaxing viscous energy & forces 
-    vr1.step();   
-  } 
+  //   // step forward in "time", relaxing viscous energy & forces 
+  //   vr1.step();   
+  // }
   
+  solver.solve( &model1 );  
+  bdEnergy = bd1->energy();
+  PrEnergy = SpringBody->energy();
+  std::cout << "ENERGY:" << std::endl
+	    << "protein energy = " << PrEnergy << std::endl
+	    << "bending energy = " << bdEnergy << std::endl
+	    << "  total energy = " << solver.function() << std::endl
+	    << std::endl;
+
   std::cout<<"Harmonic potential relaxation completed." << endl;
 
   //Print to VTK file
