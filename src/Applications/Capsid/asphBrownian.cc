@@ -317,10 +317,6 @@ int main(int argc, char* argv[])
   SpringPotential SpringMat(springConstant, Rshift);
   PotentialBody * SpringBody = new 
     PotentialBody(&SpringMat, defNodes, PotentialSearchRF);
-  //ViscousRegularizer vr1(bd1->nodes(), viscosity_inp);
-  //bd1->pushBack(&vr1);
-  //BrownianKick bk1(defNodes,Cd,diffusionCoeff,dt);
-  //bd1->pushBack(&bk1);
 
   //Create Model
   Model::BodyContainer bdc1;
@@ -334,37 +330,6 @@ int main(int argc, char* argv[])
   double vrEnergy;
   double bdEnergy;
   double PrEnergy;
-  
-  // for(int viter = 0; viter < viterMax; viter++) {
-
-  //   std::cout << std::endl 
-  // 	      << "VISCOUS ITERATION: " << viter 
-  // 	      << "\t viscosity = " << vr1.viscosity()
-  // 	      << std::endl
-  // 	      << std::endl;
-
-  //   bk1.updateKick();
-
-  //   solver.solve( &model1 );
-
-  //   vrEnergy = vr1.energy();
-  //   bdEnergy = bd1->energy();
-  //   PrEnergy = SpringBody->energy();
-    
-  //   std::cout << "ENERGY:" << std::endl
-  // 	      << "viscous energy = " << vrEnergy << std::endl
-  // 	      << "protein energy = " << PrEnergy << std::endl
-  // 	      << "bending energy = " << bdEnergy << std::endl
-  // 	      << "  total energy = " << solver.function() << std::endl
-  // 	      << std::endl;
-  //   std::cout << "VISCOSITY: " << std::endl
-  // 	      << "          velocity = " << vr1.velocity() << std::endl
-  // 	      << " updated viscosity = " << vr1.viscosity() << std::endl
-  // 	      << std::endl;
-    
-  //   // step forward in "time", relaxing viscous energy & forces 
-  //   vr1.step();   
-  // }
   
   solver.solve( &model1 );  
   bdEnergy = bd1->energy();
@@ -589,12 +554,19 @@ int main(int argc, char* argv[])
     
     //We will calculate radius using the quadrature points
     std::vector<double> qpRadius;
-    LSB::FeElementContainer fem = bd->shells();
-    for(LSB::ConstFeElementIterator i=fem.begin(); i!=fem.end(); ++i){
-      const LS::NodeContainer eleNodes = (*i)->nodes();      
-      LS::QuadPointContainer qp = (*i)->quadraturePoints();
-      for(LS::ConstQuadPointIterator qpi = qp.begin();qpi!=qp.end();++qpi){
-	LoopShellShape s = (*qpi).shape;
+    LSB::FeElementContainer elements = bd->shells();
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
+    for(int e=0; e < elements.size();e++){
+
+      const LS::NodeContainer eleNodes = elements[e]->nodes();      
+      LS::QuadPointContainer quadPoints = elements[e]->quadraturePoints();
+
+      for(LS::ConstQuadPointIterator quadPoint = quadPoints.begin();
+	  quadPoint != quadPoints.end(); ++quadPoint){
+
+	LoopShellShape s = (*quadPoint).shape;
 	const LoopShellShape::FunctionArray fn = s.functions();
 	tvmet::Vector<double,3> Xq(0.0);
 	for(int i=0;i<fn.size();i++){
@@ -645,6 +617,8 @@ int main(int argc, char* argv[])
   std::cout<<"Total execution time: "<<diff/CLOCKS_PER_SEC
 	   <<" seconds"<<std::endl;
 }
+
+
 ///////////////////////////////////////////////////////////////////////////////
 //                                                                           //    
 //                        WRITEEDGESTRAINVTK BEGINS                          //
@@ -750,7 +724,11 @@ void writeEdgeStrainVtk(std::string fileName, double avgEdgeLen){
 std::vector<double> calcEdgeLenAndStdDev
 (std::vector< DeformationNode<3>* > defNodes, 
  vector< tvmet::Vector<int,3> > connectivities){
+
   double EdgeLength = 0.0;
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
   for(int i=0; i<connectivities.size(); i++) {
     std::vector<int> cm(3);
     for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
@@ -761,14 +739,20 @@ std::vector<double> calcEdgeLenAndStdDev
       e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
       eCent(defNodes[cm[2]]->point());
     // Compute average edge length for each triangle
-    EdgeLength += 
+    double temp = 
       (tvmet::norm2(e31) + tvmet::norm2(e32) + tvmet::norm2(e12))/3.0;
+
+#pragma omp atomic
+    EdgeLength += temp;
   }
   EdgeLength /= connectivities.size();  
 
   // Calculate the standard deviation of side lengths of the
   // equilateral triangles
   double stdDevEdgeLen = 0.0;
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
   for(int i=0; i<connectivities.size(); i++) {
     std::vector<int> cm(3);
     for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
@@ -778,10 +762,14 @@ std::vector<double> calcEdgeLenAndStdDev
       e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
       e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
       eCent(defNodes[cm[2]]->point());
-    stdDevEdgeLen = std::pow(tvmet::norm2(e31) - EdgeLength,2.0) +
+    double temp = std::pow(tvmet::norm2(e31) - EdgeLength,2.0) +
       std::pow(tvmet::norm2(e32) - EdgeLength,2.0) +
       std::pow(tvmet::norm2(e12) - EdgeLength,2.0);
+    
+#pragma omp atomic
+    stdDevEdgeLen += temp;
   }
+
   stdDevEdgeLen /= connectivities.size();
   stdDevEdgeLen = sqrt(stdDevEdgeLen);
 

@@ -944,26 +944,25 @@ namespace voom
       if(_active[e]) nActiveElements++;
     }
 
-    typename FeElement_t::ConstQuadPointIterator p; 
+    typename FeElement_t::ConstQuadPointIterator p;
+
 #ifdef _OPENMP	
-#pragma omp parallel for 			\
-  schedule(static) default(shared)		
-#endif
-	 
+#pragma omp parallel for private(e,p)
+#endif	 
     for (e = 0; e < _shells.size(); e++){
-      double max = 0.0;
-      double currValue;
+      double maxStrain = 0.0;
+      double strain;
       if(!_active[e]){
 	continue;
       }
       for(p = (_shells[e])->quadraturePoints().begin(); 
 	  p != (_shells[e])->quadraturePoints().end(); p++){
-	  currValue = p->material.getMaxStrain();
-	  if (std::abs(currValue) > std::abs(max)){
-	    max = currValue;
+	  strain = p->material.getMaxStrain();
+	  if (std::abs(strain) > std::abs(maxStrain)){
+	    maxStrain = strain;
 	  }
 	}
-      _maxPrincipalStrain[e] = max;
+      _maxPrincipalStrain[e] = maxStrain;
     }  
   }// calcMaxPrincipalStrains ENDS
   
