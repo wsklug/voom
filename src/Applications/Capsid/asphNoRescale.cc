@@ -450,7 +450,7 @@ int main(int argc, char* argv[])
 	model.print(rName);
 	sstm.str("");
 	sstm.clear();
-	sstm << fname <<"-interim-" << nameSuffix << "-"<< z <<"-bd1.vtk";
+	sstm << rName <<"-bd1.vtk";
 	actualFile = sstm.str();
 	std::rename(actualFile.c_str(),rName.c_str());
       }
