@@ -277,7 +277,7 @@ int main(int argc, char* argv[])
 	      >> temp >> continueFromNum;
   miscInpFile.close();
 
-  if(continueFromNum > 0){
+  if(continueFromNum > 1){
     //We will assume that in this case the harmonicRelaxNeeded was for
     //the previous run. So if it is true we will increment nameSuffix
     //and stepNumber by 1 otherwise we will not
@@ -349,6 +349,10 @@ int main(int argc, char* argv[])
     model1.print(rName);
     sstm <<"-bd1.vtk";
     actualFile = sstm.str();
+    sstm.str("");
+    sstm.clear();
+    sstm << fname <<"-relaxed-" << nameSuffix++ <<".vtk";
+    rName = sstm.str();
     std::rename(actualFile.c_str(),rName.c_str());      
     sstm.str("");
     sstm.clear();
@@ -490,11 +494,13 @@ int main(int argc, char* argv[])
     if(currPrintFlag){
       sstm << fname <<"-relaxed-" << nameSuffix++;
       rName = sstm.str();
-
-      model.print(rName);
-      //Insert EdgeStrain data in the printed FVK file      
+      model.print(rName);  
       sstm <<"-bd1.vtk";
       actualFile = sstm.str();
+      sstm.str("");
+      sstm.clear();
+      sstm << fname <<"-relaxed-" << nameSuffix++ <<".vtk";
+      rName = sstm.str();
       std::rename(actualFile.c_str(),rName.c_str());
       sstm.str("");
       sstm.clear(); // Clear state flags    
