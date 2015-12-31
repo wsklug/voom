@@ -185,6 +185,21 @@ int main(int argc, char* argv[])
   lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);  
   EdgeLength = lengthStat[0];
 
+  Ravg = 0.0;
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
+  for(int i=0; i < defNodes.size(); i++) {
+    DeformationNode<3>::Point x;
+    x = defNodes[i]->point();
+    double tempRadius = tvmet::norm2(x);
+#pragma omp atomic
+    Ravg += tempRadius;
+  }
+  Ravg /= defNodes.size();
+
+  std::cout<<"Radius of capsid after rescaling = "<< Ravg << endl;
+
   //******************* READ FVK DATA FROM FILE ********************//
 
   
@@ -420,7 +435,8 @@ int main(int argc, char* argv[])
 	     << "sigma = " << sigma <<" epsilon = " << epsilon
 	     << " Rshift = "<< Rshift <<endl;
 
-    std::cout << "Pressure :" << pressure << endl; 
+    std::cout << "Pressure = " << pressure << endl
+	      << "Capsid radius = "<< Ravg << endl; 
      
     std::cout << "Relaxing shape for gamma = " << gamma<< std::endl;     
     std::cout << "Initial Shape." << std::endl
@@ -475,44 +491,45 @@ int main(int argc, char* argv[])
 
 	//We also need to recompute the neighbors for PotentialBody
 	PrBody->recomputeNeighbors(PotentialSearchRF);
+     
+
+	//Relax again after remeshing
+	for(int viter = 0; viter < viterMax; viter++) {
+      
+	  std::cout << std::endl 
+		    << "VISCOUS ITERATION: " << viter 
+		    << "\t viscosity = " << vr.viscosity()
+		    << std::endl
+		    << std::endl;
+      
+	  bk.updateKick();
+
+	  solver.solve( &model );
+	  vrEnergy = vr.energy();
+	  bdEnergy = bd->energy();
+	  PrEnergy = PrBody->energy();
+
+	  std::cout << "ENERGY:" << std::endl
+		    << "viscous energy = " << vrEnergy << std::endl
+		    << "protein energy = " << PrEnergy << std::endl
+		    << "bending energy = " << bdEnergy << std::endl
+		    << "  total energy = " << solver.function() << std::endl
+		    << std::endl;   
+
+	  std::cout << "VISCOSITY: " << std::endl
+		    << "          velocity = " << vr.velocity() << std::endl
+		    << " updated viscosity = " << vr.viscosity() << std::endl
+		    << std::endl;
+      
+	  // step forward in "time", relaxing viscous energy & forces 
+	  vr.step();
+	}
       }
-
-    }// Remeshing ends here     
-
-    //Relax again after remeshing
-    for(int viter = 0; viter < viterMax; viter++) {
-      
-      std::cout << std::endl 
-		<< "VISCOUS ITERATION: " << viter 
-		<< "\t viscosity = " << vr.viscosity()
-		<< std::endl
-		<< std::endl;
-      
-      bk.updateKick();
-
-      solver.solve( &model );
-      vrEnergy = vr.energy();
-      bdEnergy = bd->energy();
-      PrEnergy = PrBody->energy();
-
-      std::cout << "ENERGY:" << std::endl
-		<< "viscous energy = " << vrEnergy << std::endl
-		<< "protein energy = " << PrEnergy << std::endl
-		<< "bending energy = " << bdEnergy << std::endl
-		<< "  total energy = " << solver.function() << std::endl
-		<< std::endl;   
-
-      std::cout << "VISCOSITY: " << std::endl
-		<< "          velocity = " << vr.velocity() << std::endl
-		<< " updated viscosity = " << vr.viscosity() << std::endl
-		<< std::endl;
-      
-      // step forward in "time", relaxing viscous energy & forces 
-      vr.step();
     }
-
+    
     std::cout << "Shape relaxed." << std::endl
 	      << "Energy = " << solver.function() << std::endl;
+
 
     //Calculate maximum principal strains in all elements
     bd->calcMaxPrincipalStrains();
@@ -553,8 +570,9 @@ int main(int argc, char* argv[])
     Xavg /= defNodes.size();
     
     //We will calculate radius using the quadrature points
-    std::vector<double> qpRadius;
     LSB::FeElementContainer elements = bd->shells();
+    std::vector<double> qpRadius(elements.size(),0.0);
+
 #ifdef _OPENMP
 #pragma omp parallel for
 #endif
@@ -573,7 +591,7 @@ int main(int argc, char* argv[])
 	  Xq += tvmet::mul(eleNodes[i]->point(),fn(i));
 	}
 	double qpR = tvmet::norm2(Xq-Xavg);
-	qpRadius.push_back(qpR);
+	qpRadius[e] = qpR;
       }
     }
     
@@ -582,6 +600,7 @@ int main(int argc, char* argv[])
       Ravg += qpRadius[i];
     }
     Ravg /= qpRadius.size();
+    std::cout<<"Radius of capsid after relaxation = "<< Ravg << endl;
   
     double dRavg2 = 0.0;
     for ( int i = 0; i<qpRadius.size(); i++){

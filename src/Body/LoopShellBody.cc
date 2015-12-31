@@ -815,6 +815,10 @@ namespace voom
     }
     ofs << std::endl;
     
+    //Uncomment if you need it. But you should first call
+    //calcMaxPrincipalStrains() in your driver to ensure that the
+    //strains are calculated and stored in _maxPrincipalStrain[e]
+    /*
     //  output highest eigen value of right Cauchy-Green Strain across
     //  all Gauss points for each element
     if (!_maxPrincipalStrain.empty()){
@@ -824,6 +828,7 @@ namespace voom
 	ofs << _maxPrincipalStrain[e] << endl; 
     }
     ofs << std::endl;    
+    */
 
     ofs << std::endl << "POINT_DATA " << _shellNodes.size() << endl
 	<< "VECTORS displacements double" << endl;
@@ -935,7 +940,7 @@ namespace voom
   }//AverageEdgeLength ENDS
 
 
-  //! Calculate maximum Principal Strain for all element
+  //! Calculate maximum Principal Strain for all elements
   template < class Material_t>
     void LoopShellBody< Material_t >::calcMaxPrincipalStrains() {
     
