@@ -344,7 +344,7 @@ int main(int argc, char* argv[])
     std::cout<<"Harmonic potential relaxation complete." << endl;
 
     //Print to VTK file
-    sstm << fname <<"-relaxed-" << nameSuffix++;
+    sstm << fname <<"-relaxed-" << nameSuffix;
     rName = sstm.str();
     model1.print(rName);
     sstm <<"-bd1.vtk";
@@ -492,7 +492,7 @@ int main(int argc, char* argv[])
      
     //Selectively print the relaxed shapes
     if(currPrintFlag){
-      sstm << fname <<"-relaxed-" << nameSuffix++;
+      sstm << fname <<"-relaxed-" << nameSuffix;
       rName = sstm.str();
       model.print(rName);  
       sstm <<"-bd1.vtk";
