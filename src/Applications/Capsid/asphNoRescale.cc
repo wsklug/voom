@@ -859,7 +859,7 @@ std::vector<double> calcEdgeLenAndStdDev
 void insertValenceInVtk(std::vector<std::string> fileNames){
 
 #ifdef _OPENMP
-#pragma omp parallel for private(appendTo)
+#pragma omp parallel for
 #endif
   for(int i=0; i < fileNames.size();i++){
 
