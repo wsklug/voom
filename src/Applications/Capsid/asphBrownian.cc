@@ -19,6 +19,7 @@
 #include <vtkPointData.h>
 #include <vtkPolyData.h>
 #include <vtkDataSetReader.h>
+#include <vtkPolyDataReader.h>
 #include <vtkPolyDataWriter.h>
 #include <vtkPolyDataNormals.h>
 #include <vtkSmartPointer.h>
@@ -51,9 +52,9 @@ using namespace std;
 using namespace voom;
 
 // Function declarations
-void writeEdgeStrainVtk(std::string fileName, double avgEdgeLen);
-void insertValenceInVtk(const std::string fileName,\
-			vtkSmartPointer<vtkPolyData> mesh);
+void writeEdgeStrainVtk(std::vector<std::string> fileNames, \
+			double avgEdgeLen);
+void insertValenceInVtk(std::vector<std::string> fileNames);
 
 std::vector<double> calcEdgeLenAndStdDev
 (std::vector< DeformationNode<3>* > a, 
@@ -64,22 +65,87 @@ typedef std::vector< Node* > NodeContainer;
 
 int main(int argc, char* argv[])
 {
-  clock_t t1,t2;
+  clock_t t1,t2,t3;
   t1=clock();
   if ( argc != 2 ){
     cout<<"usage: "<< argv[0] <<" <filename>\n";
     return -1;
   }
+
+#ifdef _OPENMP
+  std::cout<< "************* PARALLELIZATION USING OPENMP ****************"
+	   << endl << endl;
+#endif
+
   string inputFileName = argv[1];
 
-  bool remesh = true;
+  //For Morse material 
+  double epsilon;
+  double percentStrain;
+  double pressureFactor;
 
-  vtkDataSetReader * reader = vtkDataSetReader::New();
-  reader->SetFileName( inputFileName.c_str() );
+  //Numerical viscosity input parameter
+  double temperature;
+  double viscosity_inp;
+  double dt; //time step
+  int viterMax;
+
+  double Rshift;
+  bool harmonicRelaxNeeded;
+  int continueFromNum;
+  int nameSuffix = 0;
+  int firstFileNum = 0;
+
+  //Read epsilon and percentStrain from input file. percentStrain is
+  //calculated so as to set the inflection point of Morse potential
+  //at a fixed distance relative to the equilibrium separation
+  //e.g. 1.1*R_eq, 1.5*R_eq etc.
+  std::ifstream miscInpFile("miscInp.dat");
+  assert(miscInpFile);
+  string temp;
+  miscInpFile >> temp >> epsilon
+	      >> temp >> percentStrain
+	      >> temp >> pressureFactor
+	      >> temp >> temperature
+	      >> temp >> viscosity_inp
+	      >> temp >> dt
+	      >> temp >> viterMax
+	      >> temp >> harmonicRelaxNeeded
+	      >> temp >> continueFromNum
+	      >> temp >> Rshift;
+
+  miscInpFile.close();
+
+  vtkSmartPointer<vtkDataSetReader> reader = 
+    vtkSmartPointer<vtkDataSetReader>::New();
+  
+  std::stringstream sstm;
+  
+  if(continueFromNum > 1){
+    nameSuffix = continueFromNum - 1;
+    firstFileNum = nameSuffix;
+    harmonicRelaxNeeded = false;    
+    temp = inputFileName.substr(0,inputFileName.find("."));
+    sstm << temp <<"-relaxed-"<<firstFileNum-1<<".vtk";
+    temp = sstm.str();
+
+    reader->SetFileName(temp.c_str());
+
+    sstm.str("");
+    sstm.clear();
+    std::cout<<"Continuing from entry number "<< continueFromNum 
+	     <<" of fvkSteps.dat"<< endl <<"Using input file "
+	     << temp << endl <<"Rshift = "<< Rshift 
+	     << endl << endl;
+  }
+  else{
+    reader->SetFileName( inputFileName.c_str() );
+  }
 
   //We will use this object, shortly, to ensure consistent triangle
   //orientations
-  vtkPolyDataNormals * normals = vtkPolyDataNormals::New();
+  vtkSmartPointer<vtkPolyDataNormals> normals = 
+    vtkSmartPointer<vtkPolyDataNormals>::New();
 
   //We have to pass a vtkPolyData to vtkPolyDataNormals::SetInput() If
   //our input vtk file has vtkUnstructuredGridData instead of
@@ -174,11 +240,11 @@ int main(int argc, char* argv[])
 
   // Rescale size of the capsid by the average equilateral edge length
   for(int i=0; i<defNodes.size(); i++) {
-  DeformationNode<3>::Point x;
-  x = defNodes[i]->point();
-  x *= 1.0/EdgeLength;
-  defNodes[i]->setPoint(x);
-  defNodes[i]->setPosition(x);
+    DeformationNode<3>::Point x;
+    x = defNodes[i]->point();
+    x *= 1.0/EdgeLength;
+    defNodes[i]->setPoint(x);
+    defNodes[i]->setPosition(x);
   }
 
   //Recalculate edge lengths and dependent quantities
@@ -186,14 +252,10 @@ int main(int argc, char* argv[])
   EdgeLength = lengthStat[0];
 
   Ravg = 0.0;
-#ifdef _OPENMP
-#pragma omp parallel for
-#endif
   for(int i=0; i < defNodes.size(); i++) {
     DeformationNode<3>::Point x;
     x = defNodes[i]->point();
     double tempRadius = tvmet::norm2(x);
-#pragma omp atomic
     Ravg += tempRadius;
   }
   Ravg /= defNodes.size();
@@ -218,39 +280,37 @@ int main(int argc, char* argv[])
   }  
   fvkFile.close();
   
-  //Uncomment the block below to calculate FVK steps by code
-  /*
-  // FVK = 10^(exponent)
-  double expMin = 0.0; // minimum exponent -> FVK = 10^0
-  double expMax = 4.0; // maximum exponent -> FVK = 10^4
-  double FVK_steps = 1000;
-  double expIncr = (expMax - expMin)/FVK_steps;
-  double currExponent;
-  */
-
-  std::stringstream sstm;
   string fname = inputFileName.substr(0,inputFileName.find("."));
   string iName;
   string rName;
+  string actualFile;
 
   ofstream myfile;
-  myfile.open ("asphVsFVKMorse.dat");
-  myfile << setw(9) << "#Ravg" << "\t"<< setw(8) << "Y" << "\t"
-	 << "asphericity" << "\t" <<setw(8) << "FVKin" <<"\t"
-	 <<setw(8) << "FVKout" << "\t" << setw(12) <<"AvgStrain"
-	 << setw(12)  << "Energy" <<  endl;
-  myfile<< showpoint;
+  std::string dataOutputFile = "asphVsFVKMorse.dat";
 
+  //If the file already exists then open it in append mode
+  if(!ifstream(dataOutputFile.c_str())){
+    myfile.open(dataOutputFile.c_str());
+    myfile << setw(5) << "#Step"<<"\t" << setw(9) << "Ravg" << "\t"
+	   << setw(8) << "Y" << "\t" << "asphericity" << "\t" 
+	   << setw(8) << "FVKin" <<"\t" << setw(8) << "FVKout" << "\t"
+	   << setw(8) <<"Energy" <<  endl;
+    myfile<< showpoint;
+  }
+  else{
+    myfile.open(dataOutputFile.c_str(),ofstream::app);
+  }
   
   //Parameters for the l-BFGS solver
   int m=5;
-  int maxIter=1e6;
+
+  //int maxIter = 1e6;
+  int maxIter=100;
+
   double factr=1.0e+1;
   double pgtol=1e-7;
   int iprint = 1;
   Lbfgsb solver(3*nodes.size(), m, factr, pgtol, iprint, maxIter );
-
-  int nameSuffix = 0;
 
   typedef FVK MaterialType;
   typedef LoopShellBody<MaterialType> LSB;
@@ -258,35 +318,9 @@ int main(int argc, char* argv[])
 
   //****************  Protein body parameters ****************//
 
-  //For Morse material 
-  double epsilon;
-  double percentStrain;
-  double pressureFactor;
-
-  //Numerical viscosity input parameter
-  double temperature;
-  double viscosity_inp;
-  double dt; //time step
-  int viterMax;
-
-  //Read epsilon and percentStrain from input file. percentStrain is
-  //calculated so as to set the inflection point of Morse potential
-  //at a fixed distance relative to the equilibrium separation
-  //e.g. 1.1*R_eq, 1.5*R_eq etc.
-  std::ifstream miscInpFile("miscInp.dat");
-  assert(miscInpFile);
-  string temp;
-  miscInpFile >> temp >> epsilon
-	      >> temp >> percentStrain
-	      >> temp >> pressureFactor
-	      >> temp >> temperature
-	      >> temp >> viscosity_inp
-	      >> temp >> dt
-	      >> temp >> viterMax;
-
-  miscInpFile.close();
-
-  double Rshift = EdgeLength;
+  if(continueFromNum == 1){
+    Rshift = EdgeLength;
+  }
   double sigma  = (100/(Rshift*percentStrain))*log(2.0);
   double PotentialSearchRF=1.2*Rshift; 
   double springConstant = 2*sigma*sigma*epsilon;
@@ -314,8 +348,6 @@ int main(int argc, char* argv[])
 	    << "  D = " << diffusionCoeff << std::endl
 	    << " dt = " << dt << std::endl;
 
-  //****** Relax the initial mesh using harmonic potential ****** //
-
   double gamma = gammaVec[0][0];
   double Y = 2.0/sqrt(3)*springConstant; // Young's modulus
   double nu = 1.0/3.0;
@@ -324,78 +356,85 @@ int main(int argc, char* argv[])
   double C0 = 0.0;
   int quadOrder = 2;
 
-  MaterialType bending(KC,KG,C0,0.0,0.0);
-  LSB * bd1 = new LSB(bending, connectivities, nodes, quadOrder, 
-		      pressure, 0.0,0.0,1.0e4,1.0e6,1.0e4,
-		      multiplier,noConstraint,noConstraint);
-  bd1->setOutput(paraview);
-  SpringPotential SpringMat(springConstant, Rshift);
-  PotentialBody * SpringBody = new 
-    PotentialBody(&SpringMat, defNodes, PotentialSearchRF);
-
-  //Create Model
-  Model::BodyContainer bdc1;
-  bdc1.push_back(SpringBody);
-  bdc1.push_back(bd1);    
-  Model model1(bdc1,nodes);
-     
-  std::cout<< "Spring constant: " << springConstant << endl;
-  std::cout<< "Relaxing the mesh using harmonic potential..."<< endl;
-
   double vrEnergy;
   double bdEnergy;
   double PrEnergy;
   
-  solver.solve( &model1 );  
-  bdEnergy = bd1->energy();
-  PrEnergy = SpringBody->energy();
-  std::cout << "ENERGY:" << std::endl
-	    << "protein energy = " << PrEnergy << std::endl
-	    << "bending energy = " << bdEnergy << std::endl
-	    << "  total energy = " << solver.function() << std::endl
-	    << std::endl;
+  if(harmonicRelaxNeeded){
 
-  std::cout<<"Harmonic potential relaxation completed." << endl;
+    //****** Relax the initial mesh using harmonic potential ****** //
 
-  //Print to VTK file
-  sstm << fname <<"-relaxed-" << nameSuffix++;
-  rName = sstm.str();
-  model1.print(rName);
-  sstm <<"-bd1.vtk";
-  rName = sstm.str();
-  insertValenceInVtk(rName,mesh);
-  writeEdgeStrainVtk(rName, Rshift);      
-  sstm.str("");
-  sstm.clear();
+    MaterialType bending(KC,KG,C0,0.0,0.0);
+    LSB * bd1 = new LSB(bending, connectivities, nodes, quadOrder, 
+			pressure, 0.0,0.0,1.0e4,1.0e6,1.0e4,
+			multiplier,noConstraint,noConstraint);
+    bd1->setOutput(paraview);
+    SpringPotential SpringMat(springConstant, Rshift);
+    PotentialBody * SpringBody = new 
+      PotentialBody(&SpringMat, defNodes, PotentialSearchRF);
 
-  //Release allocated memory
-  delete bd1;
-  delete SpringBody;
+    //Create Model
+    Model::BodyContainer bdc1;
+    bdc1.push_back(SpringBody);
+    bdc1.push_back(bd1);    
+    Model model1(bdc1,nodes);
+     
+    std::cout<< "Spring constant: " << springConstant << endl;
+    std::cout<< "Relaxing the mesh using harmonic potential..."<< endl;
+  
+    solver.solve( &model1 );  
+    bdEnergy = bd1->energy();
+    PrEnergy = SpringBody->energy();
+    std::cout << "ENERGY:" << std::endl
+	      << "protein energy = " << PrEnergy << std::endl
+	      << "bending energy = " << bdEnergy << std::endl
+	      << "  total energy = " << solver.function() << std::endl
+	      << std::endl;
 
-  //Recalculate edge lengths and dependent quantities
-  lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);  
-  EdgeLength = lengthStat[0];
-  Rshift = EdgeLength;
-  sigma  = (100/(Rshift*percentStrain))*log(2.0);
-  springConstant = 2*sigma*sigma*epsilon;
-  std::cout<<"After relaxing with harmonic potential: "<< endl
-	   <<"   Average triangle edge length = "<< std::setprecision(10)
-	   << EdgeLength << endl
-	   <<"   Standard deviation = " << std::setprecision(10)
-	   << stdDevEdgeLen << endl;
-  std::cout.precision(6);  
+    std::cout<<"Harmonic potential relaxation completed." << endl;
+
+    //Print to VTK file
+    sstm << fname <<"-relaxed-" << nameSuffix++;
+    rName = sstm.str();
+    model1.print(rName);
+    sstm <<"-bd1.vtk";
+    actualFile = sstm.str();
+    sstm.str("");
+    sstm.clear();
+    sstm << fname <<"-relaxed-harmonic.vtk";
+    rName = sstm.str();
+    std::rename(actualFile.c_str(),rName.c_str());      
+    sstm.str("");
+    sstm.clear();
+
+    //Release allocated memory
+    delete bd1;
+    delete SpringBody;
+
+    //Recalculate edge lengths and dependent quantities
+    lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);  
+    EdgeLength = lengthStat[0];
+    Rshift = EdgeLength;
+    sigma  = (100/(Rshift*percentStrain))*log(2.0);
+    springConstant = 2*sigma*sigma*epsilon;
+    std::cout<<"After relaxing with harmonic potential: "<< endl
+	     <<"   Average triangle edge length = "<< std::setprecision(10)
+	     << EdgeLength << endl
+	     <<"   Standard deviation = " << std::setprecision(10)
+	     << stdDevEdgeLen << endl;
+    std::cout.precision(6);  
+  }
 
   //***************************  SOLUTION LOOP ***************************//
 
   //Loop over all values of gamma and relax the shapes to get
   //asphericity
+  
+  for(int q = continueFromNum -1 ; q < gammaVec.size(); q++){  
 
-  for(std::vector<vector<double> >::iterator q=gammaVec.begin();
-      q!=gammaVec.end();++q){  
-
-    gamma = (*q)[0];
-    double currPrintFlag = (*q)[1];    
-
+    gamma = gammaVec[q][0];
+    double currPrintFlag = gammaVec[q][1]; 
+    
     // Bending body parameters
     Y = 2.0/sqrt(3)*springConstant; // Young's modulus
     KC = Y*Ravg*Ravg/gamma; // Bending modulus
@@ -408,8 +447,6 @@ int main(int argc, char* argv[])
     if(pressure < 0.0){
       pressure = pressure*(-1);
     }
-
-    //pressure = pressureFactor*(3.82)*sigma*epsilon/(Rshift*Rshift);
     
     //The Bodies
     MaterialType bending(KC,KG,C0,0.0,0.0);
@@ -437,10 +474,6 @@ int main(int argc, char* argv[])
 
     std::cout << "Pressure = " << pressure << endl
 	      << "Capsid radius = "<< Ravg << endl; 
-     
-    std::cout << "Relaxing shape for gamma = " << gamma<< std::endl;     
-    std::cout << "Initial Shape." << std::endl
-	      << "Energy = " << solver.function() << std::endl;
 
     for(int viter = 0; viter < viterMax; viter++) {
 
@@ -452,7 +485,29 @@ int main(int argc, char* argv[])
       
       bk.updateKick();
 
-      solver.solve( &model );
+      //For debugging we have limited the number of solver iterations to
+      //500 so that we can see the intermediate results before the
+      //solver diverges
+      for(int z=0; z<5; z++){
+	
+	solver.solve( &model );
+	//Print the files
+	sstm << fname <<"-interim-" << nameSuffix << "-"<< z <<".vtk";
+	rName = sstm.str();
+	char tempName[] = "lbfgsbconv-bd1.vtk";
+	int renameBool = std::rename(tempName,rName.c_str());
+	if (renameBool != 0){
+	  model.print(rName);
+	  sstm.str("");
+	  sstm.clear();
+	  sstm << rName <<"-bd1.vtk";
+	  actualFile = sstm.str();
+	  std::rename(actualFile.c_str(),rName.c_str());
+	}
+	sstm.str("");
+	sstm.clear(); // Clear state flags
+      }
+      
       vrEnergy = vr.energy();
       bdEnergy = bd->energy();
       PrEnergy = PrBody->energy();
@@ -491,39 +546,9 @@ int main(int argc, char* argv[])
 
 	//We also need to recompute the neighbors for PotentialBody
 	PrBody->recomputeNeighbors(PotentialSearchRF);
-     
-
+	
 	//Relax again after remeshing
-	for(int viter = 0; viter < viterMax; viter++) {
-      
-	  std::cout << std::endl 
-		    << "VISCOUS ITERATION: " << viter 
-		    << "\t viscosity = " << vr.viscosity()
-		    << std::endl
-		    << std::endl;
-      
-	  bk.updateKick();
-
-	  solver.solve( &model );
-	  vrEnergy = vr.energy();
-	  bdEnergy = bd->energy();
-	  PrEnergy = PrBody->energy();
-
-	  std::cout << "ENERGY:" << std::endl
-		    << "viscous energy = " << vrEnergy << std::endl
-		    << "protein energy = " << PrEnergy << std::endl
-		    << "bending energy = " << bdEnergy << std::endl
-		    << "  total energy = " << solver.function() << std::endl
-		    << std::endl;   
-
-	  std::cout << "VISCOSITY: " << std::endl
-		    << "          velocity = " << vr.velocity() << std::endl
-		    << " updated viscosity = " << vr.viscosity() << std::endl
-		    << std::endl;
-      
-	  // step forward in "time", relaxing viscous energy & forces 
-	  vr.step();
-	}
+	solver.solve( &model );
       }
     }
     
@@ -532,23 +557,22 @@ int main(int argc, char* argv[])
 
 
     //Calculate maximum principal strains in all elements
-    bd->calcMaxPrincipalStrains();
+    //bd->calcMaxPrincipalStrains();
 
     //Selectively print the relaxed shapes
     if(currPrintFlag){
-      sstm << fname <<"-relaxed-" << nameSuffix++;
+      sstm << fname <<"-relaxed-" << nameSuffix;
       rName = sstm.str();
-
       model.print(rName);
-      //Insert EdgeStrain data in the printed FVK file      
       sstm <<"-bd1.vtk";
-      rName = sstm.str();
-      insertValenceInVtk(rName,mesh);
-      writeEdgeStrainVtk(rName, Rshift);
-      
+      actualFile = sstm.str();
       sstm.str("");
-      sstm.clear(); // Clear state flags
-    
+      sstm.clear();
+      sstm << fname <<"-relaxed-" << nameSuffix <<".vtk";
+      rName = sstm.str();
+      std::rename(actualFile.c_str(),rName.c_str());
+      sstm.str("");
+      sstm.clear(); // Clear state flags     
     }
 
     //Re-calculate triangle edge length mean and deviation
@@ -587,16 +611,18 @@ int main(int argc, char* argv[])
 	LoopShellShape s = (*quadPoint).shape;
 	const LoopShellShape::FunctionArray fn = s.functions();
 	tvmet::Vector<double,3> Xq(0.0);
+
 	for(int i=0;i<fn.size();i++){
 	  Xq += tvmet::mul(eleNodes[i]->point(),fn(i));
 	}
+
 	double qpR = tvmet::norm2(Xq-Xavg);
 	qpRadius[e] = qpR;
       }
     }
     
     Ravg = 0.0;
-    for ( int i = 0; i<qpRadius.size(); i++){
+    for ( int i = 0; i < qpRadius.size(); i++){
       Ravg += qpRadius[i];
     }
     Ravg /= qpRadius.size();
@@ -612,18 +638,23 @@ int main(int argc, char* argv[])
     double asphericity = dRavg2/(Ravg*Ravg);
     double gammaCalc = Y*Ravg*Ravg/KC;
     
-    //Calculate Average Principal Strain
-    std::vector<double> maxStrain =  bd->getMaxPrincipalStrains();
-    double avgStrain = 0.0;
-    for(int e=0; e < maxStrain.size(); e++){
-      avgStrain += maxStrain[e];
-    }
-    avgStrain /= maxStrain.size();
+    // //Calculate Average Principal Strain
+    // std::vector<double> maxStrain =  bd->getMaxPrincipalStrains();
+    // double avgStrain = 0.0;
+    // for(int e=0; e < maxStrain.size(); e++){
+    //   avgStrain += maxStrain[e];
+    // }
+    // avgStrain /= maxStrain.size();
 
-    myfile<< Ravg <<"\t\t"<< Y <<"\t\t"<< asphericity
-	  <<"\t\t"<< gamma <<"\t\t"<< gammaCalc
-	  <<"\t\t"<< avgStrain << "\t\t" << solver.function() 
-	  << endl;
+    // myfile<< Ravg <<"\t\t"<< Y <<"\t\t"<< asphericity
+    // 	  <<"\t\t"<< gamma <<"\t\t"<< gammaCalc
+    // 	  <<"\t\t"<< avgStrain << "\t\t" << solver.function() 
+    // 	  << endl;
+
+    myfile<< nameSuffix++<<"\t\t"<< Ravg <<"\t\t"<< Y <<"\t\t"<< asphericity
+    	  <<"\t\t"<< gamma <<"\t\t"<< gammaCalc
+    	  <<"\t\t" << solver.function() 
+    	  << endl;    
     
     //Release the dynamically allocated memory
     delete bd;
@@ -633,8 +664,28 @@ int main(int argc, char* argv[])
   myfile.close();
   t2=clock();
   float diff ((float)t2-(float)t1);
-  std::cout<<"Total execution time: "<<diff/CLOCKS_PER_SEC
+  std::cout<<"Solution loop execution time: "<<diff/CLOCKS_PER_SEC
 	   <<" seconds"<<std::endl;
+
+  // Post-processing: Manipulating VTK files
+  std::vector<std::string> allVTKFiles;
+  int numFiles = gammaVec.size();
+  allVTKFiles.reserve(numFiles - firstFileNum);
+  for(int fileNum=firstFileNum ; fileNum < numFiles; fileNum++){    
+    sstm << fname <<"-relaxed-" << fileNum <<".vtk";
+    std::string tempString = sstm.str();
+    allVTKFiles.push_back(tempString);
+    sstm.str("");
+    sstm.clear();
+  }
+  
+  insertValenceInVtk(allVTKFiles);
+  writeEdgeStrainVtk(allVTKFiles,Rshift);
+  t3=clock();
+  diff = ((float)t3-(float)t2);
+  std::cout<<"Post-processing execution time: "<<diff/CLOCKS_PER_SEC
+  	   <<" seconds"<<std::endl;
+  
 }
 
 
@@ -647,87 +698,143 @@ int main(int argc, char* argv[])
 //The calling method must ensure that 'fileName' exists and is a valid vtk file.
 //MUST use the extension '.vtk' in 'fileName'.
 
-void writeEdgeStrainVtk(std::string fileName, double avgEdgeLen){
+void writeEdgeStrainVtk(std::vector<std::string> fileNames, \
+			double avgEdgeLen){
+
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
+  for(int i=0; i < fileNames.size() ; i++){
+
+    std::string fileName = fileNames[i];
+
+    //Check that the file exists
+    assert(ifstream(fileName.c_str()));
+
+    vtkSmartPointer<vtkPolyDataReader> reader = 
+      vtkSmartPointer<vtkPolyDataReader>::New();
+    reader->SetFileName(fileName.c_str());
+  
+    reader->ReadAllScalarsOn();
+    reader->ReadAllVectorsOn();
+
+    vtkSmartPointer<vtkPolyData> mesh = reader->GetOutput();  
+    mesh->Update();
  
-  //Check that the file exists
-  assert(ifstream(fileName.c_str()));
+    //vtkSmartPointer<vtkPolyData> mesh = vtkPolyData::SafeDownCast(ds);
+    //mesh->Update();
 
-  vtkDataSetReader * reader = vtkDataSetReader::New();
-  reader->SetFileName(fileName.c_str());
+    vtkSmartPointer<vtkPolyDataWriter> writer = 
+      vtkSmartPointer<vtkPolyDataWriter>::New();
+
+    //Following few lines of code are meant to obtain number of edges
+    //from the mesh
+    vtkSmartPointer<vtkExtractEdges> extractEdges = 
+      vtkSmartPointer<vtkExtractEdges>::New();  
+    extractEdges->SetInput(mesh);
+    extractEdges->Update();
+    vtkSmartPointer<vtkPolyData> wireFrame = extractEdges->GetOutput();
+
+    vtkSmartPointer<vtkCellArray> lines = wireFrame->GetLines();
+    int numLines = lines->GetNumberOfCells();
+
+    //string vectorName="displacements";
+    vtkSmartPointer<vtkDataArray> displacements = wireFrame->GetPointData()->
+      GetVectors("displacements");
+
+    //The following vtkDoubleArray will be used to store the
+    //strain in each edge
+    vtkSmartPointer<vtkDoubleArray> edgeStrain = 
+      vtkSmartPointer<vtkDoubleArray>::New();
+    edgeStrain->SetNumberOfComponents(1);
+    edgeStrain->SetNumberOfTuples(numLines);
+    edgeStrain->SetName("EdgeStrains");
+    
+    vtkIdType npts;
+    vtkIdType *pts;
+    lines->InitTraversal();
+    vtkIdType index=0;
+    while(lines->GetNextCell(npts,pts)){
+      double p1[3],p2[3];
+      double disp1[3],disp2[3];
+      wireFrame->GetPoint(pts[0],p1);
+      wireFrame->GetPoint(pts[1],p2);
+      displacements->GetTuple(pts[0],disp1);
+      displacements->GetTuple(pts[1],disp2);
+      tvmet::Vector<double,3> p1v(p1[0]+disp1[0],p1[1]+disp1[1],p1[2]+disp1[2]);
+      tvmet::Vector<double,3> p2v(p2[0]+disp2[0],p2[1]+disp2[1],p2[2]+disp2[2]);
+      tvmet::Vector<double,3> line(p1v-p2v);
+      double strain = (tvmet::norm2(line)-avgEdgeLen)/avgEdgeLen;
+      edgeStrain->SetTuple1(index++,strain);
+    }
+    wireFrame->GetCellData()->SetScalars(edgeStrain);
+
+    //The following array will store approximate strain in each
+    //triangle
+    vtkSmartPointer<vtkDoubleArray> avgStrain = 
+      vtkSmartPointer<vtkDoubleArray>::New();
+    avgStrain->SetNumberOfComponents(1);
+    avgStrain->SetNumberOfTuples(mesh->GetNumberOfCells());
+    avgStrain->SetName("ApproxEleStrain");
+        
+    tvmet::Vector<double,3> x1, x2, x3; //vertex position vectors
+    double e31, e32, e12; //edge lengths
+    
+    int ntri=mesh->GetNumberOfCells();
+#ifdef _OPENMP
+#pragma omp parallel for private(x1,x2,x3,e31,e32,e12)
+#endif    
+    for (int j = 0; j < ntri; j++){
+      assert(mesh->GetCell(j)->GetNumberOfPoints() == 3);
+      mesh->GetPoint(mesh->GetCell(j)->GetPointId(0), &(x1[0]));     
+      mesh->GetPoint(mesh->GetCell(j)->GetPointId(1), &(x2[0]));
+      mesh->GetPoint(mesh->GetCell(j)->GetPointId(2), &(x3[0]));
+      e31 = tvmet::norm2(x3 - x1);
+      e32 = tvmet::norm2(x3 - x2);
+      e12 = tvmet::norm2(x1 - x2);
+      double temp = ( std::abs(e31-avgEdgeLen) + 
+		      std::abs(e32 - avgEdgeLen) +
+		      std::abs(e12 - avgEdgeLen))/(3.0*avgEdgeLen);
+      avgStrain->SetValue(j,temp);
+    }
+    
+    mesh->GetCellData()->AddArray(avgStrain);
+    
+    std::stringstream sstm;
+    std::string tempFile;
+    sstm << fileName <<"-bak.vtk";
+    tempFile = sstm.str();
+    writer->SetFileName(tempFile.c_str());
+    writer->SetInput(mesh);
+    writer->Write();
+    std::rename(tempFile.c_str(),fileName.c_str());
+
+    /*
+      The next few lines of code involve string manipulations to comeup
+      with good file-names that Paraview can recognize to be sequence of
+      the same simulation. A file name like "T7-relaxed-10.vtk" is
+      converted to "T7-EdgeStrain-10.vtk"
+    */
+    int pos = fileName.find(".vtk");
+    if(pos != -1){
+      fileName.erase(pos,string::npos);
+    }
+    pos = fileName.find("relaxed-");
+    if(pos != -1){
+      fileName.erase(pos,8);
+      pos = fileName.find("-");
+      string serialNum = fileName.substr(pos+1,string::npos);
+      fileName.erase(pos,string::npos);
+      fileName = "./" + fileName + "-EdgeStrain-" + serialNum + ".vtk";
+    }
+    else{
+      fileName = "./" + fileName + "-EdgeStrain.vtk";
+    }
   
-  vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();  
-  ds->Update();
- 
-  vtkSmartPointer<vtkPolyData> mesh = vtkPolyData::SafeDownCast(ds);
-
-  //Following few lines of code are meant to obtain number of edges
-  //from the mesh
-  vtkSmartPointer<vtkExtractEdges> extractEdges = 
-    vtkSmartPointer<vtkExtractEdges>::New();  
-  extractEdges->SetInput(mesh);
-  extractEdges->Update();
-  vtkSmartPointer<vtkPolyData> wireFrame = extractEdges->GetOutput();
-
-  vtkSmartPointer<vtkCellArray> lines = wireFrame->GetLines();
-  int numLines = lines->GetNumberOfCells();
-
-  string vectorName="displacements";
-  vtkSmartPointer<vtkDataArray> displacements = wireFrame->GetPointData()->
-    GetVectors(vectorName.c_str());
-
-  //The following vtkDoubleArray will be used to store the
-  //strain in each edge
-  vtkSmartPointer<vtkDoubleArray> edgeStrain = 
-    vtkSmartPointer<vtkDoubleArray>::New();
-  edgeStrain->SetNumberOfComponents(1);
-  edgeStrain->SetNumberOfTuples(numLines);
-  edgeStrain->SetName("EdgeStrains");
-  
-  vtkIdType npts;
-  vtkIdType *pts;
-  lines->InitTraversal();
-  vtkIdType index=0;
-  while(lines->GetNextCell(npts,pts)){
-    double p1[3],p2[3];
-    double disp1[3],disp2[3];
-    wireFrame->GetPoint(pts[0],p1);
-    wireFrame->GetPoint(pts[1],p2);
-    displacements->GetTuple(pts[0],disp1);
-    displacements->GetTuple(pts[1],disp2);
-    tvmet::Vector<double,3> p1v(p1[0]+disp1[0],p1[1]+disp1[1],p1[2]+disp1[2]);
-    tvmet::Vector<double,3> p2v(p2[0]+disp2[0],p2[1]+disp2[1],p2[2]+disp2[2]);
-    tvmet::Vector<double,3> line(p1v-p2v);
-    double strain = (tvmet::norm2(line)-avgEdgeLen)/avgEdgeLen;
-    edgeStrain->SetTuple1(index++,strain);
+    writer->SetFileName(fileName.c_str());
+    writer->SetInput(wireFrame);
+    writer->Write();
   }
-  wireFrame->GetCellData()->SetScalars(edgeStrain);
-
-  /*
-    The next few lines of code involve string manipulations to comeup
-    with good file-names that Paraview can recognize to be sequence of
-    the same simulation. A file name like "T7-relaxed-10-bd1.vtk" is
-    converted to "T7-EdgeStrain-10.vtk"
-  */
-  int pos = fileName.find("-bd1.vtk");
-  if(pos != -1){
-    fileName.erase(pos,string::npos);
-  }
-  pos = fileName.find("relaxed-");
-  if(pos != -1){
-    fileName.erase(pos,8);
-    pos = fileName.find("-");
-    string serialNum = fileName.substr(pos+1,string::npos);
-    fileName.erase(pos,string::npos);
-    fileName = "./" + fileName + "-EdgeStrain-" + serialNum + ".vtk";
-  }
-  else{
-    fileName = "./" + fileName + "-EdgeStrain.vtk";
-  }
-  
-  vtkNew<vtkPolyDataWriter> writer;
-  writer->SetFileName(fileName.c_str());
-  writer->SetInput(wireFrame);
-  writer->Write();
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -806,57 +913,87 @@ std::vector<double> calcEdgeLenAndStdDev
 //MUST use the extension '.vtk' in 'fileName'.
 //'mesh' is a pointer to a vtkPolyData
 
-void insertValenceInVtk(const std::string fileName, vtkSmartPointer<vtkPolyData> mesh){
-  ofstream * appendTo;
+void insertValenceInVtk(std::vector<std::string> fileNames){
 
-  //Check that the file exists
-  assert(ifstream(fileName.c_str()));
+#ifdef _OPENMP
+#pragma omp parallel for private(appendTo)
+#endif
+  for(int i=0; i < fileNames.size();i++){
 
-  vtkDataSetReader * reader = vtkDataSetReader::New();
-  reader->SetFileName(fileName.c_str());
+    //Check that the file exists
+    assert(ifstream(fileNames[i].c_str()));
+
+    //vtkDataSetReader * reader = vtkDataSetReader::New();
+
+    vtkSmartPointer<vtkPolyDataReader> reader = 
+      vtkSmartPointer<vtkPolyDataReader>::New();
+    reader->SetFileName(fileNames[i].c_str());
+    reader->ReadAllScalarsOn();
+    reader->ReadAllVectorsOn();
   
-  vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();  
-  ds->Update();
+    vtkSmartPointer<vtkPolyData> pd = reader->GetOutput();  
+    pd->Update();
+
+    //vtkSmartPointer<vtkPolyData> mesh = vtkPolyData::SafeDownCast(ds);
+    //mesh->Update();
+    
+    int numPoints = pd->GetNumberOfPoints();
+
+    //The following vtkUnsignedIntArray will be used to store the
+    //number of CELLS in the mesh that share the POINT denoted by the
+    //index of the vector
+    vtkSmartPointer<vtkUnsignedIntArray> countPointCells = 
+      vtkSmartPointer<vtkUnsignedIntArray>::New();
+    countPointCells->SetNumberOfComponents(1);
+    countPointCells->SetNumberOfTuples(numPoints);
+    countPointCells->SetName("Valence");
   
-  //The following vtkUnsignedIntArray will be used to store the
-  //number of CELLS in the mesh that share the POINT denoted by the
-  //index of the vector
-  vtkSmartPointer<vtkUnsignedIntArray> countPointCells = 
-    vtkSmartPointer<vtkUnsignedIntArray>::New();
-  countPointCells->SetNumberOfValues(mesh->GetNumberOfPoints());
-  countPointCells->SetName("Valence");
+    //cellIds will be used to temporarily hold the CELLS that use a
+    //point specified by a point id.
+    vtkSmartPointer<vtkIdList> cellIds = 
+      vtkSmartPointer<vtkIdList>::New();
   
-  //cellIds will be used to temporarily hold the CELLS that use a
-  //point specified by a point id.
-  vtkSmartPointer<vtkIdList> cellIds = 
-    vtkSmartPointer<vtkIdList>::New();
-  
-  //We will use a vtkPolyDataWriter to write our modified output
-  //files that will have Capsomer information as well
-  vtkSmartPointer<vtkDataWriter> writer = 
-    vtkSmartPointer<vtkDataWriter>::New();
-  
-  if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
-    vtkSmartPointer<vtkUnstructuredGrid> usg 
-      = vtkUnstructuredGrid::SafeDownCast(ds);
-    usg->BuildLinks();
-    for(int p=0; p<ds->GetNumberOfPoints(); p++){
-      usg->GetPointCells(p,cellIds);
-      countPointCells->SetValue(p,cellIds->GetNumberOfIds());
-      cellIds->Reset();
-    }      
-  }                  
-  else if(ds->GetDataObjectType() == VTK_POLY_DATA){
-    vtkSmartPointer<vtkPolyData> pd = vtkPolyData::SafeDownCast(ds);
+    /*
+    if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
+      vtkSmartPointer<vtkUnstructuredGrid> usg 
+	= vtkUnstructuredGrid::SafeDownCast(ds);
+      usg->BuildLinks();
+      for(int p=0; p<ds->GetNumberOfPoints(); p++){
+	usg->GetPointCells(p,cellIds);
+	countPointCells->SetValue(p,cellIds->GetNumberOfIds());
+	cellIds->Reset();
+      }      
+    }                  
+    else if(ds->GetDataObjectType() == VTK_POLY_DATA){
+      vtkSmartPointer<vtkPolyData> pd = vtkPolyData::SafeDownCast(ds);
+      pd->BuildLinks();
+      for(int p=0; p<ds->GetNumberOfPoints(); p++){
+	pd->GetPointCells(p,cellIds);
+	countPointCells->SetValue(p,cellIds->GetNumberOfIds());
+	cellIds->Reset();
+      }	
+    }
+    */
+
     pd->BuildLinks();
-    for(int p=0; p<ds->GetNumberOfPoints(); p++){
+    for(int p=0; p<pd->GetNumberOfPoints(); p++){
       pd->GetPointCells(p,cellIds);
       countPointCells->SetValue(p,cellIds->GetNumberOfIds());
       cellIds->Reset();
-    }	
+    }
+
+    pd->GetPointData()->AddArray(countPointCells);
+    //We will use a vtkPolyDataWriter to write our modified output
+    //files that will have Capsomer information as well
+    vtkSmartPointer<vtkPolyDataWriter> writer = 
+      vtkSmartPointer<vtkPolyDataWriter>::New();
+    std::stringstream sstm;
+    std::string tempFileName;
+    sstm << "Temp_"<<i<<".vtk";
+    tempFileName = sstm.str();
+    writer->SetFileName(tempFileName.c_str());
+    writer->SetInput(pd);
+    writer->Write();
+    std::rename(tempFileName.c_str(),fileNames[i].c_str());    
   }
-  ds->GetFieldData()->AddArray(countPointCells);
-  appendTo = new ofstream(fileName.c_str(),ofstream::app);
-  writer->WriteFieldData(appendTo,ds->GetFieldData());
-  appendTo->close();
 }

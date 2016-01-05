@@ -648,13 +648,6 @@ namespace voom
       AreaBodyTot += (*pe)->area();
       gaussCurvature(e) /= (double)( npts );
     }
-//     char pid[30]; 
-//     sprintf(pid, "%d", _processorRank);
-//     std::string dataName = name + ".printData." + pid;
-//     std::ofstream dataStream(dataName.c_str());
-//     dataStream << energy << std::endl
-// 	       << curvature << std::endl;
-//     dataStream.close();
 
     averageMeanCurvature /= AreaBodyTot;
     
@@ -685,15 +678,9 @@ namespace voom
     }
 #endif
 
-//     dataName = name + ".printData.sum";
-//     dataStream.open(dataName.c_str());
-//     dataStream << energy << std::endl
-// 	       << curvature << std::endl;
-//     dataStream.close();
 
     std::string fileName = name + ".vtk";
     std::ofstream ofs(fileName.c_str());
-//     ofs.open(fileName.c_str(), std::ios::out);
     if (!ofs) {
       std::cout << "can not open output ("
 		<< fileName
