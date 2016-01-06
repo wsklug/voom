@@ -84,6 +84,7 @@ int main(int argc, char* argv[])
   int continueFromNum;
   int nameSuffix = 0;
   int firstFileNum = 0;
+  int interimIter = 5;
 
   //Read epsilon and percentStrain from input file. percentStrain is
   //calculated so as to set the inflection point of Morse potential
@@ -97,7 +98,8 @@ int main(int argc, char* argv[])
 	      >> temp >> pressureFactor
 	      >> temp >> harmonicRelaxNeeded
 	      >> temp >> continueFromNum
-	      >> temp >> Rshift;
+	      >> temp >> Rshift
+	      >> temp >> interimIter;
   
   miscInpFile.close();
 
@@ -404,13 +406,13 @@ int main(int argc, char* argv[])
     KC = Y*Ravg*Ravg/gamma; // Bending modulus
     KG = -2*(1-nu)*KC; // Gaussian modulus
     
-    pressure = pressureFactor*12*sigma*epsilon
-      *(exp(-2*sigma*Rshift)- exp(-sigma*Rshift)
-	+ exp(-1.46410*sigma*Rshift) - exp(-0.7321*sigma*Rshift))
-      /(3*Ravg*Ravg);
-    if(pressure < 0.0){
-      pressure = pressure*(-1);
-    }
+    // pressure = pressureFactor*12*sigma*epsilon
+    //   *(exp(-2*sigma*Rshift)- exp(-sigma*Rshift)
+    // 	+ exp(-1.46410*sigma*Rshift) - exp(-0.7321*sigma*Rshift))
+    //   /(3*Ravg*Ravg);
+    // if(pressure < 0.0){
+    //   pressure = pressure*(-1);
+    // }
     
     //The Bodies
     MaterialType bending(KC,KG,C0,0.0,0.0);
@@ -449,7 +451,7 @@ int main(int argc, char* argv[])
     //For debugging we have limited the number of solver iterations to
     //500 so that we can see the intermediate results before the
     //solver diverges
-    for(int z=0; z<5; z++){
+    for(int z=0; z< interimIter; z++){
 
       solver.solve( &model );
       //Print the files
@@ -613,8 +615,8 @@ int main(int argc, char* argv[])
   // Post-processing: Manipulating VTK files
   std::vector<std::string> allVTKFiles;
   int numFiles = gammaVec.size();
-  allVTKFiles.reserve(numFiles - firstFileNum);
-  for(int fileNum=firstFileNum ; fileNum < numFiles; fileNum++){    
+  allVTKFiles.reserve(numFiles);
+  for(int fileNum=0 ; fileNum < numFiles; fileNum++){    
     sstm << fname <<"-relaxed-" << fileNum <<".vtk";
     std::string tempString = sstm.str();
     allVTKFiles.push_back(tempString);
