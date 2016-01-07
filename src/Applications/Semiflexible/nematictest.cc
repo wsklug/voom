@@ -233,23 +233,19 @@ int main(int argc, char* argv[]) {
     std::cerr << "Error: input file name does not exist!" << std::endl;
     exit(1);
   }
-
   std::string pfn(paramFileName);
   int runnumStart = pfn.find_first_of("0123456789");
   int runnumEnd = pfn.find_first_not_of("0123456789",runnumStart);
   int runNum = atoi(pfn.substr(runnumStart,runnumEnd-runnumStart).data());
-
   char newDirName[128];
   sprintf(newDirName,"mkdir -p Run%d",runNum);
   system(newDirName);
-
   if(USEOPENMP) std::cout << "Open MP being used." << std::endl;
   else std::cout << "Open MP not being used." << std::endl;
 
   ////////////////////////////////////////////////////////////////////
   // Parameters
   ////////////////////////////////////////////////////////////////////
-  
   double kT = -1.0; // temperature in pN-microns //
   double kC = -1.0; // bending modulus of actin in pN-microns^2 //
   double L_p = -1.0; // persistence length of actin in microns //
@@ -278,7 +274,7 @@ int main(int argc, char* argv[]) {
   std::string nemPDFparam;
   bool prestress = false;
   std::string nemPDFtype = "Gaussian";
-
+  
   int nGels2avg = 1;
   int curGelNum = -1;
 
@@ -553,7 +549,7 @@ int main(int argc, char* argv[]) {
     parValStr.clear();
   }
   inFile.close();
-
+  
   SemiflexibleGel<2> * gel;
   SemiflexibleGel<2>::DefNodeContainer nodes;
   PeriodicBox * box;
