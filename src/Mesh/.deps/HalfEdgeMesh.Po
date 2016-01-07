@@ -1,0 +1,958 @@
+HalfEdgeMesh.o: HalfEdgeMesh.cc HalfEdgeMesh.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/vector \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_algobase.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/c++config.h \
+ /usr/include/bits/wordsize.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/os_defines.h \
+ /usr/include/features.h /usr/include/sys/cdefs.h \
+ /usr/include/gnu/stubs.h /usr/include/gnu/stubs-64.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/cpu_defines.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/cstddef \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/stddef.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/functexcept.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/exception_defines.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/cpp_type_traits.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/ext/type_traits.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/ext/numeric_traits.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_pair.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/move.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/concept_check.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_iterator_base_types.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_iterator_base_funcs.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_iterator.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/debug/debug.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/allocator.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/c++allocator.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/ext/new_allocator.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/new \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/exception \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_construct.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_uninitialized.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_vector.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/initializer_list \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_bvector.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/vector.tcc \
+ ../voom.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/iostream \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/ostream \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/ios \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/iosfwd \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stringfwd.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/postypes.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/cwchar \
+ /usr/include/wchar.h /usr/include/stdio.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/stdarg.h \
+ /usr/include/bits/wchar.h /usr/include/xlocale.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/char_traits.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/localefwd.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/c++locale.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/clocale \
+ /usr/include/locale.h /usr/include/bits/locale.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/cctype \
+ /usr/include/ctype.h /usr/include/bits/types.h \
+ /usr/include/bits/typesizes.h /usr/include/endian.h \
+ /usr/include/bits/endian.h /usr/include/bits/byteswap.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/ios_base.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/ext/atomicity.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/gthr.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/gthr-default.h \
+ /usr/include/pthread.h /usr/include/sched.h /usr/include/time.h \
+ /usr/include/bits/sched.h /usr/include/bits/time.h \
+ /usr/include/bits/pthreadtypes.h /usr/include/bits/setjmp.h \
+ /usr/include/unistd.h /usr/include/bits/posix_opt.h \
+ /usr/include/bits/environments.h /usr/include/bits/confname.h \
+ /usr/include/getopt.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/atomic_word.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/locale_classes.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/string \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/ostream_insert.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/cxxabi-forced.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_function.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/backward/binders.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/basic_string.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/basic_string.tcc \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/locale_classes.tcc \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/streambuf \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/streambuf.tcc \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/basic_ios.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/locale_facets.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/cwctype \
+ /usr/include/wctype.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/ctype_base.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/streambuf_iterator.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/ctype_inline.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/locale_facets.tcc \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/basic_ios.tcc \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/ostream.tcc \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/istream \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/istream.tcc \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/iomanip \
+ /u/local/apps/blitz/current/include/blitz/array.h \
+ /u/local/apps/blitz/current/include/blitz/array-impl.h \
+ /u/local/apps/blitz/current/include/blitz/blitz.h \
+ /u/local/apps/blitz/current/include/blitz/compiler.h \
+ /u/local/apps/blitz/current/include/blitz/bzconfig.h \
+ /u/local/apps/blitz/current/include/blitz/gnu/bzconfig.h \
+ /u/local/apps/blitz/current/include/blitz/tuning.h \
+ /u/local/apps/blitz/current/include/blitz/tau.h /usr/include/libio.h \
+ /usr/include/_G_config.h /usr/include/bits/stdio_lim.h \
+ /usr/include/bits/sys_errlist.h /usr/include/bits/stdio.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/cmath \
+ /usr/include/math.h /usr/include/bits/huge_val.h \
+ /usr/include/bits/huge_valf.h /usr/include/bits/huge_vall.h \
+ /usr/include/bits/inf.h /usr/include/bits/nan.h \
+ /usr/include/bits/mathdef.h /usr/include/bits/mathcalls.h \
+ /usr/include/bits/mathinline.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/cmath.tcc \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/complex \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/sstream \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/sstream.tcc \
+ /u/local/apps/blitz/current/include/blitz/bzdebug.h \
+ /usr/include/stdlib.h /usr/include/bits/waitflags.h \
+ /usr/include/bits/waitstatus.h /usr/include/sys/types.h \
+ /usr/include/sys/select.h /usr/include/bits/select.h \
+ /usr/include/bits/sigset.h /usr/include/sys/sysmacros.h \
+ /usr/include/alloca.h /usr/include/assert.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/typeinfo \
+ /u/local/apps/blitz/current/include/blitz/memblock.h \
+ /u/local/apps/blitz/current/include/blitz/memblock.cc \
+ /u/local/apps/blitz/current/include/blitz/numtrait.h \
+ /u/local/apps/blitz/current/include/blitz/range.h \
+ /u/local/apps/blitz/current/include/blitz/vecexprwrap.h \
+ /u/local/apps/blitz/current/include/blitz/wrap-climits.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/climits \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/limits.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/syslimits.h \
+ /usr/include/limits.h /usr/include/bits/posix1_lim.h \
+ /usr/include/bits/local_lim.h /usr/include/linux/limits.h \
+ /usr/include/bits/posix2_lim.h /usr/include/bits/xopen_lim.h \
+ /u/local/apps/blitz/current/include/blitz/tinyvec.h \
+ /u/local/apps/blitz/current/include/blitz/listinit.h \
+ /u/local/apps/blitz/current/include/blitz/tiny.h \
+ /u/local/apps/blitz/current/include/blitz/tinyveciter.h \
+ /u/local/apps/blitz/current/include/blitz/tvecglobs.h \
+ /u/local/apps/blitz/current/include/blitz/meta/metaprog.h \
+ /u/local/apps/blitz/current/include/blitz/tvcross.h \
+ /u/local/apps/blitz/current/include/blitz/meta/dot.h \
+ /u/local/apps/blitz/current/include/blitz/promote.h \
+ /u/local/apps/blitz/current/include/blitz/meta/product.h \
+ /u/local/apps/blitz/current/include/blitz/meta/sum.h \
+ /u/local/apps/blitz/current/include/blitz/vector.h \
+ /u/local/apps/blitz/current/include/blitz/veciter.h \
+ /u/local/apps/blitz/current/include/blitz/vecpick.h \
+ /u/local/apps/blitz/current/include/blitz/vecpick.cc \
+ /u/local/apps/blitz/current/include/blitz/update.h \
+ /u/local/apps/blitz/current/include/blitz/random.h \
+ /u/local/apps/blitz/current/include/blitz/randref.h \
+ /u/local/apps/blitz/current/include/blitz/vecexpr.h \
+ /u/local/apps/blitz/current/include/blitz/applics.h \
+ /u/local/apps/blitz/current/include/blitz/mathfunc.h \
+ /u/local/apps/blitz/current/include/blitz/prettyprint.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/cstdlib \
+ /u/local/apps/blitz/current/include/blitz/mathf2.h \
+ /u/local/apps/blitz/current/include/blitz/vecpickio.cc \
+ /u/local/apps/blitz/current/include/blitz/vecpickiter.h \
+ /u/local/apps/blitz/current/include/blitz/vecglobs.h \
+ /u/local/apps/blitz/current/include/blitz/extremum.h \
+ /u/local/apps/blitz/current/include/blitz/vecglobs.cc \
+ /u/local/apps/blitz/current/include/blitz/vecaccum.cc \
+ /u/local/apps/blitz/current/include/blitz/vecdelta.cc \
+ /u/local/apps/blitz/current/include/blitz/vecmin.cc \
+ /u/local/apps/blitz/current/include/blitz/vecmax.cc \
+ /u/local/apps/blitz/current/include/blitz/vecsum.cc \
+ /u/local/apps/blitz/current/include/blitz/vecdot.cc \
+ /u/local/apps/blitz/current/include/blitz/vecnorm.cc \
+ /u/local/apps/blitz/current/include/blitz/vecnorm1.cc \
+ /u/local/apps/blitz/current/include/blitz/vecany.cc \
+ /u/local/apps/blitz/current/include/blitz/vecall.cc \
+ /u/local/apps/blitz/current/include/blitz/veccount.cc \
+ /u/local/apps/blitz/current/include/blitz/vector.cc \
+ /u/local/apps/blitz/current/include/blitz/vecio.cc \
+ /u/local/apps/blitz/current/include/blitz/tinyvec.cc \
+ /u/local/apps/blitz/current/include/blitz/meta/vecassign.h \
+ /u/local/apps/blitz/current/include/blitz/tinyvecio.cc \
+ /u/local/apps/blitz/current/include/blitz/indexexpr.h \
+ /u/local/apps/blitz/current/include/blitz/etbase.h \
+ /u/local/apps/blitz/current/include/blitz/array/slice.h \
+ /u/local/apps/blitz/current/include/blitz/array/map.h \
+ /u/local/apps/blitz/current/include/blitz/array/multi.h \
+ /u/local/apps/blitz/current/include/blitz/array/domain.h \
+ /u/local/apps/blitz/current/include/blitz/array/storage.h \
+ /u/local/apps/blitz/current/include/blitz/array/iter.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/iterator \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stream_iterator.h \
+ /u/local/apps/blitz/current/include/blitz/array/fastiter.h \
+ /u/local/apps/blitz/current/include/blitz/array/expr.h \
+ /u/local/apps/blitz/current/include/blitz/ops.h \
+ /u/local/apps/blitz/current/include/blitz/shapecheck.h \
+ /u/local/apps/blitz/current/include/blitz/numinquire.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/limits \
+ /u/local/apps/blitz/current/include/blitz/array/asexpr.h \
+ /u/local/apps/blitz/current/include/blitz/array/methods.cc \
+ /u/local/apps/blitz/current/include/blitz/array/eval.cc \
+ /u/local/apps/blitz/current/include/blitz/array/ops.cc \
+ /u/local/apps/blitz/current/include/blitz/array/io.cc \
+ /u/local/apps/blitz/current/include/blitz/array/et.h \
+ /u/local/apps/blitz/current/include/blitz/array/newet.h \
+ /u/local/apps/blitz/current/include/blitz/array/ops.h \
+ /u/local/apps/blitz/current/include/blitz/array/newet-macros.h \
+ /u/local/apps/blitz/current/include/blitz/array/funcs.h \
+ /u/local/apps/blitz/current/include/blitz/funcs.h \
+ /u/local/apps/blitz/current/include/blitz/array/functorExpr.h \
+ /u/local/apps/blitz/current/include/blitz/array/reduce.h \
+ /u/local/apps/blitz/current/include/blitz/reduce.h \
+ /u/local/apps/blitz/current/include/blitz/array/reduce.cc \
+ /u/local/apps/blitz/current/include/blitz/array/interlace.cc \
+ /u/local/apps/blitz/current/include/blitz/array/shape.h \
+ /u/local/apps/blitz/current/include/blitz/array/resize.cc \
+ /u/local/apps/blitz/current/include/blitz/minmax.h \
+ /u/local/apps/blitz/current/include/blitz/array/slicing.cc \
+ /u/local/apps/blitz/current/include/blitz/array/cycle.cc \
+ /u/local/apps/blitz/current/include/blitz/array/complex.cc \
+ /u/local/apps/blitz/current/include/blitz/array/zip.h \
+ /u/local/apps/blitz/current/include/blitz/array/where.h \
+ /u/local/apps/blitz/current/include/blitz/array/indirect.h \
+ /u/local/apps/blitz/current/include/blitz/array/cartesian.h \
+ /u/local/apps/blitz/current/include/blitz/array/stencils.h \
+ /u/local/apps/blitz/current/include/blitz/array/stencilops.h \
+ /u/local/apps/blitz/current/include/blitz/array/geometry.h \
+ /u/local/apps/blitz/current/include/blitz/tinymat.h \
+ /u/local/apps/blitz/current/include/blitz/tinymatexpr.h \
+ /u/local/apps/blitz/current/include/blitz/meta/matassign.h \
+ /u/local/apps/blitz/current/include/blitz/meta/matvec.h \
+ /u/local/apps/blitz/current/include/blitz/meta/matmat.h \
+ /u/local/apps/blitz/current/include/blitz/tinymatio.cc \
+ /u/local/apps/blitz/current/include/blitz/array/stencils.cc \
+ /u/local/apps/blitz/current/include/blitz/tinyvec-et.h \
+ /u/local/apps/blitz/current/include/blitz/vector-et.h \
+ /u/local/apps/blitz/current/include/blitz/vecbops.cc \
+ /u/local/apps/blitz/current/include/blitz/vecuops.cc \
+ /u/local/apps/blitz/current/include/blitz/vecbfn.cc \
+ /u/local/apps/tvmet/current/include/tvmet/Vector.h \
+ /u/local/apps/tvmet/current/include/tvmet/tvmet.h \
+ /u/local/apps/tvmet/current/include/tvmet/config.h \
+ /u/local/apps/tvmet/current/include/tvmet/config/config-gcc.h \
+ /u/local/apps/tvmet/current/include/tvmet/TvmetBase.h \
+ /u/local/apps/tvmet/current/include/tvmet/TypePromotion.h \
+ /u/local/apps/tvmet/current/include/tvmet/CommaInitializer.h \
+ /u/local/apps/tvmet/current/include/tvmet/CompileTimeError.h \
+ /u/local/apps/tvmet/current/include/tvmet/RunTimeError.h \
+ /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/cassert \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/Vector.h \
+ /u/local/apps/tvmet/current/include/tvmet/meta/Vector.h \
+ /u/local/apps/tvmet/current/include/tvmet/NumericTraits.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/Null.h \
+ /u/local/apps/tvmet/current/include/tvmet/loop/Vector.h \
+ /u/local/apps/tvmet/current/include/tvmet/Functional.h \
+ /u/local/apps/tvmet/current/include/tvmet/BinaryFunctionals.h \
+ /u/local/apps/tvmet/current/include/tvmet/UnaryFunctionals.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/BinOperator.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/UnOperator.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/Literal.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/VectorFunctions.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/VectorBinaryFunctions.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/VectorUnaryFunctions.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/VectorOperators.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/Eval.h \
+ /u/local/apps/tvmet/current/include/tvmet/VectorImpl.h \
+ /u/local/apps/tvmet/current/include/tvmet/Io.h \
+ /u/local/apps/tvmet/current/include/tvmet/VectorFunctions.h \
+ /u/local/apps/tvmet/current/include/tvmet/Extremum.h \
+ /u/local/apps/tvmet/current/include/tvmet/VectorBinaryFunctions.h \
+ /u/local/apps/tvmet/current/include/tvmet/VectorUnaryFunctions.h \
+ /u/local/apps/tvmet/current/include/tvmet/VectorOperators.h \
+ /u/local/apps/tvmet/current/include/tvmet/VectorEval.h \
+ /u/local/apps/tvmet/current/include/tvmet/AliasProxy.h \
+ /u/local/apps/tvmet/current/include/tvmet/Matrix.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/Matrix.h \
+ /u/local/apps/tvmet/current/include/tvmet/meta/Matrix.h \
+ /u/local/apps/tvmet/current/include/tvmet/loop/Matrix.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/Identity.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/MMProduct.h \
+ /u/local/apps/tvmet/current/include/tvmet/meta/Gemm.h \
+ /u/local/apps/tvmet/current/include/tvmet/loop/Gemm.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/MMProductTransposed.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/MMtProduct.h \
+ /u/local/apps/tvmet/current/include/tvmet/meta/Gemmt.h \
+ /u/local/apps/tvmet/current/include/tvmet/loop/Gemmt.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/MtMProduct.h \
+ /u/local/apps/tvmet/current/include/tvmet/meta/Gemtm.h \
+ /u/local/apps/tvmet/current/include/tvmet/loop/Gemtm.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/MVProduct.h \
+ /u/local/apps/tvmet/current/include/tvmet/meta/Gemv.h \
+ /u/local/apps/tvmet/current/include/tvmet/loop/Gemv.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/MtVProduct.h \
+ /u/local/apps/tvmet/current/include/tvmet/meta/Gemtv.h \
+ /u/local/apps/tvmet/current/include/tvmet/loop/Gemtv.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/MatrixTranspose.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/MatrixFunctions.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/MatrixBinaryFunctions.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/MatrixUnaryFunctions.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/MatrixOperators.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/MatrixRow.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/MatrixCol.h \
+ /u/local/apps/tvmet/current/include/tvmet/xpr/MatrixDiag.h \
+ /u/local/apps/tvmet/current/include/tvmet/MatrixImpl.h \
+ /u/local/apps/tvmet/current/include/tvmet/MatrixFunctions.h \
+ /u/local/apps/tvmet/current/include/tvmet/MatrixBinaryFunctions.h \
+ /u/local/apps/tvmet/current/include/tvmet/MatrixUnaryFunctions.h \
+ /u/local/apps/tvmet/current/include/tvmet/MatrixOperators.h \
+ /u/local/apps/tvmet/current/include/tvmet/MatrixEval.h
+
+HalfEdgeMesh.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/vector:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_algobase.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/c++config.h:
+
+/usr/include/bits/wordsize.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/os_defines.h:
+
+/usr/include/features.h:
+
+/usr/include/sys/cdefs.h:
+
+/usr/include/gnu/stubs.h:
+
+/usr/include/gnu/stubs-64.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/cpu_defines.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/cstddef:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/stddef.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/functexcept.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/exception_defines.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/cpp_type_traits.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/ext/type_traits.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/ext/numeric_traits.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_pair.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/move.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/concept_check.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_iterator_base_types.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_iterator_base_funcs.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_iterator.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/debug/debug.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/allocator.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/c++allocator.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/ext/new_allocator.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/new:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/exception:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_construct.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_uninitialized.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_vector.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/initializer_list:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_bvector.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/vector.tcc:
+
+../voom.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/iostream:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/ostream:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/ios:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/iosfwd:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stringfwd.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/postypes.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/cwchar:
+
+/usr/include/wchar.h:
+
+/usr/include/stdio.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/stdarg.h:
+
+/usr/include/bits/wchar.h:
+
+/usr/include/xlocale.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/char_traits.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/localefwd.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/c++locale.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/clocale:
+
+/usr/include/locale.h:
+
+/usr/include/bits/locale.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/cctype:
+
+/usr/include/ctype.h:
+
+/usr/include/bits/types.h:
+
+/usr/include/bits/typesizes.h:
+
+/usr/include/endian.h:
+
+/usr/include/bits/endian.h:
+
+/usr/include/bits/byteswap.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/ios_base.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/ext/atomicity.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/gthr.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/gthr-default.h:
+
+/usr/include/pthread.h:
+
+/usr/include/sched.h:
+
+/usr/include/time.h:
+
+/usr/include/bits/sched.h:
+
+/usr/include/bits/time.h:
+
+/usr/include/bits/pthreadtypes.h:
+
+/usr/include/bits/setjmp.h:
+
+/usr/include/unistd.h:
+
+/usr/include/bits/posix_opt.h:
+
+/usr/include/bits/environments.h:
+
+/usr/include/bits/confname.h:
+
+/usr/include/getopt.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/atomic_word.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/locale_classes.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/string:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/ostream_insert.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/cxxabi-forced.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stl_function.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/backward/binders.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/basic_string.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/basic_string.tcc:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/locale_classes.tcc:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/streambuf:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/streambuf.tcc:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/basic_ios.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/locale_facets.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/cwctype:
+
+/usr/include/wctype.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/ctype_base.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/streambuf_iterator.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux/bits/ctype_inline.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/locale_facets.tcc:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/basic_ios.tcc:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/ostream.tcc:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/istream:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/istream.tcc:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/iomanip:
+
+/u/local/apps/blitz/current/include/blitz/array.h:
+
+/u/local/apps/blitz/current/include/blitz/array-impl.h:
+
+/u/local/apps/blitz/current/include/blitz/blitz.h:
+
+/u/local/apps/blitz/current/include/blitz/compiler.h:
+
+/u/local/apps/blitz/current/include/blitz/bzconfig.h:
+
+/u/local/apps/blitz/current/include/blitz/gnu/bzconfig.h:
+
+/u/local/apps/blitz/current/include/blitz/tuning.h:
+
+/u/local/apps/blitz/current/include/blitz/tau.h:
+
+/usr/include/libio.h:
+
+/usr/include/_G_config.h:
+
+/usr/include/bits/stdio_lim.h:
+
+/usr/include/bits/sys_errlist.h:
+
+/usr/include/bits/stdio.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/cmath:
+
+/usr/include/math.h:
+
+/usr/include/bits/huge_val.h:
+
+/usr/include/bits/huge_valf.h:
+
+/usr/include/bits/huge_vall.h:
+
+/usr/include/bits/inf.h:
+
+/usr/include/bits/nan.h:
+
+/usr/include/bits/mathdef.h:
+
+/usr/include/bits/mathcalls.h:
+
+/usr/include/bits/mathinline.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/cmath.tcc:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/complex:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/sstream:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/sstream.tcc:
+
+/u/local/apps/blitz/current/include/blitz/bzdebug.h:
+
+/usr/include/stdlib.h:
+
+/usr/include/bits/waitflags.h:
+
+/usr/include/bits/waitstatus.h:
+
+/usr/include/sys/types.h:
+
+/usr/include/sys/select.h:
+
+/usr/include/bits/select.h:
+
+/usr/include/bits/sigset.h:
+
+/usr/include/sys/sysmacros.h:
+
+/usr/include/alloca.h:
+
+/usr/include/assert.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/typeinfo:
+
+/u/local/apps/blitz/current/include/blitz/memblock.h:
+
+/u/local/apps/blitz/current/include/blitz/memblock.cc:
+
+/u/local/apps/blitz/current/include/blitz/numtrait.h:
+
+/u/local/apps/blitz/current/include/blitz/range.h:
+
+/u/local/apps/blitz/current/include/blitz/vecexprwrap.h:
+
+/u/local/apps/blitz/current/include/blitz/wrap-climits.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/climits:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/limits.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/syslimits.h:
+
+/usr/include/limits.h:
+
+/usr/include/bits/posix1_lim.h:
+
+/usr/include/bits/local_lim.h:
+
+/usr/include/linux/limits.h:
+
+/usr/include/bits/posix2_lim.h:
+
+/usr/include/bits/xopen_lim.h:
+
+/u/local/apps/blitz/current/include/blitz/tinyvec.h:
+
+/u/local/apps/blitz/current/include/blitz/listinit.h:
+
+/u/local/apps/blitz/current/include/blitz/tiny.h:
+
+/u/local/apps/blitz/current/include/blitz/tinyveciter.h:
+
+/u/local/apps/blitz/current/include/blitz/tvecglobs.h:
+
+/u/local/apps/blitz/current/include/blitz/meta/metaprog.h:
+
+/u/local/apps/blitz/current/include/blitz/tvcross.h:
+
+/u/local/apps/blitz/current/include/blitz/meta/dot.h:
+
+/u/local/apps/blitz/current/include/blitz/promote.h:
+
+/u/local/apps/blitz/current/include/blitz/meta/product.h:
+
+/u/local/apps/blitz/current/include/blitz/meta/sum.h:
+
+/u/local/apps/blitz/current/include/blitz/vector.h:
+
+/u/local/apps/blitz/current/include/blitz/veciter.h:
+
+/u/local/apps/blitz/current/include/blitz/vecpick.h:
+
+/u/local/apps/blitz/current/include/blitz/vecpick.cc:
+
+/u/local/apps/blitz/current/include/blitz/update.h:
+
+/u/local/apps/blitz/current/include/blitz/random.h:
+
+/u/local/apps/blitz/current/include/blitz/randref.h:
+
+/u/local/apps/blitz/current/include/blitz/vecexpr.h:
+
+/u/local/apps/blitz/current/include/blitz/applics.h:
+
+/u/local/apps/blitz/current/include/blitz/mathfunc.h:
+
+/u/local/apps/blitz/current/include/blitz/prettyprint.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/cstdlib:
+
+/u/local/apps/blitz/current/include/blitz/mathf2.h:
+
+/u/local/apps/blitz/current/include/blitz/vecpickio.cc:
+
+/u/local/apps/blitz/current/include/blitz/vecpickiter.h:
+
+/u/local/apps/blitz/current/include/blitz/vecglobs.h:
+
+/u/local/apps/blitz/current/include/blitz/extremum.h:
+
+/u/local/apps/blitz/current/include/blitz/vecglobs.cc:
+
+/u/local/apps/blitz/current/include/blitz/vecaccum.cc:
+
+/u/local/apps/blitz/current/include/blitz/vecdelta.cc:
+
+/u/local/apps/blitz/current/include/blitz/vecmin.cc:
+
+/u/local/apps/blitz/current/include/blitz/vecmax.cc:
+
+/u/local/apps/blitz/current/include/blitz/vecsum.cc:
+
+/u/local/apps/blitz/current/include/blitz/vecdot.cc:
+
+/u/local/apps/blitz/current/include/blitz/vecnorm.cc:
+
+/u/local/apps/blitz/current/include/blitz/vecnorm1.cc:
+
+/u/local/apps/blitz/current/include/blitz/vecany.cc:
+
+/u/local/apps/blitz/current/include/blitz/vecall.cc:
+
+/u/local/apps/blitz/current/include/blitz/veccount.cc:
+
+/u/local/apps/blitz/current/include/blitz/vector.cc:
+
+/u/local/apps/blitz/current/include/blitz/vecio.cc:
+
+/u/local/apps/blitz/current/include/blitz/tinyvec.cc:
+
+/u/local/apps/blitz/current/include/blitz/meta/vecassign.h:
+
+/u/local/apps/blitz/current/include/blitz/tinyvecio.cc:
+
+/u/local/apps/blitz/current/include/blitz/indexexpr.h:
+
+/u/local/apps/blitz/current/include/blitz/etbase.h:
+
+/u/local/apps/blitz/current/include/blitz/array/slice.h:
+
+/u/local/apps/blitz/current/include/blitz/array/map.h:
+
+/u/local/apps/blitz/current/include/blitz/array/multi.h:
+
+/u/local/apps/blitz/current/include/blitz/array/domain.h:
+
+/u/local/apps/blitz/current/include/blitz/array/storage.h:
+
+/u/local/apps/blitz/current/include/blitz/array/iter.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/iterator:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/bits/stream_iterator.h:
+
+/u/local/apps/blitz/current/include/blitz/array/fastiter.h:
+
+/u/local/apps/blitz/current/include/blitz/array/expr.h:
+
+/u/local/apps/blitz/current/include/blitz/ops.h:
+
+/u/local/apps/blitz/current/include/blitz/shapecheck.h:
+
+/u/local/apps/blitz/current/include/blitz/numinquire.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/limits:
+
+/u/local/apps/blitz/current/include/blitz/array/asexpr.h:
+
+/u/local/apps/blitz/current/include/blitz/array/methods.cc:
+
+/u/local/apps/blitz/current/include/blitz/array/eval.cc:
+
+/u/local/apps/blitz/current/include/blitz/array/ops.cc:
+
+/u/local/apps/blitz/current/include/blitz/array/io.cc:
+
+/u/local/apps/blitz/current/include/blitz/array/et.h:
+
+/u/local/apps/blitz/current/include/blitz/array/newet.h:
+
+/u/local/apps/blitz/current/include/blitz/array/ops.h:
+
+/u/local/apps/blitz/current/include/blitz/array/newet-macros.h:
+
+/u/local/apps/blitz/current/include/blitz/array/funcs.h:
+
+/u/local/apps/blitz/current/include/blitz/funcs.h:
+
+/u/local/apps/blitz/current/include/blitz/array/functorExpr.h:
+
+/u/local/apps/blitz/current/include/blitz/array/reduce.h:
+
+/u/local/apps/blitz/current/include/blitz/reduce.h:
+
+/u/local/apps/blitz/current/include/blitz/array/reduce.cc:
+
+/u/local/apps/blitz/current/include/blitz/array/interlace.cc:
+
+/u/local/apps/blitz/current/include/blitz/array/shape.h:
+
+/u/local/apps/blitz/current/include/blitz/array/resize.cc:
+
+/u/local/apps/blitz/current/include/blitz/minmax.h:
+
+/u/local/apps/blitz/current/include/blitz/array/slicing.cc:
+
+/u/local/apps/blitz/current/include/blitz/array/cycle.cc:
+
+/u/local/apps/blitz/current/include/blitz/array/complex.cc:
+
+/u/local/apps/blitz/current/include/blitz/array/zip.h:
+
+/u/local/apps/blitz/current/include/blitz/array/where.h:
+
+/u/local/apps/blitz/current/include/blitz/array/indirect.h:
+
+/u/local/apps/blitz/current/include/blitz/array/cartesian.h:
+
+/u/local/apps/blitz/current/include/blitz/array/stencils.h:
+
+/u/local/apps/blitz/current/include/blitz/array/stencilops.h:
+
+/u/local/apps/blitz/current/include/blitz/array/geometry.h:
+
+/u/local/apps/blitz/current/include/blitz/tinymat.h:
+
+/u/local/apps/blitz/current/include/blitz/tinymatexpr.h:
+
+/u/local/apps/blitz/current/include/blitz/meta/matassign.h:
+
+/u/local/apps/blitz/current/include/blitz/meta/matvec.h:
+
+/u/local/apps/blitz/current/include/blitz/meta/matmat.h:
+
+/u/local/apps/blitz/current/include/blitz/tinymatio.cc:
+
+/u/local/apps/blitz/current/include/blitz/array/stencils.cc:
+
+/u/local/apps/blitz/current/include/blitz/tinyvec-et.h:
+
+/u/local/apps/blitz/current/include/blitz/vector-et.h:
+
+/u/local/apps/blitz/current/include/blitz/vecbops.cc:
+
+/u/local/apps/blitz/current/include/blitz/vecuops.cc:
+
+/u/local/apps/blitz/current/include/blitz/vecbfn.cc:
+
+/u/local/apps/tvmet/current/include/tvmet/Vector.h:
+
+/u/local/apps/tvmet/current/include/tvmet/tvmet.h:
+
+/u/local/apps/tvmet/current/include/tvmet/config.h:
+
+/u/local/apps/tvmet/current/include/tvmet/config/config-gcc.h:
+
+/u/local/apps/tvmet/current/include/tvmet/TvmetBase.h:
+
+/u/local/apps/tvmet/current/include/tvmet/TypePromotion.h:
+
+/u/local/apps/tvmet/current/include/tvmet/CommaInitializer.h:
+
+/u/local/apps/tvmet/current/include/tvmet/CompileTimeError.h:
+
+/u/local/apps/tvmet/current/include/tvmet/RunTimeError.h:
+
+/usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/cassert:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/Vector.h:
+
+/u/local/apps/tvmet/current/include/tvmet/meta/Vector.h:
+
+/u/local/apps/tvmet/current/include/tvmet/NumericTraits.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/Null.h:
+
+/u/local/apps/tvmet/current/include/tvmet/loop/Vector.h:
+
+/u/local/apps/tvmet/current/include/tvmet/Functional.h:
+
+/u/local/apps/tvmet/current/include/tvmet/BinaryFunctionals.h:
+
+/u/local/apps/tvmet/current/include/tvmet/UnaryFunctionals.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/BinOperator.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/UnOperator.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/Literal.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/VectorFunctions.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/VectorBinaryFunctions.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/VectorUnaryFunctions.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/VectorOperators.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/Eval.h:
+
+/u/local/apps/tvmet/current/include/tvmet/VectorImpl.h:
+
+/u/local/apps/tvmet/current/include/tvmet/Io.h:
+
+/u/local/apps/tvmet/current/include/tvmet/VectorFunctions.h:
+
+/u/local/apps/tvmet/current/include/tvmet/Extremum.h:
+
+/u/local/apps/tvmet/current/include/tvmet/VectorBinaryFunctions.h:
+
+/u/local/apps/tvmet/current/include/tvmet/VectorUnaryFunctions.h:
+
+/u/local/apps/tvmet/current/include/tvmet/VectorOperators.h:
+
+/u/local/apps/tvmet/current/include/tvmet/VectorEval.h:
+
+/u/local/apps/tvmet/current/include/tvmet/AliasProxy.h:
+
+/u/local/apps/tvmet/current/include/tvmet/Matrix.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/Matrix.h:
+
+/u/local/apps/tvmet/current/include/tvmet/meta/Matrix.h:
+
+/u/local/apps/tvmet/current/include/tvmet/loop/Matrix.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/Identity.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/MMProduct.h:
+
+/u/local/apps/tvmet/current/include/tvmet/meta/Gemm.h:
+
+/u/local/apps/tvmet/current/include/tvmet/loop/Gemm.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/MMProductTransposed.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/MMtProduct.h:
+
+/u/local/apps/tvmet/current/include/tvmet/meta/Gemmt.h:
+
+/u/local/apps/tvmet/current/include/tvmet/loop/Gemmt.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/MtMProduct.h:
+
+/u/local/apps/tvmet/current/include/tvmet/meta/Gemtm.h:
+
+/u/local/apps/tvmet/current/include/tvmet/loop/Gemtm.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/MVProduct.h:
+
+/u/local/apps/tvmet/current/include/tvmet/meta/Gemv.h:
+
+/u/local/apps/tvmet/current/include/tvmet/loop/Gemv.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/MtVProduct.h:
+
+/u/local/apps/tvmet/current/include/tvmet/meta/Gemtv.h:
+
+/u/local/apps/tvmet/current/include/tvmet/loop/Gemtv.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/MatrixTranspose.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/MatrixFunctions.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/MatrixBinaryFunctions.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/MatrixUnaryFunctions.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/MatrixOperators.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/MatrixRow.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/MatrixCol.h:
+
+/u/local/apps/tvmet/current/include/tvmet/xpr/MatrixDiag.h:
+
+/u/local/apps/tvmet/current/include/tvmet/MatrixImpl.h:
+
+/u/local/apps/tvmet/current/include/tvmet/MatrixFunctions.h:
+
+/u/local/apps/tvmet/current/include/tvmet/MatrixBinaryFunctions.h:
+
+/u/local/apps/tvmet/current/include/tvmet/MatrixUnaryFunctions.h:
+
+/u/local/apps/tvmet/current/include/tvmet/MatrixOperators.h:
+
+/u/local/apps/tvmet/current/include/tvmet/MatrixEval.h:
