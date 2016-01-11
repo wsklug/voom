@@ -5,7 +5,7 @@
 #include <getopt.h>
 #include <ctime>
 #include "Node.h"
-#include "SemiflexibleGel.h"
+#include "Gel.h"
 #include "Model.h"
 #include "Lbfgsb.h"
 #include "Lbfgs.h"
@@ -53,11 +53,11 @@ typedef std::vector< DataPoint > DataSet;
 typedef std::vector< NodePair > NodePairList;
 typedef std::vector< NodePairList > NodePairData;
 typedef std::map< Gel::DefNode*, tvmet::Vector<double,2> > InitPositionMap;
- 
+
 int getFilSegs(double avgCL, double nodesPerCL) {
   return (int)((avgCL+1)*nodesPerCL);
 }
- 
+
 int getCurGelNum(std::string firstGelName) {  
   std::ifstream testStream;
   bool fileFound = true;
