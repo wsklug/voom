@@ -49,15 +49,6 @@ namespace voom {
 	
   // ------------------GENERAL SYSTEM PARAMETERS------------------
   bool cutOffEnds = input->getBool("Cut Off Ends"); 
-	
-  // "minlength" and minLength in nematictest.cc
-  // The latter is minimum segment length. Consider changing names.
-
-  // WSK: "Min. length" = "minlength" probably refers to the minimum
-  // length of a filament (not of a segment in the discretization).
-  // Yes, we should change the name.
-	
-	
   // Other members from old parameter map
   double kT = input->getReal("kT");
   double kappa = input->getReal("angle stiffness");
@@ -69,11 +60,6 @@ namespace voom {
   // otherwise there will be a segmentation fault
 	
   double minLength = input->getReal("Min Seg Length");
-
-  // WSK: let's make the input class robust to handle situations when
-  // parameters are not assigned values in an input file.  Either yell
-  // and give up, or assign ad default parameter.
-  //
   double targetSegLength;
   if (input->checkMap("target segment length")) {
     targetSegLength = input->getReal("target segment length");
@@ -81,13 +67,6 @@ namespace voom {
   else {
     targetSegLength = 2.0*minLength;
   }	
-  // if no targetSegLength was entered, set 
-  // targetSegLength = 2.0*minLength;
-  // This calculation should be performed in the input class?
-	
-	
-  // double check below (only for adaptive?)
-  // This isn't needed when retrieving the gel
   std::string storageFileName = input->getString("storage file name");
 	
 
@@ -96,145 +75,7 @@ namespace voom {
 	
   // ------------------ADAPTIVE MESH PARAMETERS------------------
 
-  // maxPrestress commented out in input file
-  // not entirely sure why we multiply by kT
-  // double maxPrestress = kT*(input->getReal("maximum prestress"));	
-  //
-  // WSK: who knows?!	
-
-	
-  // ------------------ENTROPIC SPRINGS------------------
-  double k_max = -1.0;
-  double entropic_k = -1.0;
-  double entropic_Lp = -1.0;
-  bool linentropic = false;
-  double linentfrac = 0.0;
-  double linentmult = 1.0;
-  // Why are we initializing to -1.0 again? This was done in the input class
-  // Is this necessary?
-	
-	
-  // flag for Spring or EntropicSpring
-  const std::string bondType = input->getString("bondType");
-
-  if (bondType == "EntropicSpring") {
-	
-    k_max = input->getReal("k_max");
-    entropic_k = input->getReal("Entropic_k");
-    entropic_Lp = input->getReal("Entropic_Lp");
-    linentropic = input->getBool("Entropic_lin_springs");
-		
-    if (linentropic) {
-      linentfrac = input->getReal("Entropic_lin_stiff_frac");
-      linentmult = input->getReal("Entropic_lin_stiff_mult");
-    }
-  }			
-	
-	
-  ////////////////////////////////////////////////////////////////////////////
-  // The section below was already commented out but we need a prestress flag 
-  // as well as a relax prestress flag.
-  ////////////////////////////////////////////////////////////////////////////
-  //     double k_max = -1.0;
-  //     double entropic_k = -1.0;
-  //     double entropic_Lp = -1.0;
-  //     if(bondType == "EntropicSpring") {
-  //       p = properties.find("k_max");
-  //       if(p!=properties.end()) k_max = atof(p->second.data());
-  //       p = properties.find("Entropic_k");
-  //       if(p!=properties.end()) entropic_k = atof(p->second.data());
-  //       p = properties.find("Entropic_Lp");
-  //       if(p!=properties.end()) entropic_Lp = atof(p->second.data());
-  //     }
-
-  //bool prestress;
-  //std::string prestressStr;
-  //p = properties.find("prestress");
-  //assert(p != properties.end());
-  //prestressStr.assign(p->second);
-  //if(prestressStr.find("true") != string::npos) prestress = true;
-  //else prestress = false;
-  ////////////////////////////////////////////////////////////////////////////
-	
-	
-	
-  // ------------------POLYDISPERSITY INPUT------------------	
-	
-  // There should be a polydispersity flag in the input file so we don't have to
-  // assign the variables below unnecessarily. Currently they are initialized
-  // even when they are not used.  
-	
-	
-  // Are some of the variables below needed for gel creation regardless of
-  // whether or not polydispersity is included? Should verify all are needed. 
-  // I think some are used only in certain cases.
-	
-  bool longshort = false;
-  bool exponential = false;
-  bool longLinked = false;
-  bool longLinStiff = true;
-  double lsratio = 1.0; 
-  double longStiff = 0.0;
-  double longkC = kappa; // why are we reassigning this?
-  double lsfrac = 0.0;
-  double expmnl = 0.0;
-  double expmin = 0.0;
-	
-	
-  // only used in retrieve
-  double longCutoff = 0.0;
-
-
-	
-  /*	
-	std::map< int, int > filLens; // JKP: Why is this here if it is not used?
-	std::string polydispStr;
-	bool longshort = false;
-	bool exponential = false;
-	bool longLinked = false;
-	bool longLinStiff = true;
-	double lsratio = 1.0; 
-	double longStiff = 0.0;
-	double longkC = kappa; // why are we reassigning this?
-	double lsfrac = 0.0;
-	double expmnl = 0.0;
-	double expmin = 0.0;
-	p = properties.find("polydispersity");
-	if(p != properties.end()) {
-	polydispStr.assign(p->second);
-	if(polydispStr.find("LongShort") != string::npos) {
-	longshort = true;
-	p = properties.find("longshortratio");
-	assert(p != properties.end());
-	lsratio = atof(p->second.data());
-	p = properties.find("longfraction");
-	assert(p != properties.end());
-	lsfrac = atof(p->second.data());
-	assert(lsfrac <= 1.0);
-	p = properties.find("longstiffness");
-	assert(p != properties.end());
-	longStiff = atof(p->second.data());
-	if(longStiff < 1.0e-6) longStiff = 0.0;
-	p = properties.find("longlinked");
-	if(p != properties.end()) {
-	double llink = atof(p->second.data());
-	if(llink > 0.5) longLinked = true;
-	}
-	p = properties.find("longbendstiffness");
-	if(p != properties.end()) longkC = atof(p->second.data());
-	}
-	else if(polydispStr.find("Exponential") != string::npos){
-	//insert here for exponential distributed length network
-	exponential = true;
-	expmnl = filLength;
-	p = properties.find("minlength");
-	assert(p != properties.end());
-	expmin = atof(p->second.data());
-	}
-	}
-  */ 
-
-
+  
   // ------------------GEL CREATION----------------------------
 
   int nFils = 0;
@@ -267,41 +108,11 @@ namespace voom {
     }
     // need to write "Lorentzian" block in here that is commented out below
 	
-	
-
-    // p = properties.find("nematic PDF param");
-    // 	if(p != properties.end()) {
-    // 		nematic = atof(p->second.data());
-    // 		donem = true;
-    // 		p = properties.find("orientational PDF");
-    // 		if(p != properties.end()) {
-    // 			if(p->second.find("Lorentzian") != string::npos) {
-    // 				orientationPDF = "Lorentzian";
-    // 				npt.setPDF(1);
-    // 				npt.setTable(nematic);
-    // 			}
-    // 			else {
-    // 				orientationPDF = "Gaussian";
-    // 				npt.setPDF(0);
-    // 				npt.setTable(nematic);
-    // 			}
-    // 		}
-    // 		else {
-    // 			orientationPDF = "Gaussian";
-    // 			npt.setPDF(0);
-    // 			npt.setTable(nematic);
-    // 		}
-    // 	p = properties.find("nematic direction angle");
-    // 	if(p != properties.end()) nemAngle = atof(p->second.data());
-    // 	}
-	
     //ranlib::Normal<double> rngps(0,sqrt(kT/kAngle));
     //rngps.seed((unsigned int)time(0));
     ranlib::Uniform<double> rnguni;
     rnguni.seed((unsigned int)time(0));
-    ranlib::Exponential<double> rngexp(expmnl-expmin);
-    rngexp.seed((unsigned int)time(0));
-	
+    	
 	
     tvmet::Vector<double,2> syssize;
     syssize[0] = input->getReal("Wx");
@@ -325,12 +136,6 @@ namespace voom {
     tmpFils.resize(nFils);
 
     // create first and last points for each filament //
-
-    if(longshort) {
-      std::cout << "short filament length = " << filLength << std::endl
-		<< "long filament length = " << lsratio*filLength << std::endl;
-    }
-
     ////////////////////////////////////////////////////////////////
     // Copied section below directly from old constructor
     // Added creation of nodes container, which was previously
@@ -341,20 +146,8 @@ namespace voom {
     for(int i=0; i<nFils; i++) {
       //rngps.seed((unsigned int)time(0)+i);
       rnguni.seed((unsigned int)time(0)+i);
-      rngexp.seed((unsigned int)time(0)+i);
       double curFilLen;
-      if(exponential) {
-	curFilLen = rngexp.random() + expmin;
-
-      }
-      else if(longshort) {
-	if(i < lsfrac*nFils) {
-	  curFilLen = lsratio*filLength;
-	  longFils.insert(i);
-	}
-	else curFilLen = filLength;
-      }
-      else curFilLen = filLength;
+      curFilLen = filLength;
  
       TempFilament * newFil = new TempFilament();
       
@@ -402,7 +195,7 @@ namespace voom {
 
       // now look at existing filaments and find crosslink points //
       for(int j=0; j<i; j++) {
-	if(longLinked==true || (longFils.find(i)==longFils.end() || longFils.find(j)==longFils.end())) {
+	if( (longFils.find(i)==longFils.end() || longFils.find(j)==longFils.end())) {
 	  TempFilament * oldFil = tmpFils[j];
 	  double oldFilLen = norm2((oldFil->end)-(oldFil->start));
 	  VectorND diff;
@@ -475,127 +268,6 @@ namespace voom {
 	
   }
   // ------------------END OF CREATE GEL------------------
-
-
-  // ------------------RETRIEVE GEL------------------
-  // Should do else if
-
-  // -------------- beginning of stuff specific to retrieval --------------
-
-  else { // if (retrieveGelFlag)
-    std::string fileName = input->getString("storage file name");
-    // JKP: need nodes container 
-    // This can probably be created outside since it is in both retrieve and 
-    // create portions
-    // DefNodeContainer dNodes;
-	
-
-
-
-	
-    // double nemAngle = 0.0; // this is also in gel creation
-    if (input->checkMap("nematic direction angle")) {
-      nemAngle = input->getReal("nematic direction angle");
-    }
-	
-    int intSize = sizeof(int);
-    int doubleSize = sizeof(double);
-	
-	
-    // open the file at the end to get size //
-    std::ifstream inFile(fileName.data(), ios::in | ios::binary | ios::ate);
-    ifstream::pos_type fsize = inFile.tellg();
-
-    // reset file to beginning //
-    inFile.seekg(0,ios::beg);
-    
-    // read in system size and set up PeriodicBox //
-    VectorND sysSize;
-    for(int i=0; i<N; i++) {
-      double curSS;
-      inFile.read((char *)(&curSS),doubleSize);
-      sysSize[i] = curSS;
-    }
-
-    _box = new LeesEdwards(sysSize[0],sysSize[1],0.0);
-    //box->setShear(0.0);
-  
-    // read in # of filaments
-    // int nFils;
-    inFile.read((char *)(&nFils),intSize);
-    // TempFilamentContainer tmpFils(nFils);
-    tmpFils.resize(nFils);
-    // std::set<int> longFils;
-    for(int i=0; i<nFils; i++) {
-      VectorND start;
-      VectorND end;
-      for(int j=0; j<N; j++) {
-	double curp;
-	inFile.read((char *)(&curp),doubleSize);
-	start[j] = curp;
-      } 
-      for(int j=0; j<N; j++) {
-	double curp;
-	inFile.read((char *)(&curp),doubleSize);
-	end[j] = curp;
-      }
-      TempFilament* tf = new TempFilament();
-      tf->start = start;
-      tf->end = end;
-      tmpFils[i] = tf;
-
-      VectorND sep;
-      sep = end - start;
-      double fLen = norm2(sep);
-      if(fLen > longCutoff) longFils.insert(i); 
-    }
-    int nCLs;
-    inFile.read((char *)(&nCLs),intSize);
-    for(int i=0; i<nCLs; i++) {
-      TempCrosslink* cl = new TempCrosslink();
-      cl->active = true;
-      int nCLsHere;
-      inFile.read((char *)(&nCLsHere),intSize);
-      for(int nc=0; nc<nCLsHere; nc++) {
-	int filnum;
-	inFile.read((char *)(&filnum),intSize);
-	VectorND cllocalpos;
-	for(int j=0; j<N; j++) {
-	  double curp;
-	  inFile.read((char *)(&curp),doubleSize);
-	  cllocalpos[j] = curp;
-	}
-	cl->otherFils.insert(pair< int, VectorND >(filnum,cllocalpos));
-      }
-      typename map< int, VectorND >::iterator cfs = cl->otherFils.begin();
-      cl->baseFil = cfs->first;
-      //VectorND loc;
-      //for(int j=0; j<N; j++) {
-      //double curp;
-      //inFile.read((char *)(&curp),doubleSize);
-      //loc[j] = curp;
-      //}
-      //cl->location = loc;
-      for(cfs; cfs!=cl->otherFils.end(); cfs++) {
-	VectorND start1;
-	start1 = tmpFils[cfs->first]->start;
-	VectorND sep1;
-	sep1 = cfs->second - start1;
-	//_box->mapDistance(sep1);
-	double dist1;
-	dist1 = norm2(sep1);		
-	tmpFils[cfs->first]->crossFils.insert(pair<double,TempCrosslink*>
-					      (dist1,cl));
-      }
-    }
-
-    inFile.close();
-    std::cout << "Finished reading data on " << nFils << " filaments and " 
-	      << nCLs << " crosslinks from file " << fileName << "; creating gel." 
-	      << std::endl;
-  }
-  // -------------- end of stuff specific to retrieval --------------
-
 
   // we now have a list of crosslinks for each filament; we can now
   // create the gel
@@ -766,14 +438,6 @@ namespace voom {
     }
   }
 
-  //else printCLFilDist();
-
-  //printInitialBends();
-
-  if(linentropic) {
-    stiffenRandomSegments(linentfrac,linentmult);
-  }
-
   int nAngleSprings = 0;
   int nBonds = 0;
   int nRods = 0;
@@ -804,7 +468,7 @@ namespace voom {
   std::cout << "-----Properties from _pm---" << std::endl;
   std::cout << "Filament Density: " << filDens << std::endl;
   std::cout << "Fil Len: " << filLength << std::endl;
-  std::cout << "Bond type: " << bondType << std::endl;				
+
   std::cout << "Cut off ends: " << cutOffEnds << std::endl;
   std::cout << "Min seg Length: " << minLength << std::endl;
   std::cout << "kT: " << kT << std::endl;
@@ -819,53 +483,6 @@ namespace voom {
   
   
   std::cout << "\n" << std::endl;
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-
-  // make periodic box //
-  //box = new LeesEdwards(syssize[0],syssize[1],0.0);
-    
-  // create body //
-  //   if(!adaptiveMeshing) {
-  // 		gel = new SemiflexibleGel<2>(nodes,box,filDens,nNodesPerFilament,dL,bondType,cutOffEnds,_pm);
-  // 		gel->compute(true,true,false);
-  // 		std::cout << "Sanity check: gel energy at zero shear = " << gel->energy() << std::endl;
-  //     }
-  //   else {
-  // 		gel = new SemiflexibleGel<2>(nodes,box,filDens,L,bondType,cutOffEnds,minLength,_pm);
-  //     }
-  //   //gel->addPinch(6.0,false,nodes,kBond,kAngle,visc,kT,dt,kcl);
-  //     
-  //   // write gel data to file //
-  //   if(!adaptiveMeshing) {
-  // 		gel->storeGel(fName);
-  //     }
-  //   
-  // 
-  //   return;
-
-  std::cout << "\n" << std::endl;
-
   }
   
  
@@ -924,96 +541,6 @@ namespace voom {
       maxPrestress = kT*atof(p->second.data());
     }
 
-    double k_max = -1.0;
-    double entropic_k = -1.0;
-    double entropic_Lp = -1.0;
-    bool linentropic = false;
-    double linentfrac = 0.0;
-    double linentmult = 1.0;
-    if(bondType == "EntropicSpring") {
-      p = properties.find("k_max");
-      if(p!=properties.end()) k_max = atof(p->second.data());
-      p = properties.find("Entropic_k");
-      if(p!=properties.end()) entropic_k = atof(p->second.data());
-      p = properties.find("Entropic_Lp");
-      if(p!=properties.end()) entropic_Lp = atof(p->second.data());
-      p = properties.find("Entropic_lin_springs");
-      if(p!=properties.end()) {
-	if(atoi(p->second.data()) == 1) {
-	  linentropic = true;
-	  p = properties.find("Entropic_lin_stiff_frac");
-	  if(p!=properties.end()) linentfrac = atof(p->second.data());
-	  p = properties.find("Entropic_lin_stiff_mult");
-	  if(p!=properties.end()) linentmult = atof(p->second.data());
-	}
-      }
-    }
-
-    //     double k_max = -1.0;
-    //     double entropic_k = -1.0;
-    //     double entropic_Lp = -1.0;
-    //     if(bondType == "EntropicSpring") {
-    //       p = properties.find("k_max");
-    //       if(p!=properties.end()) k_max = atof(p->second.data());
-    //       p = properties.find("Entropic_k");
-    //       if(p!=properties.end()) entropic_k = atof(p->second.data());
-    //       p = properties.find("Entropic_Lp");
-    //       if(p!=properties.end()) entropic_Lp = atof(p->second.data());
-    //     }
-
-    //bool prestress;
-    //std::string prestressStr;
-    //p = properties.find("prestress");
-    //assert(p != properties.end());
-    //prestressStr.assign(p->second);
-    //if(prestressStr.find("true") != string::npos) prestress = true;
-    //else prestress = false;
-
-    std::map< int, int > filLens;
-    std::string polydispStr;
-    bool longshort = false;
-    bool exponential = false;
-    bool longLinked = false;
-    bool longLinStiff = true;
-    double lsratio = 1.0; 
-    double longStiff = 0.0;
-    double longkC = kappa;
-    double lsfrac = 0.0;
-    double expmnl = 0.0;
-    double expmin = 0.0;
-    p = properties.find("polydispersity");
-    if(p != properties.end()) {
-      polydispStr.assign(p->second);
-      if(polydispStr.find("LongShort") != string::npos) {
-	longshort = true;
-	p = properties.find("longshortratio");
-	assert(p != properties.end());
-	lsratio = atof(p->second.data());
-	p = properties.find("longfraction");
-	assert(p != properties.end());
-	lsfrac = atof(p->second.data());
-	assert(lsfrac <= 1.0);
-	p = properties.find("longstiffness");
-	assert(p != properties.end());
-	longStiff = atof(p->second.data());
-	if(longStiff < 1.0e-6) longStiff = 0.0;
-	p = properties.find("longlinked");
-	if(p != properties.end()) {
-	  double llink = atof(p->second.data());
-	  if(llink > 0.5) longLinked = true;
-	}
-	p = properties.find("longbendstiffness");
-	if(p != properties.end()) longkC = atof(p->second.data());
-      }
-      else if(polydispStr.find("Exponential") != string::npos){
-	//insert here for exponential distributed length network
-	exponential = true;
-	expmnl = filLength;
-	p = properties.find("minlength");
-	assert(p != properties.end());
-	expmin = atof(p->second.data());
-      }
-    }
 
     NematicProbTable npt;
     bool donem = false;
@@ -1050,9 +577,7 @@ namespace voom {
     //rngps.seed((unsigned int)time(0));
     ranlib::Uniform<double> rnguni;
     rnguni.seed((unsigned int)time(0));
-    ranlib::Exponential<double> rngexp(expmnl-expmin);
-    rngexp.seed((unsigned int)time(0));
-
+    
     _box = box;
     VectorND size( _box->size() );
     double vol=1.0;
@@ -1070,29 +595,14 @@ namespace voom {
 
     std::set<int> longFils;
 
-    if(longshort) {
-      std::cout << "short filament length = " << filLength << std::endl
-		<< "long filament length = " << lsratio*filLength << std::endl;
-    }
-
     std::cout << "Starting gel creation." << std::endl;
     for(int i=0; i<nFils; i++) {
       //rngps.seed((unsigned int)time(0)+i);
       rnguni.seed((unsigned int)time(0)+i);
-      rngexp.seed((unsigned int)time(0)+i);
+      
       double curFilLen;
-      if(exponential) {
-	curFilLen = rngexp.random() + expmin;
-	//std::cout << "Shouldn't be here..." << std::endl;
-      }
-      else if(longshort) {
-	if(i < lsfrac*nFils) {
-	  curFilLen = lsratio*filLength;
-	  longFils.insert(i);
-	}
-	else curFilLen = filLength;
-      }
-      else curFilLen = filLength;
+      
+      curFilLen = filLength;
  
       TempFilament * newFil = new TempFilament();
       
@@ -1140,7 +650,7 @@ namespace voom {
 
       // now look at existing filaments and find crosslink points //
       for(int j=0; j<i; j++) {
-	if(longLinked==true || (longFils.find(i)==longFils.end() || longFils.find(j)==longFils.end())) {
+	if( (longFils.find(i)==longFils.end() || longFils.find(j)==longFils.end())) {
 	  TempFilament * oldFil = tmpFils[j];
 	  double oldFilLen = norm2((oldFil->end)-(oldFil->start));
 	  VectorND diff;
@@ -1208,7 +718,6 @@ namespace voom {
     int id = 0;
     NodeBase::DofIndexMap idx(N);
     DefNode * newNode;	
-    //if(bondType == "Spring") {
     for(int k=0; k<nFils; k++) {
       DefNodeContainer tmpDNC;
       TempFilament * curFil = tmpFils[k];
@@ -1365,14 +874,6 @@ namespace voom {
       for(typename map<DefNode*,int>::iterator sn=_nSlavesMap.begin(); sn!=_nSlavesMap.end(); sn++) {
         if(sn->second != 1) std::cerr << "Error: nodes pinned incorrectly!" << std::endl;
       }
-    }
-
-    //else printCLFilDist();
-
-    //printInitialBends();
-
-    if(linentropic) {
-      stiffenRandomSegments(linentfrac,linentmult);
     }
 
     int nAngleSprings = 0;
@@ -1607,148 +1108,6 @@ namespace voom {
 
   template<int N>
   int SemiflexibleGel<N>::collapseCrosslinks(TempFilamentContainer & tmpFils, double minLength) {
-    //     // collapse crosslinks to avoid short segments //
-    //     VectorND size;
-    //     size = _box->size();
-    //     int nIn = (int)(floor(size[0]/minLength)+.5);
-    //     bool fit = false;
-    //     double boxSize;
-    //     while(!fit) {
-    //       boxSize = size[0]/nIn;
-    //       fit = true;
-    //       for(int i=0; i<N; i++) {
-    //         if(fmod(size[0],boxSize) > 1.0e-6) fit = false;
-    //       }
-    //       nIn--;
-    //     }
-    //     for(int i=0; i<N; i++) assert(fmod(size[i],boxSize) < 1.0e-6);
-    //     int nx = (int)((size[0]/boxSize)+.5);
-    //     int ny = (int)((size[1]/boxSize)+.5);
-    
-    //     TempBox** boxes = new TempBox*[nx];
-    //     for(int xbox=0; xbox<nx; xbox++) {
-    //       TempBox* newBox = new TempBox[ny];
-    //       boxes[xbox] = newBox;
-    //     }
-    //     int nFils = tmpFils.size();
-    //     for(int i=0; i<nFils; i++) {
-    //       TempFilament* fi = tmpFils[i];
-    //       for(typename multimap<double,TempCrosslink*>::iterator cl=fi->crossFils.begin(); cl!=fi->crossFils.end(); cl++) {
-    //         if(cl->second->baseFil == i) {
-    //           VectorND & pos = cl->second->location;
-    //           int xpos = (int)(floor(pos[0]/boxSize)+.5);
-    // 	  int ypos = (int)(floor(pos[1]/boxSize)+.5);
-    // 	  boxes[xpos][ypos].boxCLs.push_back(cl->second);
-    //         }
-    //       }
-    //       fi->crossFils.clear();
-    //     }
-
-    //     // now look for clusters to collapse //
-    //     int nCollapsed = 0;
-    //     for(int i=0; i<nx; i++) {
-    //       for(int j=0; j<ny; j++) {
-    //         int nBoxCLs = boxes[i][j].boxCLs.size();
-    // 	for(int m=0; m<nBoxCLs; m++) {
-    // 	  TempCrosslink* cl = boxes[i][j].boxCLs[m];
-    //           if(cl->active) {
-    //             // look for in-box neighbors //
-    // 	    int nCollapsedHere = 1;
-    // 	    VectorND center(0.0);
-    // 	    for(int n=m+1; n<nBoxCLs; n++) {
-    //               TempCrosslink* cl2 = boxes[i][j].boxCLs[n];
-    // 	      if(cl2->active) {
-    //                 VectorND diff;
-    //                 diff = cl->location - cl2->location;
-    // 		bool sameFil = false;
-    // 		typename set<int>::iterator fs1 = cl->otherFils.begin();
-    // 		while(!sameFil && fs1!=cl->otherFils.end()) {
-    // 		  if(cl2->otherFils.find(*fs1) != cl2->otherFils.end()) sameFil = true;
-    // 		  fs1++;
-    // 		}
-    //                 if(norm2(diff) < minLength && sameFil) {
-    //                   center += diff;
-    // 		  nCollapsedHere++;
-    // 		  nCollapsed++;
-    // 		  cl2->active = false;
-    // 		  typename set<int>::iterator fs2 = cl2->otherFils.begin();
-    // 		  for(fs2; fs2!=cl2->otherFils.end(); fs2++) {
-    // 		    cl->otherFils.insert(*fs2);
-    //                   }
-    // 		  typename set<int>::iterator fb = cl->otherFils.begin();
-    // 		  cl->baseFil = *fb;
-    // 	 	}
-    //               }
-    //             }
-    // 	    // look at other boxes //
-    // 	    for(int di=-1; di<=1; di++) {
-    //               for(int dj=-1; dj<=1; dj++) {
-    //                 int ip = (i+di+nx)%nx;
-    // 		int jp = (j+dj+ny)%ny;
-    // 		if(ip!=i || jp!=j) {
-    //                   int nBoxCLs2 = boxes[ip][jp].boxCLs.size();
-    // 		  for(int p=0; p<nBoxCLs2; p++) {
-    // 		    TempCrosslink* cl2 = boxes[ip][jp].boxCLs[p];
-    // 		    if(cl2->active) {
-    // 	              VectorND diff;
-    // 		      diff = cl->location - cl2->location;
-    // 		      _box->mapDistance(diff);
-    //                       bool sameFil = false;
-    //                       typename set<int>::iterator fs1 = cl->otherFils.begin();
-    // 		      while(!sameFil && fs1!=cl->otherFils.end()) {
-    // 		        if(cl2->otherFils.find(*fs1) != cl2->otherFils.end()) sameFil = true;
-    // 		        fs1++;
-    // 		      }
-    //                       if(norm2(diff) < minLength && sameFil) {
-    //                         center += diff;
-    //                         nCollapsedHere++;
-    // 			nCollapsed++;
-    // 			cl2->active = false;
-    // 		        typename set<int>::iterator fs2 = cl2->otherFils.begin();
-    // 		        for(fs2; fs2!=cl2->otherFils.end(); fs2++) {
-    // 		          cl->otherFils.insert(*fs2);
-    //                         }
-    // 		        typename set<int>::iterator fb = cl->otherFils.begin();
-    // 		        cl->baseFil = *fb;
-			
-    //                       }
-    //                     }    
-    //                   }
-    //                 }
-    //               }
-    //             }
-    // 	    // having collapsed, reset position and baseFil //
-    //             center /= nCollapsedHere;
-    // 	    center += cl->location;
-    // 	    _box->mapPoint(center);
-    // 	    cl->location = center; 
-    //           }
-    //         } 
-    //       }
-    //     }
-    
-    //     for(int i=0; i<nx; i++) {
-    //       for(int j=0; j<ny; j++) {
-    //         typename vector<TempCrosslink *>::iterator cls = boxes[i][j].boxCLs.begin();
-    // 	for(cls; cls!=boxes[i][j].boxCLs.end(); cls++) {
-    // 	  if((*cls)->active) {
-    // 	    typename set<int>::iterator cl = (*cls)->otherFils.begin();
-    // 	    for(cl; cl!=(*cls)->otherFils.end(); cl++) {
-    //               VectorND filStart;
-    //               filStart = tmpFils[*cl]->start;
-    // 	      VectorND sep;
-    // 	      sep = (*cls)->location - filStart;
-    // 	      _box->mapDistance(sep);
-    // 	      tmpFils[*cl]->crossFils.insert(pair<double,TempCrosslink*>(norm2(sep),*cls));
-    //             }
-    //           }
-    // 	  else delete *cls;  
-    //         }
-    //       }
-    //     }
-
-    //     return nCollapsed;
-
     return 0;
   }
 
