@@ -727,24 +727,7 @@ namespace voom {
       dNodes.push_back(newNode);
       id++;
     }
-
-    if(longFils.find(k) != longFils.end()) {
-      if(bondType == "Spring" || longLinStiff) {
-	addFilament(tmpDNC,longkC,longStiff,visc,kT,dt,minLength);
-      }
-      else {
-
-	addFilament(tmpDNC,entropic_k,longkC,entropic_Lp,visc,kT,dt,k_max,longStiff);
-      }
-    }
-    else {
-      if(bondType == "Spring") {
-	addFilament(tmpDNC,kappa,mu,visc,kT,dt,minLength); 
-      }
-      else {
-	addFilament(tmpDNC,entropic_k,kappa,entropic_Lp,visc,kT,dt,k_max,mu);
-      }
-    }
+    addFilament(tmpDNC,kappa,mu,visc,kT,dt,minLength); 
 
     if(((double)(k))/((double)(nFils)) > curPct) {
       std::cout << "Created " << 100.0*curPct << " percent of filaments." << std::endl;
@@ -1351,24 +1334,7 @@ namespace voom {
 	dNodes.push_back(newNode);
 	id++;
       }
-      
-      if(longFils.find(k) != longFils.end()) {
-	if(bondType == "Spring" || longLinStiff) {
-	  addFilament(tmpDNC,longkC,longStiff,visc,kT,dt,minLength);
-	}
-	else {
-	  addFilament(tmpDNC,entropic_k,longkC,entropic_Lp,visc,kT,dt,k_max,longStiff);
-	}
-      }
-      else {
-	if(bondType == "Spring") {
-	  addFilament(tmpDNC,kappa,mu,visc,kT,dt,minLength); 
-	}
-	else {
-	  addFilament(tmpDNC,entropic_k,kappa,entropic_Lp,visc,kT,dt,k_max,mu);
-	}
-      }
-      
+      addFilament(tmpDNC,kappa,mu,visc,kT,dt,minLength); 
     }
     
     // now that gel is set up, compute various quantities //
@@ -1427,69 +1393,6 @@ namespace voom {
  
   }
 
-  // Construct a filament with linear springs
-  template<int N>
-  SemiflexibleGel<N>::Filament::Filament( const DefNodeContainer & n, 
-					  double kBond, double kAngle,
-					  double viscosity, double kT, double dt) 
-    : nodes(n) {
-    
-    for( int i=0; i<nodes.size()-1; i++ ) {
-      // create Bonds and Rods
-      //
-      // i -- i+1 
-      //
-      Bond * b = new Bond( nodes[i], nodes[i+1], kBond ) ;
-      bonds.push_back(b);
-      Rod * r = new Rod( nodes[i], nodes[i+1], viscosity, kT, dt ) ;
-      rods.push_back(r);
-
-    }
-    
-    for( int i=0; i<nodes.size()-2; i++ ) {
-      // create Angles
-      //
-      // i         i+2 
-      //   \     /
-      //     i+1	  
-      Angle * a = new Angle( nodes[i], nodes[i+1], nodes[i+2], kAngle );
-      angles.push_back(a);
-    }	
-  }
-
-  // construct a filament with nonlinear (entropic) springs
-  template<int N>
-  SemiflexibleGel<N>::Filament::Filament( const DefNodeContainer & n, double kAngle, 
-					  double viscosity, double kT, double dt, 
-					  double kC, int fitOrder, double maxForce) 
-    : nodes(n) {
-    
-    double Lp = kC/kT;
-    double L0 = norm2(nodes[0]->point()-nodes[1]->point());
-    double Larc = (nodes.size()-1)*L0*(1.0+(L0/(6.0*Lp)));
-    for( int i=0; i<nodes.size()-1; i++ ) {
-      // create Bonds and Rods
-      //
-      // i -- i+1 
-      // 
-      Bond * b = new EntropicSpring<N>( nodes[i], nodes[i+1], kT, kC, fitOrder, nodes.size()-1, Larc, true, maxForce ) ;
-      bonds.push_back(b);
-      Rod * r = new Rod( nodes[i], nodes[i+1], viscosity, kT, dt ) ;
-      rods.push_back(r);
-
-    }
-    
-    for( int i=0; i<nodes.size()-2; i++ ) {
-      // create Angles
-      //
-      // i         i+2 
-      //   \     /
-      //     i+1	  
-      Angle * a = new Angle( nodes[i], nodes[i+1], nodes[i+2], kAngle );
-      angles.push_back(a);
-    }	
-  }
-
   // construct a filament with different segment lengths //
   template<int N>
   SemiflexibleGel<N>::Filament::Filament(const DefNodeContainer & n, double kappa, double mu, double viscosity, double kT, double dt, double minLength) : nodes(n) {
@@ -1545,119 +1448,6 @@ namespace voom {
 	angles.push_back(a);
       }	
     }
-  }
-
-  // construct a nonlinear filament with different segment lengths //
-  template<int N>
-  SemiflexibleGel<N>::Filament::Filament(const DefNodeContainer & n, double entropic_k, double kap, double Lp, double viscosity, double kT, double dt, double k_max, double mu, std::map<DefNode*,DefNode*> & cnMap) : nodes(n) {
-    
-
-    if(nodes.size()>1) {
-      for( int i=0; i<nodes.size()-1; i++ ) {
-	// create Bonds and Rods
-	//
-	// i -- i+1 
-	//
-	VectorND bondSep;
-	bondSep = nodes[i+1]->position() - nodes[i]->position();
-	//box->mapDistance(bondSep);
-	double bondLength = norm2(bondSep);
-	Bond * b = new EntropicSpring<N>(nodes[i],nodes[i+1],entropic_k,Lp,bondLength,mu);
-	bonds.push_back(b);
-	Rod * r = new Rod( nodes[i], nodes[i+1], viscosity, kT, dt, bondLength ) ;
-	rods.push_back(r);
-	
-      }
-    }
-    if(nodes.size()>2) {
-      for( int i=0; i<nodes.size()-2; i++ ) {
-	// create Angles
-	//
-	// i         i+2 
-	//   \     /
-	//     i+1	  
-	VectorND segSep1;
-	VectorND segSep2;
-	segSep1 = nodes[i+2]->position() - nodes[i+1]->position();
-	segSep2 = nodes[i+1]->position() - nodes[i]->position();
-	//box->mapDistance(segSep1);
-	//box->mapDistance(segSep2);
-	double segLength1 = norm2(segSep1);
-	double segLength2 = norm2(segSep2);
-	double avgLength = .5*(segLength1+segLength2);
-	double kAngle = kap/avgLength;
-	Angle * a = new Angle( nodes[i], nodes[i+1], nodes[i+2], kAngle );
-	angles.push_back(a);
-      }	
-    }
-        
-    //     std::vector<int> tmpCLNodes;
-    //     int nNodes = nodes.size();
-    //     for(int nn=0; nn<nNodes; nn++) {
-    //       if(cnMap.find(nodes[nn]) != cnMap.end()) {
-    // 	tmpCLNodes.push_back(nn);
-    //       }
-    //     }
-    //     if(tmpCLNodes.size() ==0 || tmpCLNodes[0] != 0) {
-    //       typename vector<int>::iterator ni = tmpCLNodes.begin();
-    //       tmpCLNodes.insert(ni,0);
-    //     }
-    //     if(tmpCLNodes[tmpCLNodes.size()-1] != nNodes-1) {
-    //       tmpCLNodes.push_back(nNodes-1);
-    //     }
-    
-    //     if(nNodes>1) {
-    //       for(int nc=0; nc<tmpCLNodes.size()-1; nc++) {
-    // 	int startNode = tmpCLNodes[nc];
-    // 	int endNode = tmpCLNodes[nc+1];
-    // 	VectorND arc;
-    // 	arc = nodes[endNode]->position() - nodes[startNode]->position();
-    // 	double L0 = norm2(arc);
-    // 	for(int nodeNum=startNode; nodeNum<endNode; nodeNum++) {
-    // 	  // create Bonds and Rods
-    // 	  //
-    // 	  // i -- i+1 
-    // 	  //
-    // 	  VectorND bondSep;
-    // 	  bondSep = nodes[nodeNum+1]->position() - nodes[nodeNum]->position();
-    // 	  double bondLength = norm2(bondSep);
-    // 	  Bond * b = new EntropicSpring<N>(nodes[nodeNum],nodes[nodeNum+1],entropic_k,Lp,L0,mu);
-    // 	  bonds.push_back(b);
-    // 	  Rod * r = new Rod( nodes[nodeNum], nodes[nodeNum+1], viscosity, kT, dt, bondLength ) ;
-    // 	  rods.push_back(r);
-	  
-    // 	  //std::cout << "Warning: stretched " << stretchedSegs << " filament segments to avoid excessive stiffness." << std::endl;
-	  
-    // 	}
-    //       }
-    //     }
-
-    //     assert(bonds.size() == nodes.size()-1);
-
-    //     if(nodes.size()>2) {
-    //       for( int i=0; i<nodes.size()-2; i++ ) {
-    // 	// create Angles
-    // 	//
-    // 	// i         i+2 
-    // 	//   \     /
-    // 	//     i+1	  
-    // 	VectorND segSep1;
-    // 	VectorND segSep2;
-    // 	segSep1 = nodes[i+2]->position() - nodes[i+1]->position();
-    // 	segSep2 = nodes[i+1]->position() - nodes[i]->position();
-    // 	//box->mapDistance(segSep1);
-    // 	//box->mapDistance(segSep2);
-    // 	double segLength1 = norm2(segSep1);
-    // 	double segLength2 = norm2(segSep2);
-    // 	double avgLength = .5*(segLength1+segLength2);
-    // 	double kAngle = kap/avgLength;
-    // 	Angle * a = new Angle( nodes[i], nodes[i+1], nodes[i+2], kAngle );
-    // 	angles.push_back(a);
-    //       }	
-      
-    //       assert(angles.size() == nodes.size()-2);
-    //     }
-    
   }
 
   template<int N>

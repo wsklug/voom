@@ -148,19 +148,8 @@ namespace voom
     typedef typename StrainField::iterator StrainFieldIterator;
 	
     struct Filament {
-      //! Construct with linear springs
-      Filament( const DefNodeContainer & n, double kBond, double kAngle, 
-		double viscosity, double kT, double dt);
-
-      //! Construct with nonlinear (entropic) springs
-      Filament( const DefNodeContainer & n, double kAngle, double viscosity, 
-		double kT, double dt, double kC, int fitOrder, double maxForce);
 
       Filament(const DefNodeContainer & n, double kappa, double mu, double viscosity, double kT, double dt, double minLength);
-
-      Filament(const DefNodeContainer & n, double entropic_k, double kap, double Lp, double viscosity, double kT, double dt, double k_max, double mu, std::map<DefNode*,DefNode*> & cnMap);
-
-
 
       ~Filament();
 
@@ -282,31 +271,11 @@ namespace voom
 
     void printforAbaqus(std::string fileName, double mu, double lB, double minLength, int method);
 
-    void addFilament( const DefNodeContainer & n, double kBond, double kAngle,
-		      double viscosity, double kT, double dt ) { 
-      Filament * f = new Filament( n, kBond, kAngle, viscosity, kT, dt );
-      _filaments.push_back( f );
-    }
-
-    //! Add a filament with nonlinear (entropic) springs
-//     void addFilament( const DefNodeContainer & n, double kAngle, double viscosity, 
-// 		      double kT, double dt, double kC, int fitOrder, double maxForce){ 
-//       Filament * f = new Filament( n, kAngle, viscosity, kT, dt, kC, fitOrder, maxForce);
-//       _filaments.push_back( f );
-//     }
-
     void addFilament(const DefNodeContainer & n, double kappa, double mu, double viscosity, double kT, double dt, double minLength) {
       Filament * f = new Filament(n,kappa,mu,viscosity,kT,dt,minLength);
       _filaments.push_back(f);
 
     }
-
-    void addFilament(const DefNodeContainer & n, double entropic_k, double kap, double Lp, double viscosity, double kT, double dt, double k_max, double mu) {
-      Filament * f = new Filament(n,entropic_k,kap,Lp,viscosity,kT,dt,k_max,mu,_crossNodeMap);
-      _filaments.push_back(f);
-    }
-
-    void addFilament( Filament * f ) { _filaments.push_back( f ); }
 
     const FilamentContainer & filaments() const { return _filaments; }
 
