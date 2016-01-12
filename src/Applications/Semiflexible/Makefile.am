@@ -1,4 +1,4 @@
-bin_PROGRAMS    = brownian box boxnl relax periodicbox translate shear affinetest nematictest nematictest_2 gelpropertytester rodliquid inputdriver
+bin_PROGRAMS    = brownian box boxnl relax periodicbox translate shear affinetest nematictest bareBoneGel gelpropertytester rodliquid inputdriver
 AM_CPPFLAGS =-I$(srcdir)/../../       		\
 		-I$(srcdir)/../../Body/		\
 		-I$(srcdir)/../../Model/		\
@@ -61,7 +61,7 @@ affinetest_SOURCES    =  affinetest.cc GelOutput.cc
 #
 nematictest_SOURCES    =  nematictest.cc GelOutput.cc
 #
-nematictest_2_SOURCES    =  nematictest_2.cc GelOutput_2.cc
+bareBoneGel_SOURCES    =  bareBoneGel.cc GelOutput_2.cc
 #
 gelpropertytester_SOURCES    =  gelpropertytester.cc GelOutput.cc
 #

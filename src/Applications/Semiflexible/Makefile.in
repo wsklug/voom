@@ -35,7 +35,7 @@ POST_UNINSTALL = :
 bin_PROGRAMS = brownian$(EXEEXT) box$(EXEEXT) boxnl$(EXEEXT) \
 	relax$(EXEEXT) periodicbox$(EXEEXT) translate$(EXEEXT) \
 	shear$(EXEEXT) affinetest$(EXEEXT) nematictest$(EXEEXT) \
-	nematictest_2$(EXEEXT) gelpropertytester$(EXEEXT) \
+	bareBoneGel$(EXEEXT) gelpropertytester$(EXEEXT) \
 	rodliquid$(EXEEXT) inputdriver$(EXEEXT)
 subdir = .
 DIST_COMMON = README $(am__configure_deps) $(srcdir)/Makefile.am \
@@ -57,6 +57,10 @@ am_affinetest_OBJECTS = affinetest.$(OBJEXT) GelOutput.$(OBJEXT)
 affinetest_OBJECTS = $(am_affinetest_OBJECTS)
 affinetest_LDADD = $(LDADD)
 affinetest_DEPENDENCIES =
+am_bareBoneGel_OBJECTS = bareBoneGel.$(OBJEXT) GelOutput_2.$(OBJEXT)
+bareBoneGel_OBJECTS = $(am_bareBoneGel_OBJECTS)
+bareBoneGel_LDADD = $(LDADD)
+bareBoneGel_DEPENDENCIES =
 am_box_OBJECTS = box.$(OBJEXT)
 box_OBJECTS = $(am_box_OBJECTS)
 box_LDADD = $(LDADD)
@@ -83,11 +87,6 @@ am_nematictest_OBJECTS = nematictest.$(OBJEXT) GelOutput.$(OBJEXT)
 nematictest_OBJECTS = $(am_nematictest_OBJECTS)
 nematictest_LDADD = $(LDADD)
 nematictest_DEPENDENCIES =
-am_nematictest_2_OBJECTS = nematictest_2.$(OBJEXT) \
-	GelOutput_2.$(OBJEXT)
-nematictest_2_OBJECTS = $(am_nematictest_2_OBJECTS)
-nematictest_2_LDADD = $(LDADD)
-nematictest_2_DEPENDENCIES =
 am_periodicbox_OBJECTS = periodicbox.$(OBJEXT) GelOutput.$(OBJEXT)
 periodicbox_OBJECTS = $(am_periodicbox_OBJECTS)
 periodicbox_LDADD = $(LDADD)
@@ -117,18 +116,16 @@ CXXCOMPILE = $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
 CXXLD = $(CXX)
 CXXLINK = $(CXXLD) $(AM_CXXFLAGS) $(CXXFLAGS) $(AM_LDFLAGS) $(LDFLAGS) \
 	-o $@
-SOURCES = $(affinetest_SOURCES) $(box_SOURCES) $(boxnl_SOURCES) \
-	$(brownian_SOURCES) $(gelpropertytester_SOURCES) \
-	$(inputdriver_SOURCES) $(nematictest_SOURCES) \
-	$(nematictest_2_SOURCES) $(periodicbox_SOURCES) \
-	$(relax_SOURCES) $(rodliquid_SOURCES) $(shear_SOURCES) \
-	$(translate_SOURCES)
-DIST_SOURCES = $(affinetest_SOURCES) $(box_SOURCES) $(boxnl_SOURCES) \
-	$(brownian_SOURCES) $(gelpropertytester_SOURCES) \
-	$(inputdriver_SOURCES) $(nematictest_SOURCES) \
-	$(nematictest_2_SOURCES) $(periodicbox_SOURCES) \
-	$(relax_SOURCES) $(rodliquid_SOURCES) $(shear_SOURCES) \
-	$(translate_SOURCES)
+SOURCES = $(affinetest_SOURCES) $(bareBoneGel_SOURCES) $(box_SOURCES) \
+	$(boxnl_SOURCES) $(brownian_SOURCES) \
+	$(gelpropertytester_SOURCES) $(inputdriver_SOURCES) \
+	$(nematictest_SOURCES) $(periodicbox_SOURCES) $(relax_SOURCES) \
+	$(rodliquid_SOURCES) $(shear_SOURCES) $(translate_SOURCES)
+DIST_SOURCES = $(affinetest_SOURCES) $(bareBoneGel_SOURCES) \
+	$(box_SOURCES) $(boxnl_SOURCES) $(brownian_SOURCES) \
+	$(gelpropertytester_SOURCES) $(inputdriver_SOURCES) \
+	$(nematictest_SOURCES) $(periodicbox_SOURCES) $(relax_SOURCES) \
+	$(rodliquid_SOURCES) $(shear_SOURCES) $(translate_SOURCES)
 ETAGS = etags
 CTAGS = ctags
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -303,7 +300,7 @@ affinetest_SOURCES = affinetest.cc GelOutput.cc
 #
 nematictest_SOURCES = nematictest.cc GelOutput.cc
 #
-nematictest_2_SOURCES = nematictest_2.cc GelOutput_2.cc
+bareBoneGel_SOURCES = bareBoneGel.cc GelOutput_2.cc
 #
 gelpropertytester_SOURCES = gelpropertytester.cc GelOutput.cc
 #
@@ -388,6 +385,9 @@ clean-binPROGRAMS:
 affinetest$(EXEEXT): $(affinetest_OBJECTS) $(affinetest_DEPENDENCIES) 
 	@rm -f affinetest$(EXEEXT)
 	$(CXXLINK) $(affinetest_OBJECTS) $(affinetest_LDADD) $(LIBS)
+bareBoneGel$(EXEEXT): $(bareBoneGel_OBJECTS) $(bareBoneGel_DEPENDENCIES) 
+	@rm -f bareBoneGel$(EXEEXT)
+	$(CXXLINK) $(bareBoneGel_OBJECTS) $(bareBoneGel_LDADD) $(LIBS)
 box$(EXEEXT): $(box_OBJECTS) $(box_DEPENDENCIES) 
 	@rm -f box$(EXEEXT)
 	$(CXXLINK) $(box_OBJECTS) $(box_LDADD) $(LIBS)
@@ -406,9 +406,6 @@ inputdriver$(EXEEXT): $(inputdriver_OBJECTS) $(inputdriver_DEPENDENCIES)
 nematictest$(EXEEXT): $(nematictest_OBJECTS) $(nematictest_DEPENDENCIES) 
 	@rm -f nematictest$(EXEEXT)
 	$(CXXLINK) $(nematictest_OBJECTS) $(nematictest_LDADD) $(LIBS)
-nematictest_2$(EXEEXT): $(nematictest_2_OBJECTS) $(nematictest_2_DEPENDENCIES) 
-	@rm -f nematictest_2$(EXEEXT)
-	$(CXXLINK) $(nematictest_2_OBJECTS) $(nematictest_2_LDADD) $(LIBS)
 periodicbox$(EXEEXT): $(periodicbox_OBJECTS) $(periodicbox_DEPENDENCIES) 
 	@rm -f periodicbox$(EXEEXT)
 	$(CXXLINK) $(periodicbox_OBJECTS) $(periodicbox_LDADD) $(LIBS)
@@ -435,13 +432,13 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/GelOutput_2.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/SemiflexibleInput.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/affinetest.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/bareBoneGel.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/box.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/boxnl.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/brownian.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gelpropertytester.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/inputdriver.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nematictest.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nematictest_2.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/periodicbox.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/relax.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/rodliquid.Po@am__quote@

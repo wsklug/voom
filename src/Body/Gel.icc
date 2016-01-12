@@ -532,15 +532,6 @@ namespace voom {
       targetSegLength = atof(p->second.data());
     }
     else targetSegLength = 2.0*minLength;
-    //assert(targetSegLength > 0.0);
-    //assert(targetSegLength > minLength);
-
-    double maxPrestress = -1.0;
-    p = properties.find("maximum prestress");
-    if(p != properties.end()) {
-      maxPrestress = kT*atof(p->second.data());
-    }
-
 
     NematicProbTable npt;
     bool donem = false;
