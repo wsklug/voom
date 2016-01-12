@@ -339,7 +339,7 @@ nematictest_2.o: nematictest_2.cc \
  /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/cstring \
  /usr/include/string.h ../../Solvers/Solver.h ../../Model/Model.h \
  ../../Body/Body.h ../../Model/Model.icc ../../Model/Model.h \
- ../../Elements/ViscousRegularizer.h ../../Body/SemiflexibleGel.icc \
+ ../../Elements/ViscousRegularizer.h ../../Body/Gel.icc \
  ../../Solvers/Lbfgs.h ../../Solvers/CGfast.h GelOutput_2.h
 
 /usr/lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/string:
@@ -1122,7 +1122,7 @@ SemiflexibleInput.h:
 
 ../../Elements/ViscousRegularizer.h:
 
-../../Body/SemiflexibleGel.icc:
+../../Body/Gel.icc:
 
 ../../Solvers/Lbfgs.h:
 

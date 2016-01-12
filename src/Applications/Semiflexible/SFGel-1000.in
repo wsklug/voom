@@ -62,7 +62,7 @@ Expand_final	Final expansion ratio	1.02		no units
 Expand_steps	Number of exp. steps	8		no units
 
 ExpXTest	Whether to stretch in X	0		no units
-ExpYTest	Whether to stretch in Y	0		no units
+ExpYTest	Whether to stretch in Y	-1		no units
 Stretch_final	Final stretch ratio	1.02		no units
 Stretch_steps	Number of stretch steps	8		no units
 

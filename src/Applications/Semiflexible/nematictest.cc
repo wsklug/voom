@@ -48,7 +48,7 @@ struct DataPoint {
   double mean;
   double stddev;
 };
-
+ 
 typedef std::vector< DataPoint > DataSet;
 typedef std::vector< NodePair > NodePairList;
 typedef std::vector< NodePairList > NodePairData;

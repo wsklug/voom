@@ -245,19 +245,8 @@ namespace voom
     //! A constructor that uses the SemiflexibleInput class to bring in parameters
     SemiflexibleGel( SemiflexibleInput * pInp );
 
-    //! Another Constructor
-    SemiflexibleGel( DefNodeContainer & dNodes, PeriodicBox * box, 
-		     double filDens, int nodesPerFil, double nodeLen, 
-		     const string & bondType, bool cutOffEnds, const PropertyList & properties );    
-
-    //! Constructor that reads in data from a file
-    SemiflexibleGel(std::string fileName, DefNodeContainer & nodes, std::string bondType, bool cutOffEnds, const PropertyList & properties, double minLength);
-
     //! Constructor that implements adaptive meshing
     SemiflexibleGel(DefNodeContainer & dNodes, PeriodicBox * box, double filDens, double filLength, const string & bondType, bool cutOffEnds, double minLength, const PropertyList & properties);
-
-    //! Constructor that reads in data from a file and adaptively meshes
-    SemiflexibleGel(std::string fileName, DefNodeContainer & dNodes, std::string bondType, bool cutOffEnds, double minLength, const PropertyList & properties);
 
     //! virtual destructor
     virtual ~SemiflexibleGel() { 
@@ -637,6 +626,6 @@ namespace voom
   };  
 } // namespace voom
 
-#include "SemiflexibleGel.icc"
+#include "Gel.icc"
 
-#endif // __SemiflexibleGel_h__
+#endif // __Gel_h__
