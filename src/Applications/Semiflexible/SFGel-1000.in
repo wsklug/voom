@@ -28,6 +28,7 @@ Zero_Return	Whether to shake system	0		no units
 NematicOP	Nematic order parameter	0.0		no units
 NemPDF_type	PDF for filament angles	Gaussian	no units
 NemPDF_param	Parameter for PDF	0.0		no units
+NemDirAngle	nematic direction	0.0		no units
 
 # The following parameters pertain to adaptive meshing
 AdaptiveMesh	Adaptively mesh, T/F	1		no units

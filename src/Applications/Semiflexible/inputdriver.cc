@@ -14,7 +14,7 @@
 //#include <getopt.h>
 //#include <ctime>
 //#include "Node.h"
-#include "SemiflexibleGel.h"
+//#include "SemiflexibleGel.h"
 //#include "Model.h"
 //#include "Lbfgsb.h"
 //#include "Lbfgs.h"
@@ -31,13 +31,13 @@
 #include "SemiflexibleInput.h"
 //#include "voom.h"
 #include <fstream>
-#include <cstdlib>
+//#include <cstdlib>
 //#include <complex>
-#include <map> // ?
-#include <cmath> // maybe not needed
-#include <sstream> //?
-#include <iomanip> //?
-#include <blitz/array.h> //?
+//#include <map> // ?
+//#include <cmath> // maybe not needed
+//#include <sstream> //?
+//#include <iomanip> //?
+//#include <blitz/array.h> //?
 
 
 using namespace std;
@@ -92,7 +92,7 @@ int main(int argc, char* argv[]){
 // 	
 
 	
-	SemiflexibleGel<2> testInputGel (&inp);
+//	SemiflexibleGel<2> testInputGel (&inp);
 	
 	
 	

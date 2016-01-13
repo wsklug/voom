@@ -25,12 +25,7 @@ typedef ParamMap::iterator PMIter;
 #define USEOPENMP 1
 #endif
 
-///////////////////////////////////////////////////////////
-// JKP: sqr not defined (Part of tvmet package?) I'll define it here so the code 
-// will compile. This can be deleted after.
-#define sqr(x) (x*x)
-///////////////////////////////////////////////////////////
-
+    
 // Verification -------------------------------------------
 bool SemiflexibleInput::checkMap(std::string name) const
 {
@@ -111,12 +106,12 @@ void SemiflexibleInput::setBool(std::string name, bool value)
 	_pm[name] = value;
 }
 // Previous Code ------------------------------------------
-int getFilSegs(double avgCL, double nodesPerCL) {
+int getFilSegs_input(double avgCL, double nodesPerCL) {
   return (int)((avgCL+1)*nodesPerCL);
 }
 
 
-int getCurGelNum(std::string firstGelName) {  
+int getCurGelNum_input(std::string firstGelName) {  
   std::ifstream testStream;
   bool fileFound = true;
   int startPos = firstGelName.find("gelnum");
@@ -143,7 +138,7 @@ int getCurGelNum(std::string firstGelName) {
   return i;
 }
 
-std::string getGelFileName(std::string gelLibDir, ParamMap & pmap, int gelNum=-1) {
+std::string getGelFileName_input(std::string gelLibDir, ParamMap & pmap, int gelNum=-1) {
   // get necessary parameters from map, construct file name //
   char * gelStoreFN = new char[256];
   double L = atof(pmap["L"].data());
@@ -159,7 +154,7 @@ std::string getGelFileName(std::string gelLibDir, ParamMap & pmap, int gelNum=-1
     sprintf(gelStoreFN,"gel-L=%f-l_C=%f-dL=%f-Wx=%f-Wy=%f-kcl=%f-S=%f-gelnum=1.gelsave",L,l_c,dL,Wx,Wy,kcl,Snem);
     gelStoreName.assign(gelStoreFN);
     gelStoreName.insert(0,gelLibDir);
-    gelNum = getCurGelNum(gelStoreName);
+    gelNum = getCurGelNum_input(gelStoreName);
     gelStoreName.clear();
     delete gelStoreFN;
     gelStoreFN = new char[128];
@@ -589,7 +584,7 @@ std::cout << "\n" << "Input file now closed." << "\n" << std::endl;
       this->setReal("lambda", lambda);
       //input.setReal("lambda", lambda); 
 
-      double mu = kC/sqr(l_B);
+      double mu = kC/sqrt(l_B);
       this->setReal("bond stiffness", mu);
       //input.setReal("bond stiffness", mu); 
 
@@ -625,7 +620,7 @@ std::cout << "\n" << "Input file now closed." << "\n" << std::endl;
       // get number of rods per filament from requirement of nodes
       // between crosslinks, then set all other parameters //
       if(!adaptiveMeshing) {
-			nNodesPerFilament = 1 + getFilSegs(L_over_lc-1,nodesPerCL);
+			nNodesPerFilament = 1 + getFilSegs_input(L_over_lc-1,nodesPerCL);
 			dL = L/(nNodesPerFilament - 1);
 			// Estimate kAngle = E*I/L = kT\xi_p/dL; kT=4.1pN-nm, \xi_p=10^4nm, 
 			//dL~100nm
@@ -643,7 +638,7 @@ std::cout << "\n" << "Input file now closed." << "\n" << std::endl;
 	  exit(1);
 	}
 	if(l_B > 0.0) {
-	  kBond = kAngle/sqr(l_B);
+	  kBond = kAngle/sqrt(l_B);
 	  // std::ostringstream tmpStr;
 	  // tmpStr << setprecision(16) << kBond;
 	  // _pm.insert(pair< std::string, std::string>("bond stiffness",tmpStr.str()));
@@ -670,7 +665,7 @@ std::cout << "\n" << "Input file now closed." << "\n" << std::endl;
 	//
 	this->setReal("angle stiffness", kC);
 
-	double mu = kC/sqr(l_B);
+	double mu = kC/sqrt(l_B);
 	// std::ostringstream tmpStr2;
 	// tmpStr2 << setprecision(16) << mu;
 	// _pm.insert(pair< std::string, std::string>("bond stiffness",tmpStr2.str()));
@@ -714,8 +709,9 @@ std::cout << "\n" << "Input file now closed." << "\n" << std::endl;
 	std::cout << pmi->first << ": " << pmi->second << std::endl;
       }
 
-      std::string fName = getGelFileName(gelDirectory,_pm);
-      curGelNum = getCurGelNum(fName);
+      std::string fName = getGelFileName_input(gelDirectory,_pm);
+      
+      curGelNum = getCurGelNum_input(fName);
 
 
 			// Why are we only using "storage file name" for adaptive meshing

@@ -57,7 +57,8 @@ am_affinetest_OBJECTS = affinetest.$(OBJEXT) GelOutput.$(OBJEXT)
 affinetest_OBJECTS = $(am_affinetest_OBJECTS)
 affinetest_LDADD = $(LDADD)
 affinetest_DEPENDENCIES =
-am_bareBoneGel_OBJECTS = bareBoneGel.$(OBJEXT) GelOutput_2.$(OBJEXT)
+am_bareBoneGel_OBJECTS = bareBoneGel.$(OBJEXT) \
+	SemiflexibleInput.$(OBJEXT) GelOutput_2.$(OBJEXT)
 bareBoneGel_OBJECTS = $(am_bareBoneGel_OBJECTS)
 bareBoneGel_LDADD = $(LDADD)
 bareBoneGel_DEPENDENCIES =
@@ -83,7 +84,8 @@ am_inputdriver_OBJECTS = inputdriver.$(OBJEXT) \
 inputdriver_OBJECTS = $(am_inputdriver_OBJECTS)
 inputdriver_LDADD = $(LDADD)
 inputdriver_DEPENDENCIES =
-am_nematictest_OBJECTS = nematictest.$(OBJEXT) GelOutput.$(OBJEXT)
+am_nematictest_OBJECTS = nematictest.$(OBJEXT) \
+	SemiflexibleInput.$(OBJEXT) GelOutput.$(OBJEXT)
 nematictest_OBJECTS = $(am_nematictest_OBJECTS)
 nematictest_LDADD = $(LDADD)
 nematictest_DEPENDENCIES =
@@ -298,9 +300,9 @@ shear_SOURCES = shear.cc GelOutput.cc
 #
 affinetest_SOURCES = affinetest.cc GelOutput.cc
 #
-nematictest_SOURCES = nematictest.cc GelOutput.cc
+nematictest_SOURCES = nematictest.cc SemiflexibleInput.cc GelOutput.cc
 #
-bareBoneGel_SOURCES = bareBoneGel.cc GelOutput_2.cc
+bareBoneGel_SOURCES = bareBoneGel.cc SemiflexibleInput.cc  GelOutput_2.cc
 #
 gelpropertytester_SOURCES = gelpropertytester.cc GelOutput.cc
 #

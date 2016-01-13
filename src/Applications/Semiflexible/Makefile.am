@@ -59,9 +59,9 @@ shear_SOURCES    =  shear.cc GelOutput.cc
 #
 affinetest_SOURCES    =  affinetest.cc GelOutput.cc
 #
-nematictest_SOURCES    =  nematictest.cc GelOutput.cc
+nematictest_SOURCES    =  nematictest.cc SemiflexibleInput.cc GelOutput.cc
 #
-bareBoneGel_SOURCES    =  bareBoneGel.cc GelOutput_2.cc
+bareBoneGel_SOURCES    =  bareBoneGel.cc SemiflexibleInput.cc  GelOutput_2.cc
 #
 gelpropertytester_SOURCES    =  gelpropertytester.cc GelOutput.cc
 #

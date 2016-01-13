@@ -25,7 +25,7 @@ namespace voom {
   template<int N>
   SemiflexibleGel<N>::SemiflexibleGel( SemiflexibleInput * input ) {
   
-
+    std::cout << "*********** Start Gel Construction *********" << std::endl;
   //////////////////////////////////////////////////////////////////
   // Start by working with adaptive meshing with creation of gel.
   //////////////////////////////////////////////////////////////////
@@ -45,8 +45,8 @@ namespace voom {
   double filDens = input->getReal("filDens"); 
   double filLength = input->getReal("L"); // not needed for RETRIEVE
 	
-		
-	
+  
+  
   // ------------------GENERAL SYSTEM PARAMETERS------------------
   bool cutOffEnds = input->getBool("Cut Off Ends"); 
   // Other members from old parameter map
@@ -99,6 +99,7 @@ namespace voom {
     if (input->checkMap("nematic PDF param")) {
       nematic = input->getReal("nematic PDF param");
       donem = true;
+      nemAngle = input->getReal("nematic direction angle");
     }
 		
     std::string orientationPDF = input->getString("orientational PDF");
@@ -106,10 +107,7 @@ namespace voom {
       npt.setPDF(0);
       npt.setTable(nematic);
     }
-    // need to write "Lorentzian" block in here that is commented out below
-	
-    //ranlib::Normal<double> rngps(0,sqrt(kT/kAngle));
-    //rngps.seed((unsigned int)time(0));
+    
     ranlib::Uniform<double> rnguni;
     rnguni.seed((unsigned int)time(0));
     	
@@ -132,7 +130,6 @@ namespace voom {
     VectorND newVec;
     double newAng;
 
-    // TempFilamentContainer tmpFils(nFils); 
     tmpFils.resize(nFils);
 
     // create first and last points for each filament //
@@ -267,6 +264,7 @@ namespace voom {
     storeSparseGel(storageFileName,tmpFils);
 	
   }
+  
   // ------------------END OF CREATE GEL------------------
 
   // we now have a list of crosslinks for each filament; we can now
@@ -483,6 +481,8 @@ namespace voom {
   
   
   std::cout << "\n" << std::endl;
+  
+  
   }
   
  
@@ -1095,6 +1095,7 @@ namespace voom {
     }
 
     return deletedCrosslinks;  
+    
   }
 
   template<int N>
