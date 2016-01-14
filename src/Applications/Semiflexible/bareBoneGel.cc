@@ -545,14 +545,8 @@ int main(int argc, char* argv[]) {
     parValStr.clear();
   }
   inFile.close();
-  
-  SemiflexibleGel<2> * gel;
-  SemiflexibleGel<2> * gel2;
-  SemiflexibleGel<2>::DefNodeContainer nodes;
-  PeriodicBox * box;
-  GelOutput<2> output;
-  
-  //std::cout <<"*****************" << pfn << std::endl;
+    
+    //std::cout <<"*****************" << pfn << std::endl;
   //input = new SemiflexibleInput(pfn);
 
   if(kC < 0.0) {
@@ -641,12 +635,17 @@ int main(int argc, char* argv[]) {
 
   if(adaptiveMeshing) pm.insert(pair<std::string, std::string>("storage file name",fName));
 
+
+  SemiflexibleGel<2> * gel;
+  //SemiflexibleGel<2> * gel2;
+  SemiflexibleGel<2>::DefNodeContainer nodes;
+  PeriodicBox * box;
+  GelOutput<2> output;
+
   // make periodic box //
   box = new LeesEdwards(syssize[0],syssize[1],0.0);
 
-  gel2 = new SemiflexibleGel<2>(nodes,box,filDens,L,bondType,cutOffEnds,minLength,pm);
-
-  gel = new SemiflexibleGel<2>(&inp);
+  gel = new SemiflexibleGel<2>(nodes,box,&inp);
 
   // write gel data to file //
   if(!adaptiveMeshing) {

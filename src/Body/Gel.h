@@ -232,7 +232,7 @@ namespace voom
     }
 
     //! A constructor that uses the SemiflexibleInput class to bring in parameters
-    SemiflexibleGel( SemiflexibleInput * pInp );
+    SemiflexibleGel(DefNodeContainer & dNodes, PeriodicBox * box, SemiflexibleInput * pInp );
 
     //! Constructor that implements adaptive meshing
     SemiflexibleGel(DefNodeContainer & dNodes, PeriodicBox * box, double filDens, double filLength, const string & bondType, bool cutOffEnds, double minLength, const PropertyList & properties);

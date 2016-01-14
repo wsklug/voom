@@ -1,0 +1,3 @@
+#Parameters: L/l_C = 23.7552, L = 2, S = 0.00299964, l_B = 0.012, Wx = 20, Wy = 20
+#ShearX	E_tot	E_gel	E_bend	E_strc	E_cl	E_mot	E_pnch	E_vreg
+0	0.084499	0.084499	3.98085e-12	0.084499	0	0	0	0

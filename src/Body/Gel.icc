@@ -23,7 +23,7 @@ namespace voom {
 
       
   template<int N>
-  SemiflexibleGel<N>::SemiflexibleGel( SemiflexibleInput * input ) {
+  SemiflexibleGel<N>::SemiflexibleGel(DefNodeContainer & dNodes, PeriodicBox * box, SemiflexibleInput * input ) {
   
     std::cout << "*********** Start Gel Construction *********" << std::endl;
   //////////////////////////////////////////////////////////////////
@@ -80,7 +80,7 @@ namespace voom {
 
   int nFils = 0;
   TempFilamentContainer tmpFils; 
-  DefNodeContainer dNodes;
+  //DefNodeContainer dNodes;
   std::set<int> longFils;
   double nemAngle = 0.0;
   std::string removalMethod;
@@ -117,7 +117,8 @@ namespace voom {
     syssize[1] = input->getReal("Wy");
 	
     std::cout << N << std::endl;
-    _box = new LeesEdwards(syssize[0],syssize[1],0.0);
+    //_box = new LeesEdwards(syssize[0],syssize[1],0.0);
+    _box = box;
     VectorND size( _box->size() );
     double vol=1.0;
     for(int i=0; i<N; i++) {
