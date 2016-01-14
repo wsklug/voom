@@ -646,8 +646,6 @@ int main(int argc, char* argv[]) {
 
   gel2 = new SemiflexibleGel<2>(nodes,box,filDens,L,bondType,cutOffEnds,minLength,pm);
 
-  //SemiflexibleGel<2> * gel2 (&inp);
-  
   gel = new SemiflexibleGel<2>(&inp);
 
   // write gel data to file //
@@ -665,8 +663,7 @@ int main(int argc, char* argv[]) {
   sprintf(clinkdistfile,"Run%d/CrosslinkSepDistro-L=%f-l_C=%f-dL=%f-S=%f-gelnum=%d.dat",runNum,L,L/tmpratio,dL,nematicOP,curGelNum);
   fName.assign(clinkdistfile);
   output.printCrosslinkData(gel,fName);
-  output.printCrosslinkData(gel2,fName);
-
+ 
   fName.clear();
   char fillendistfile[128];
   sprintf(fillendistfile,"Run%d/FilLengthDistro-L=%f-l_C=%f-dL=%f-S=%f-gelnum=%d.dat",runNum,L,L/tmpratio,dL,nematicOP,curGelNum);

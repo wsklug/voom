@@ -312,24 +312,28 @@ SemiflexibleInput::SemiflexibleInput(std::string paramFileName)
             pNameEnd = curString.find_first_of('\t',pNameBegin);
             parValStr.assign(curString,pNameBegin,pNameEnd-pNameBegin);
             if(parName.find("GelFile") != std::string::npos) {
-            	gelFileName.assign(parValStr);
-            	_pm.insert(pair< std::string, std::string>
-            	("storage file name",parValStr));
-            	}
-            else if(parName.find("GelDirectory") != std::string::npos) gelDirectory.assign(parValStr);
+	      gelFileName.assign(parValStr);
+	      _pm.insert(pair< std::string, std::string>
+			 ("storage file name",parValStr));
+	    }
+            else if(parName.find("GelDirectory") != std::string::npos){
+	      gelDirectory.assign(parValStr);
+	      _pm.insert(pair< std::string, std::string>
+                         ("storage directory name",parValStr));
+	    }
             else if(parName.find("kT")!=std::string::npos) {
-                kT = atof(parValStr.data());
-                _pm.insert(pair< std::string, std::string>("kT",parValStr));
+	      kT = atof(parValStr.data());
+	      _pm.insert(pair< std::string, std::string>("kT",parValStr));
             }
             else if(parName.find("L_p")!=std::string::npos) L_p = atof(parValStr.data());
             else if(parName.find("kC")!=string::npos) kC = atof(parValStr.data());
             else if(parName.find("visc. reg.")!=string::npos) {
-                viscReg = atof(parValStr.data());
+	      viscReg = atof(parValStr.data());
             }
             else if(parName.find("visc")!=string::npos) {
-                visc = atof(parValStr.data());
-                _pm.insert(pair< std::string, std::string >("viscosity",parValStr));
-                
+	      visc = atof(parValStr.data());
+	      _pm.insert(pair< std::string, std::string >("viscosity",parValStr));
+	      
             }
             else if(parName.find("SolverType")!=string::npos) solverType = parValStr.data();
             // else if(parName.find("r")!=string::npos) r = parVal;
@@ -455,9 +459,8 @@ SemiflexibleInput::SemiflexibleInput(std::string paramFileName)
                 parValStr.data()));
             }
             else if(parName.find("CutOffEnds")!=string::npos) {
-                if(atof(parValStr.data()) >= 0.5) cutOffEnds = true;
-                _pm["Cut Off Ends"] = "true";
-            }
+                if(atof(parValStr.data()) >= .5) cutOffEnds = true;
+	    }
             else if(parName.find("ShearXTest")!=string::npos) {
                 if(atof(parValStr.data()) >= .5) shearXtest = true;
             }
@@ -720,7 +723,7 @@ std::cout << "\n" << "Input file now closed." << "\n" << std::endl;
       if(adaptiveMeshing) 
       _pm.insert(pair<std::string, std::string>("storage file name",fName));
 
-
+    
     // Write out parameter map
     std::cout << "\n" << "-----Parameter Map---------" << std::endl;
     

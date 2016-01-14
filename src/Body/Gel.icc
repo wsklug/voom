@@ -68,10 +68,10 @@ namespace voom {
     targetSegLength = 2.0*minLength;
   }	
   std::string storageFileName = input->getString("storage file name");
+  std::string storageDirectoryName = input->getString("storage directory name");
 	
-
-	
-	
+  std::string storageTotalName = storageDirectoryName + storageFileName; 
+  	
 	
   // ------------------ADAPTIVE MESH PARAMETERS------------------
 
@@ -261,10 +261,12 @@ namespace voom {
       std::cout << "Collapsed " << collapsedCrosslinks << " crosslinks to avoid excessively stiff segments." << std::endl;
     }
 
-    storeSparseGel(storageFileName,tmpFils);
+    storeSparseGel(storageTotalName,tmpFils);
 	
   }
   
+  std::cout << "tempfils size is " << tmpFils.size() << std::endl;
+
   // ------------------END OF CREATE GEL------------------
 
   // we now have a list of crosslinks for each filament; we can now
@@ -398,14 +400,13 @@ namespace voom {
       id++;
     }
     addFilament(tmpDNC,kappa,mu,visc,kT,dt,minLength); 
-
+    /*
     if(((double)(k))/((double)(nFils)) > curPct) {
       std::cout << "Created " << 100.0*curPct << " percent of filaments." << std::endl;
       curPct += .1;
     }
-
+    */
   }
-
   // now that gel is set up, compute various quantities //
     
   computeCrossDistro(-1.0);
@@ -414,6 +415,8 @@ namespace voom {
 
   computeNematicDistro(nemAngle);
 
+  std::cout<< "this with input class " << cutOffEnds << std::endl;
+  
   if(cutOffEnds) cutOffEndsandCCD(-1.0,dNodes);
 
   _viscReg = 0;
@@ -705,6 +708,10 @@ namespace voom {
 
     storeSparseGel(storageFileName,tmpFils);
 	
+    std::cout << "tempfils size is " << tmpFils.size() <<std::endl;
+
+    // ------------------END OF CREATE GEL------------------ 
+
     // we now have a list of crosslinks for each filament; we can now create the gel //
     int id = 0;
     NodeBase::DofIndexMap idx(N);
@@ -844,7 +851,7 @@ namespace voom {
     computeFilLenDistro();
 
     computeNematicDistro(nemAngle);
-
+    std::cout<< "this without input class " << cutOffEnds << std::endl;
     if(cutOffEnds) cutOffEndsandCCD(-1.0,dNodes);
 
     _viscReg = 0;
