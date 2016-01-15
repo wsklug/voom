@@ -208,7 +208,7 @@ int main(int argc, char* argv[]) {
   // make periodic box //
   box = new LeesEdwards(inp.getReal("Wx"),inp.getReal("Wy"),0.0);
 
-  gel = new SemiflexibleGel<2>(nodes,box,&inp);
+  gel = new SemiflexibleGel<2>(nodes,&inp);
 
   
   // write gel data to file //

@@ -43,17 +43,7 @@ bool SemiflexibleInput::checkMap(std::string name) const
 // Accessors ----------------------------------------------
 double SemiflexibleInput::getReal(std::string name) const
 {
-  /* Cannot use map::operator[] to access value since it inserts a new element 
-  	 when no element matches the key */
-  
-  /*
-		JKP: What is the best way to ensure we don't get a segmentation fault here?
-		I've put in a quick fix below but it might not work with all cases.
-		This is probably good enough for now since we will likely end up changing
-		the way the parameters are stored (won't store everything in the map). 
-		Actually, what about a method that checks the existence of a parameter in 
-		the map and returns true or false? 
-  */
+
   if (_pm.find(name) == _pm.end()) {
   	std::cerr << "Error: Value for " << name 
   	<< " not found in parameter map. \n"
@@ -65,20 +55,38 @@ double SemiflexibleInput::getReal(std::string name) const
 
 int SemiflexibleInput::getInt(std::string name) const
 {
+  if (_pm.find(name) == _pm.end()) {
+    std::cerr << "Error: Value for " << name
+	      << " not found in parameter map. \n"
+	      << "Check input file." << std::endl;
+    exit(1);
+  }
   return atoi((_pm.find(name)->second).c_str());
 }
 
 std::string SemiflexibleInput::getString(std::string name) const
 {
+  if (_pm.find(name) == _pm.end()) {
+    std::cerr << "Error: Value for " << name
+	      << " not found in parameter map. \n"
+	      << "Check input file." << std::endl;
+    exit(1);
+  }
   return _pm.find(name)->second;
 }
 
 bool SemiflexibleInput::getBool(std::string name) const
 {
-	if (_pm.find(name)->second == "true")
-		return true;
-	else
-		return false;	
+  if (_pm.find(name) == _pm.end()) {
+    std::cerr << "Error: Value for " << name
+	      << " not found in parameter map. \n"
+	      << "Check input file." << std::endl;
+    exit(1);
+  }
+  if (_pm.find(name)->second == "true")
+    return true;
+  else
+    return false;	
 }
 
 // Mutators ----------------------------------------------- 
@@ -248,9 +256,13 @@ SemiflexibleInput::SemiflexibleInput(std::string paramFileName)
     bool shearXtest = false;
     this->setStr("ShearXTest","false");
     bool shearYtest = false;
+    this->setStr("ShearYTest","false");
     bool expXYtest = false;
+    this->setStr("expXYtest","false");
     bool expXtest = false;
+    this->setStr("expXtest","false");
     bool expYtest = false;
+    this->setStr("expYtest","false");
     
     bool writeStates = false;
     this->setStr("writeStates","false");
@@ -554,38 +566,38 @@ SemiflexibleInput::SemiflexibleInput(std::string paramFileName)
     inFile.close();   
 
 std::cout << "\n" << "Input file now closed." << "\n" << std::endl;
-    /////////////////////////////////////////////////////////////////////////////
-    /////////////////////////////////////////////////////////////////////////////
-    //
-    //                        Done reading input file
-    //
-    // Now we need to do a few calculations of "derived" parameters
-    // from those read from the input file.
-    //
-    /////////////////////////////////////////////////////////////////////////////
-    /////////////////////////////////////////////////////////////////////////////
-
-    // JKP: kC is calculated here? Why is it a commented out parameter in
-    // the input file?
-    //
-    // WSK: I think the bending modulus used to be a parameter that we
-    // could set in the input file, but then someone changed it to be
-    // derived from the persistence length and kT.
-    if(kC < 0.0) {
-        kC = kT*L_p;
-    }	
-	
-    ///////////////////////////////////////////////////////////////////
-    //
-    // Retrieve gel geometry from a file
-    //
-    ///////////////////////////////////////////////////////////////////
-    if(retrieveGel) {
+/////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////
+//
+//                        Done reading input file
+//
+// Now we need to do a few calculations of "derived" parameters
+// from those read from the input file.
+//
+/////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////
+ 
+// JKP: kC is calculated here? Why is it a commented out parameter in
+// the input file?
+//
+// WSK: I think the bending modulus used to be a parameter that we
+// could set in the input file, but then someone changed it to be
+// derived from the persistence length and kT.
+ if(kC < 0.0) {
+   kC = kT*L_p;
+ }	
+ 
+ ///////////////////////////////////////////////////////////////////
+ //
+ // Retrieve gel geometry from a file
+ //
+ ///////////////////////////////////////////////////////////////////
+ if(retrieveGel) {
       if(kC <= 0.0 || l_B <= 0.0) {
 	std::cerr << "Error: input file must have either persistence length L_p or bending modulus kC." << std::endl;
 	exit(1);
       }
-
+      
       // std::ostringstream tmpStr;
       // tmpStr << setprecision(16) << kC;
       if(!adaptiveMeshing) {
@@ -722,22 +734,20 @@ std::cout << "\n" << "Input file now closed." << "\n" << std::endl;
       std::cout << "System size: " << syssize[0] << ", " << syssize[1] << std::endl;
       std::cout << "# nodes/filament: " << nNodesPerFilament << std::endl;
       std::cout << "Bond type: " << bondType << std::endl;
-      for(PMIter pmi=_pm.begin(); pmi!=_pm.end(); pmi++) {
-	std::cout << pmi->first << ": " << pmi->second << std::endl;
-      }
+      //for(PMIter pmi=_pm.begin(); pmi!=_pm.end(); pmi++) {
+      //std::cout << pmi->first << ": " << pmi->second << std::endl;
+      //}
 
       std::string fName = getGelFileName_input(gelDirectory,_pm);
       
       curGelNum = getCurGelNum_input(fName);
       char curGelNumS [50];
       sprintf(curGelNumS, "%d",curGelNum);
+      
+      this->setStr("storage file name",fName);
 
-			// Why are we only using "storage file name" for adaptive meshing
-			// Should this be for when we create gels? 
-			// This needs to be looked at. 
-      if(adaptiveMeshing) 
-      _pm.insert(pair<std::string, std::string>("storage file name",fName));
-      _pm.insert(pair<std::string, std::string>("gel current number",curGelNumS));
+      this->setInt("gel current number",curGelNum);
+	
     
     // Write out parameter map
     std::cout << "\n" << "-----Parameter Map---------" << std::endl;
