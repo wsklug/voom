@@ -1,4 +1,4 @@
-// -*- C++ -*-
+// -*- C++ -*-sint
 //----------------------------------------------------------------------
 //
 //                          
@@ -226,8 +226,7 @@ SemiflexibleInput::SemiflexibleInput(std::string paramFileName)
     // instead of here? "bondType" is dependent on k_max, 
     // which is not listed in the input file. There is an F_max though.
     std::string bondType = "Spring";
-    _pm.insert(pair< std::string, std::string >("bondType",bondType));
-    
+    this->setStr("bondType",bondType);
     
     
     bool linearizedentropic = false;
@@ -235,30 +234,30 @@ SemiflexibleInput::SemiflexibleInput(std::string paramFileName)
     double linentmult = 1.0;
     
     std::string solverType = "LBFGSB";
-    
+    this->setStr("solverType","LBFGSB");
     bool cutOffEnds = false;
-    _pm.insert(pair< std::string, std::string >("Cut Off Ends","false"));
-    
+    this->setStr("Cut Off Ends","false");
     double viscReg = -1.0;
     
     bool relaxPrestress = false;
-    
+    this->setStr("relaxPrestress","false");
     bool retrieveGel = false;
-    _pm.insert(pair< std::string, std::string >("retrieveGel","false"));
-    
+    this->setStr("retrieveGel","false");
     bool checkConsist = false;
-    
+    this->setStr("checkConsist","false");
     bool shearXtest = false;
+    this->setStr("ShearXTest","false");
     bool shearYtest = false;
     bool expXYtest = false;
     bool expXtest = false;
     bool expYtest = false;
     
     bool writeStates = false;
+    this->setStr("writeStates","false");
     bool zeroReturn = false;
-    
+    this->setStr("zeroReturn","false");
     bool adaptiveMeshing = false;
-    _pm.insert(pair< std::string, std::string >("adaptiveMeshing","false"));
+    this->setStr("adaptiveMeshing","false");
     double minLength = -1.0;
     
     std::string polydisp = "none";
@@ -279,6 +278,7 @@ SemiflexibleInput::SemiflexibleInput(std::string paramFileName)
     ////////////////////////////////////////////////////////////////////
     
     double shrStart = 0.0;
+    _pm.insert(pair< std::string, std::string >("shrStart","false"));
     double shrEnd = -1.0;
     int nShrSteps = -1;
     double shrStep = -1.0;
@@ -335,8 +335,11 @@ SemiflexibleInput::SemiflexibleInput(std::string paramFileName)
 	      _pm.insert(pair< std::string, std::string >("viscosity",parValStr));
 	      
             }
-            else if(parName.find("SolverType")!=string::npos) solverType = parValStr.data();
-            // else if(parName.find("r")!=string::npos) r = parVal;
+            else if(parName.find("SolverType")!=string::npos){
+	      solverType = parValStr.data();
+	      this->setStr("solverType",solverType);
+	    }
+	    // else if(parName.find("r")!=string::npos) r = parVal;
             else if(parName.find("k_max")!=string::npos) {
               k_max = atof(parValStr.data());
               _pm.insert(pair< std::string, std::string >("k_max",parValStr));
@@ -427,7 +430,10 @@ SemiflexibleInput::SemiflexibleInput(std::string paramFileName)
                 }
             }
             else if(parName.find("RelaxPrestress")!=string::npos) {
-                if(atof(parValStr.data()) >= .5) relaxPrestress = true;
+	      if(atof(parValStr.data()) >= .5){
+		relaxPrestress = true;
+		this->setStr("relaxPrestress","true");
+	      }
             }
             else if(parName.find("Prestress")!=string::npos) {
                 if(atof(parValStr.data()) < 0.5) _pm.insert(pair< std::string, std::string >("prestress","false"));
@@ -437,14 +443,16 @@ SemiflexibleInput::SemiflexibleInput(std::string paramFileName)
             	// JKP: why set retrieveGel = false if is initialized as false?
                 if(atof(parValStr.data()) < 0.5) retrieveGel = false;
                 else {retrieveGel = true;
-                _pm["retrieveGel"] = "true";
+		  //_pm["retrieveGel"] = "true";
+		  this->setStr("retrieveGel","true");
                 }
             }
             else if(parName.find("AdaptiveMesh")!=string::npos) {
                 if(atof(parValStr.data()) >= .5) {
-                adaptiveMeshing = true;
-                _pm["adaptiveMeshing"] = "true";
-                }
+		  adaptiveMeshing = true;
+		  //_pm["adaptiveMeshing"] = "true";
+		  this->setStr("adaptiveMeshing","true");
+		}
             }
             else if(parName.find("ShortSegRelief")!=string::npos) {
                 _pm.insert(pair< std::string, std::string >("nearby pair removal method",parValStr.data()));
@@ -459,11 +467,17 @@ SemiflexibleInput::SemiflexibleInput(std::string paramFileName)
                 parValStr.data()));
             }
             else if(parName.find("CutOffEnds")!=string::npos) {
-                if(atof(parValStr.data()) >= .5) cutOffEnds = true;
+	      if(atof(parValStr.data()) >= .5){
+		cutOffEnds = true;
+		_pm["Cut Off Ends"] = "true";
+	      }
 	    }
             else if(parName.find("ShearXTest")!=string::npos) {
-                if(atof(parValStr.data()) >= .5) shearXtest = true;
-            }
+	      if(atof(parValStr.data()) >= .5){
+		shearXtest = true;
+		_pm["ShearXTest"] = "true";
+	      }
+	    }
             else if(parName.find("ShearYTest")!=string::npos) {
                 if(atof(parValStr.data()) >= .5) shearYtest = true;
             }
@@ -477,11 +491,17 @@ SemiflexibleInput::SemiflexibleInput(std::string paramFileName)
                 if(atof(parValStr.data()) >= .5) expYtest = true;
             }
             else if(parName.find("WriteStates")!=string::npos) {
-                if(atof(parValStr.data()) >= .5) writeStates = true;
+	      if(atof(parValStr.data()) >= .5){
+		writeStates = true;
+		this->setStr("writeStates","true");
+	      }
             }
             else if(parName.find("Zero_Return")!=string::npos) {
-                if(atof(parValStr.data()) >= .5) zeroReturn = true;
-            }
+	      if(atof(parValStr.data()) >= .5){
+		zeroReturn = true;
+		this->setStr("zeroReturn","true");
+	      }
+	    }
             else if(parName.find("Polydispersity")!=string::npos) {
                 polydisp = parValStr;
                 _pm.insert(pair< std::string, std::string >("polydispersity",polydisp));
@@ -682,27 +702,21 @@ std::cout << "\n" << "Input file now closed." << "\n" << std::endl;
 
       lambda = (L_over_lc/L)*pow(L_over_lc/(L*l_B),1.0/3.0);
 
-      // std::ostringstream lambstr;
-      // lambstr << setprecision(16) << lambda;
-      // _pm["lambda"] = lambstr.str();
       this->setReal("lambda", lambda);
-    
-      // std::ostringstream tmpSx;
-      // tmpSx << setprecision(16) << syssize[0];
-      // _pm.insert(pair< std::string, std::string >("Wx",tmpSx.str()));
+      
       this->setReal("Wx", syssize[0]);
-      // std::ostringstream tmpSy;
-      // tmpSy << setprecision(16) << syssize[1];
-      // _pm.insert(pair< std::string, std::string >("Wy",tmpSy.str()));
+      
       this->setReal("Wy", syssize[1]);
-      // std::ostringstream tmpLl_c;
-      // tmpLl_c << setprecision(16) << L_over_lc;
-      // _pm.insert(pair< std::string, std::string >("L/l_c",tmpLl_c.str()));
+      
       this->setReal("L/l_c", L_over_lc);
-      // std::ostringstream tmpdL;
-      // tmpdL << setprecision(16) << dL;
-      // _pm.insert(pair< std::string, std::string >("dL",tmpdL.str()));
+      
       this->setReal("dL", dL);
+
+      this->setReal("shrStart",shrStart);
+      
+      this->setReal("shrEnd",shrEnd);
+      
+      this->setReal("shrStep",shrStep);
 
       std::cout << "Constructing a gel with the following properties:" << std::endl;
       std::cout << "System size: " << syssize[0] << ", " << syssize[1] << std::endl;
@@ -715,14 +729,15 @@ std::cout << "\n" << "Input file now closed." << "\n" << std::endl;
       std::string fName = getGelFileName_input(gelDirectory,_pm);
       
       curGelNum = getCurGelNum_input(fName);
-
+      char curGelNumS [50];
+      sprintf(curGelNumS, "%d",curGelNum);
 
 			// Why are we only using "storage file name" for adaptive meshing
 			// Should this be for when we create gels? 
 			// This needs to be looked at. 
       if(adaptiveMeshing) 
       _pm.insert(pair<std::string, std::string>("storage file name",fName));
-
+      _pm.insert(pair<std::string, std::string>("gel current number",curGelNumS));
     
     // Write out parameter map
     std::cout << "\n" << "-----Parameter Map---------" << std::endl;

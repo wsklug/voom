@@ -73,6 +73,11 @@ namespace voom {
   std::string storageTotalName = storageDirectoryName + storageFileName; 
   	
 	
+  std::cout << "fildens is " << filDens << std::endl;
+  std::cout << "filLengths is " <<filLength<< std::endl;
+  std::cout << "cutOffends is " <<cutOffEnds<< std::endl;
+  std::cout << "minLength is " <<minLength<< std::endl;
+  std::cout << "targetSegLenth is " <<targetSegLength<< std::endl;
   // ------------------ADAPTIVE MESH PARAMETERS------------------
 
   
@@ -87,6 +92,7 @@ namespace voom {
 
   // ------------------BEGIN CREATING GEL----------------------
   bool retrieveGelFlag = input->getBool("retrieveGel");
+  
   if (!retrieveGelFlag) {
 
 
@@ -140,7 +146,8 @@ namespace voom {
     // passed in. 
     ////////////////////////////////////////////////////////////////
 
-    std::cout << "Starting gel creation." << std::endl;
+    std::cout << "Starting gel creation with " << nFils << "filaments" << std::endl;
+    
     for(int i=0; i<nFils; i++) {
       //rngps.seed((unsigned int)time(0)+i);
       rnguni.seed((unsigned int)time(0)+i);
