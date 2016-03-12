@@ -34,9 +34,10 @@
 #include <vtkUnsignedIntArray.h>
 #include <vtkCell.h>
 
-#include "LennardJones.h"
+#include "Morse.h"
+#include "SpringPotential.h"
 #include "PotentialBody.h"
-#include "Utils/PrintingProtein.h"
+
 
 #if defined(_OPENMP)
 #include <omp.h>
@@ -48,6 +49,10 @@ using namespace voom;
 
 void insertValenceInVtk(const std::string fileName,\
 			vtkSmartPointer<vtkPolyData> mesh);
+
+std::vector<double> calcEdgeLenAndStdDev
+(std::vector< DeformationNode<3>* > a, 
+ vector< tvmet::Vector<int,3> > b);
 
 int main(int argc, char* argv[])
 {
@@ -86,7 +91,6 @@ int main(int argc, char* argv[])
   double step_inp=0.0;
   bool remesh = true;
   string prestressFlag = "yes";
-  bool CST=false;
   bool badCommandLine=false;
   bool unload=false;
   int option;
@@ -107,13 +111,8 @@ int main(int argc, char* argv[])
       minStep_inp = std::atof(optarg);
       std::cout << "min step: " << minStep_inp << std::endl;
       break;
-//     case 'n':
-//       maxIter_inp = std::atof(optarg);
-//       std::cout << "max iterations: " << maxIter_inp << std::endl;
-//       break;
-    case 'p' :
-//       if( std::string(optarg) == std::string("no") ) 
-	prestressFlag = std::string(optarg);
+    case 'p' : 
+      prestressFlag = std::string(optarg);
       std::cout << "prestressFlag: " << prestressFlag << std::endl;
       break;
     case 's':
@@ -123,13 +122,6 @@ int main(int argc, char* argv[])
     case 'v':
       viscosity_inp = std::atof(optarg);
       std::cout << "viscosity: " << viscosity_inp << std::endl;
-      break;
-    case 'e':
-      if( std::string(optarg) == std::string("CST") ){
-	CST = true;
-	std::cout << "Using mixed formulation with CST elements for stretching."
-		  << std::endl;
-      }
       break;
     case 'f':
       friction_inp = std::atof(optarg);
@@ -157,6 +149,28 @@ int main(int argc, char* argv[])
 	      << std::endl;
     return 0;
   }
+
+  //For Morse material 
+  double epsilon;
+  double percentStrain;
+  double pressureFactor;
+  bool harmonicRelaxNeeded;
+  int interimIter = 10;
+
+  //Read epsilon and percentStrain from input file. percentStrain is
+  //calculated so as to set the inflection point of Morse potential
+  //at a fixed distance relative to the equilibrium separation
+  //e.g. 1.1*R_eq, 1.5*R_eq etc.
+  std::ifstream miscInpFile("miscInp.dat");
+  assert(miscInpFile);
+  string temp;
+  miscInpFile >> temp >> epsilon
+	      >> temp >> percentStrain
+	      >> temp >> pressureFactor
+	      >> temp >> harmonicRelaxNeeded
+	      >> temp >> interimIter;
+  
+  miscInpFile.close();
 
   string inputFileName = modelName + ".vtk";
   vtkDataSetReader * reader = vtkDataSetReader::New();
@@ -200,10 +214,7 @@ int main(int argc, char* argv[])
     vtkSmartPointer<vtkExtractEdges>::New();
   extractedEdges->SetInput(mesh);
   extractedEdges->Update();
-  //Uncommenting the next line fetches the line entities, if you want 
-  //them : Amit
-  //vtkCellArray * lines = extractedEdges()->GetOutput()->GetLines();
-
+  
   //Number of Cells in vtkExtractEdges = number of edges : Amit
   std::cout << "Number of edges in the mesh= " 
 	    << extractedEdges->GetOutput()->GetNumberOfCells()
@@ -212,6 +223,7 @@ int main(int argc, char* argv[])
 
   // create vector of nodes
   double Rcapsid = 1.0;
+  
   int dof=0;
   std::vector< NodeBase* > nodes;
   std::vector< DeformationNode<3>* > defNodes;
@@ -247,6 +259,19 @@ int main(int argc, char* argv[])
     connectivities.push_back(c);
   }
 
+  // Calculate side lengths average and std dev of the 
+  //equilateral triangles
+  std::vector<double> lengthStat = 
+    calcEdgeLenAndStdDev(defNodes,connectivities);  
+  double EdgeLength = lengthStat[0];
+  double stdDevEdgeLen = lengthStat[1];
+  std::cout<<"Before any relaxation :" << endl
+	   <<"   Average triangle edge length = "<< std::setprecision(10)
+	   << EdgeLength << endl
+	   <<"   Standard deviation = " << std::setprecision(10)
+	   << stdDevEdgeLen << endl;
+  std::cout.precision(6);
+
   double C0 = 0.0;
 
   // rescale size 
@@ -266,68 +291,140 @@ int main(int argc, char* argv[])
     }
   }
   else {
+    //Rescale the capsid such that triangle edge-lengths are unity
     for(int i=0; i<defNodes.size(); i++) {
       DeformationNode<3>::Point x;
       x = defNodes[i]->point();
-      x *= Rcapsid/Ravg;
+      x *= 1.0/EdgeLength;
       defNodes[i]->setPoint(x);
       defNodes[i]->setPosition(x);
     }
+    
+    //Recalculate edge lengths and capsid radius
+    lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);  
+    EdgeLength = lengthStat[0];
   }
 
-  double Y = sqrt(gamma_inp);
-  double KC = 1.0/Y;
+  Ravg = 0.0;
+  for(int i=0; i < defNodes.size(); i++) {
+    DeformationNode<3>::Point x;
+    x = defNodes[i]->point();
+    double tempRadius = tvmet::norm2(x);
+    Ravg += tempRadius;
+  }
+  Ravg /= defNodes.size();
 
-  // Introduce a numerical scaling factor to make energy and forces
-  // large enough to avoid issues with machine precision.  Later
-  // divide forces by factor when printing to file.
-  double scalingFactor = 1.0;//e6;
-  Y *= scalingFactor;
-  KC *= scalingFactor;
+  std::cout<<"Radius of capsid after rescaling = "<< Ravg << endl;
 
-  //Amit: Set nu=0 and Yb=0 so that LoopShellBody does not handle
-  //stretching anymore.
-  double Yb=0.0;  
-  double nu = 0.0;
-  double KG = -2.0*(1.0-(1.0/3.0))*KC;
 
-  if(verbose) 
-    std::cout << " Y: " << Y << std::endl
-	      << " nu: " << nu << std::endl
-	      << " KC: " << KC << std::endl
-	      << " KG: " << KG << std::endl
-	      << " C0: " << C0 << std::endl;
+  //Material properties
+  double Rshift = EdgeLength;
+  double sigma  = (100/(Rshift*percentStrain))*log(2.0);
+  double PotentialSearchRF=1.2*Rshift; 
+  double springConstant = 2*sigma*sigma*epsilon;
+  double pressure = 12*sigma*epsilon
+    *(exp(-2*sigma*Rshift)- exp(-sigma*Rshift)
+      + exp(-1.46410*sigma*Rshift) - exp(-0.7321*sigma*Rshift))
+    /(3*Ravg*Ravg);
 
-  // create Body
+  if(pressure < 0.0){
+    pressure = pressure*(-1);
+  }
+
+  double fracturePressure = (3.82)*sigma*epsilon/(Rshift*Rshift);
+  std::cout<<"Fracture Pressure = "<< fracturePressure << endl
+	   <<"Minimum Pressure = "<< pressure << endl;
+  pressure *= pressureFactor;
+  std::cout<<"Pressure in use = "<< pressure << endl;
+
+  double gamma = gamma_inp;
+  double Y = 2.0/sqrt(3)*springConstant; // Young's modulus
+  double nu = 1.0/3.0;
+  double KC = Y*Ravg*Ravg/gamma; 
+  double KG = -2*(1-nu)*KC; // Gaussian modulus
+  C0 = 0.0;
+  double ARtol = 1.5;
   int quadOrder = 2;
 
-  typedef FVK MaterialType;
-  if(CST) Yb=1.0e-6*Y;
-  MaterialType bending( KC, KG, C0, Yb, nu );
-	
+  int m=5;
+  int maxIter=1e5;
+  double factr=1.0e+1;
+  double pgtol=1.0e-7;
+  int iprint = 1;
+
+  std::stringstream sstm;
+  string fname = inputFileName.substr(0,inputFileName.find("."));
+  string rName;
+  string actualFile;
+
+  typedef FVK MaterialType;	
   typedef LoopShellBody<MaterialType> LSB;
+  typedef LoopShell<MaterialType> LS;
+  MaterialType bending(KC,KG,C0,0.0,0.0);
+
+  if(harmonicRelaxNeeded){
+
+    //****** Relax the initial mesh using harmonic potential ****** //
+
+    LSB * bd1 = new LSB(bending, connectivities, nodes, quadOrder, 
+			pressure, 0.0,0.0,1.0e4,1.0e6,1.0e4,
+			multiplier,noConstraint,noConstraint);
+    bd1->setOutput(paraview);
+    SpringPotential SpringMat(springConstant, Rshift);
+    PotentialBody * SpringBody = new 
+      PotentialBody(&SpringMat, defNodes, PotentialSearchRF);
+
+    //Create Model
+    Model::BodyContainer bdc1;
+    bdc1.push_back(SpringBody);
+    bdc1.push_back(bd1);    
+    Model model1(bdc1,nodes);
+     
+    std::cout<< "Spring constant: " << springConstant << endl;
+    std::cout<< "Relaxing the mesh using harmonic potential..."<< endl;
+
+    Lbfgsb solver(model1.dof(), m, factr, pgtol, iprint, 1e5 );
+    solver.solve( &model1 );
+    
+    std::cout<<"Harmonic potential relaxation complete." << endl;
+
+    //Print to VTK file
+    sstm << fname <<"-relaxed-harmonic";
+    rName = sstm.str();
+    model1.print(rName);
+    sstm <<"-bd1.vtk";
+    actualFile = sstm.str();
+    sstm.str("");
+    sstm.clear();
+    sstm << fname <<"-relaxed-harmonic.vtk";
+    rName = sstm.str();
+    std::rename(actualFile.c_str(),rName.c_str());      
+    sstm.str("");
+    sstm.clear();
+
+    //Release allocated memory
+    delete bd1;
+    delete SpringBody;
+
+    //Recalculate edge lengths and dependent quantities
+    lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);  
+    EdgeLength = lengthStat[0];
+    Rshift = EdgeLength;
+    sigma  = (100/(Rshift*percentStrain))*log(2.0);
+    springConstant = 2*sigma*sigma*epsilon;
+    std::cout<<"After relaxing with harmonic potential: "<< endl
+	     <<"   Average triangle edge length = "<< std::setprecision(10)
+	     << EdgeLength << endl
+	     <<"   Standard deviation = " << std::setprecision(10)
+	     << stdDevEdgeLen << endl;
+    std::cout.precision(6); 
+  }
+
+  //********************************** Actual Indentation **********************//
+
   LSB * bd = new LSB(bending, connectivities, nodes, quadOrder);
-  
   bd->setOutput(paraview);
 
-  double EquilateralEdgeLength = 0.0;
-
-  for(int i=0; i<connectivities.size(); i++) {
-    std::vector<int> cm(3);
-    for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
-    // Edge vectors in current config.
-    tvmet::Vector<double,3> 
-      e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
-      e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
-      e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
-      eCent(defNodes[cm[2]]->point());
-    // Compute average edge length for each triangle
-    EquilateralEdgeLength += 
-      (tvmet::norm2(e31) + tvmet::norm2(e32) + tvmet::norm2(e12))/3.0;
-  }
-  EquilateralEdgeLength /= connectivities.size();
-  std::cout<<"Average equilateral triangle edge length:"<<EquilateralEdgeLength<<endl;
-  
   // If we want pre-stress removed, then reset the reference
   // configuration for stretching, and reset the spontaneous curvature
   // for bending.
@@ -341,89 +438,34 @@ int main(int argc, char* argv[])
 	p->material.setSpontaneousCurvature(2.0*( p->material.meanCurvature() ) );
       }
     }
-    bd->SetRefConfiguration(EquilateralEdgeLength);
+    bd->SetRefConfiguration(EdgeLength);
   }
 
-  // create Model
-  Model::BodyContainer bdc;
-  bdc.push_back(bd);
-
-  // stretching body
-  if(CST) {
-    std::vector< std::vector<int> > s_connectivities;
-    for(int i=0; i<connectivities.size(); i++) {
-      std::vector<int> c(3);
-      for(int j=0; j<3; j++) c[j]=connectivities[i](j);
-      s_connectivities.push_back(c);
-    }
-
-    MaterialType stretching( 0.0, 0.0, C0, Y, nu );
-    quadOrder = 1;
-    typedef C0MembraneBody<TriangleQuadrature,MaterialType,ShapeTri3> MB;
-    MB * bdm = new MB(stretching, s_connectivities, nodes, quadOrder, 0.0);
-    bdm->setOutput(paraview);
-
-    if( prestressFlag == "yes" ) {
-      // reset the ref configuration of all triangles to be
-      // equilateral 
-      bdm->SetRefConfiguration(EquilateralEdgeLength);
-    } else {
-      // reset the ref configuration of all triangles to the current
-      // configuration
-      bdm->resetReference();      
-    }
-
-    bdc.push_back(bdm);
-  }
-
-  // Potential input parameters
-  //For Lennard-Jones sigma = a/(2^(1/6)) where a = EquilateralEdgeLength
-  double sigma = EquilateralEdgeLength/1.122462048;
-  //double PotentialSearchRF = 1.5*EquilateralEdgeLength;
-  double PotentialSearchRF = 1.5;
-  double epsilon = Y*sigma*sigma/32.993511288;
-  double ARtol = 1.5;
-  std::cout<< "Lennard-Jones potential parameters:" << endl
+  std::cout<< "Morse  potential parameters:" << endl
 	   << "sigma = " << sigma << endl	   
 	   << "PotentialSearchRF = " << PotentialSearchRF << endl
 	   << "epsilon = " << epsilon << endl
 	   << "Is Remesh On? " << remesh << endl
 	   << "ARtol = " << ARtol << endl;
   
-  // Protein body implemented using Lennard-Jones body
-  // Initiliaze potential material
-  // ProteinLennardJones Mat(epsilon, sigma);
-  LennardJones Mat(epsilon, sigma);
+  // Protein body implemented using Morse potential body
+  Morse Mat(epsilon, sigma, Rshift);
 
   // Then initialize potential body
-  PotentialBody * PrBody = new PotentialBody(&Mat,nodes,PotentialSearchRF);  
+  PotentialBody * PrBody = new PotentialBody(&Mat,defNodes,PotentialSearchRF);  
   PrBody->compute(true, false, false);
-  std::cout << "Initial protein body energy = " << PrBody->energy() << endl;  
-  bdc.push_back(PrBody);  
+  std::cout << "Initial protein body energy = " << PrBody->energy() << endl;    
+
+  // create Model
+  Model::BodyContainer bdc;
+  bdc.push_back(PrBody);
+  bdc.push_back(bd);
   
   Model model(bdc,nodes);
 
-  int m=5;
-  int maxIter=500;//1000;//model.dof();
-  double factr=1.0e+1;
-  double pgtol=1.0e-8;
-  int iprint = 0;
-  int maxIter_inp=0;
-  ifstream lbfgsbinp("lbfgsb.inp");
-  
-  lbfgsbinp >> iprint >> factr >> pgtol >> m >> maxIter_inp;
-  if(verbose) 
-    std::cout << "Input iprint: " << iprint << std::endl
-	      << "Input factr: " << factr << std::endl
-	      << "Input pgtol: " << pgtol << std::endl
-	      << "Input m: " << m << std::endl
-	      << "Input maxIter: " << maxIter_inp << std::endl;
-  maxIter = std::max(maxIter,maxIter_inp);
+  Lbfgsb solver2(model.dof(), m, factr, pgtol, iprint, 1e5);
 
-  Lbfgsb solver(model.dof(), m, factr, pgtol, iprint, maxIter );//(true);
-
-  std::cout << "Relaxing shape for gamma = " << gamma_inp << std::endl
-	    << "Energy = " << solver.function() << std::endl;
+  std::cout << "Relaxing shape for gamma = " << gamma_inp << std::endl;
   
   for(int n=0; n<nodes.size(); n++) {
     for(int i=0; i<nodes[n]->dof(); i++) nodes[n]->setForce(i,0.0);
@@ -435,43 +477,78 @@ int main(int argc, char* argv[])
   }
 
   std::cout << "Initial Shape." << std::endl
-	    << "Energy = " << solver.function() << std::endl;
+	    << "Energy = " << solver2.function() << std::endl;
   
-  string fname = modelName;
+  fname = modelName;
   fname += ".initial";
   model.print(fname);
+  actualFile = fname + "-bd1.vtk";
+  std::rename(actualFile.c_str(),fname.c_str());
 
-  // relax initial shape
-  solver.solve(&model);
+  // relax initial shape;
+  solver2.solve(&model);
 
   std::cout << "Shape relaxed." << std::endl
-	    << "Energy = " << solver.function() << std::endl;
+	    << "Energy = " << solver2.function() << std::endl;
   
   fname = modelName;
   fname += ".relaxed";
   model.print(fname);
+  actualFile = fname + "-bd1.vtk";
+  std::rename(actualFile.c_str(),fname.c_str());
 
+  //Calculate centre of sphere as average of position vectors of all nodes.
   tvmet::Vector<double,3> Xavg(0.0);
   for ( int i = 0; i<defNodes.size(); i++){
     Xavg += defNodes[i]->point();
   }
-  Xavg /= nodes.size();
-  Ravg = 0.0;
-  for ( int i = 0; i<defNodes.size(); i++){
-    Ravg += tvmet::norm2( defNodes[i]->point() - Xavg );
+  Xavg /= defNodes.size();
+
+  //We will calculate radius using the quadrature points
+  LSB::FeElementContainer elements = bd->shells();
+  std::vector<double> qpRadius(elements.size(),0.0);
+
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
+  for(int e=0; e < elements.size();e++){
+
+    const LS::NodeContainer eleNodes = elements[e]->nodes();      
+    LS::QuadPointContainer quadPoints = elements[e]->quadraturePoints();
+
+    for(LS::ConstQuadPointIterator quadPoint = quadPoints.begin();
+	quadPoint != quadPoints.end(); ++quadPoint){
+
+      LoopShellShape s = (*quadPoint).shape;
+      const LoopShellShape::FunctionArray fn = s.functions();
+      tvmet::Vector<double,3> Xq(0.0);
+
+      for(int i=0;i<fn.size();i++){
+	Xq += tvmet::mul(eleNodes[i]->point(),fn(i));
+      }
+
+      double qpR = tvmet::norm2(Xq-Xavg);
+      qpRadius[e] = qpR;
+    }
   }
-  Ravg /= nodes.size();
+    
+  Ravg = 0.0;
+  for ( int i = 0; i < qpRadius.size(); i++){
+    Ravg += qpRadius[i];
+  }
+  Ravg /= qpRadius.size();
+  std::cout<<"Radius of capsid after relaxation = "<< Ravg << endl;
   
   double dRavg2 = 0.0;
-  for ( int i = 0; i<defNodes.size(); i++){
-    double dR = (tvmet::norm2( defNodes[i]->point() - Xavg) - Ravg); 
+  for ( int i = 0; i<qpRadius.size(); i++){
+    double dR =  qpRadius[i]-Ravg; 
     dRavg2 += dR*dR;
   }
-  dRavg2 /= nodes.size();
-  
+  dRavg2 /= qpRadius.size();
+
+  double asphericity = dRavg2/(Ravg*Ravg);
   double gammaCalc = Y*Ravg*Ravg/KC;
-  double asphericity = dRavg2/(Ravg*Ravg); 
-  
+
   std::cout << "Effective 2D Young's modulus = " << Y << endl
 	    << "Effective FVK number = " << gammaCalc << endl
 	    << "Asphericity = " << asphericity << endl;
@@ -496,7 +573,7 @@ int main(int argc, char* argv[])
 
   double friction = friction_inp;
 
-  double k_AL = 1.0e2*scalingFactor;
+  double k_AL = 1.0e2;
   RigidHemisphereAL * afm 
     = new RigidHemisphereAL( defNodes, k_AL, afmR, xc, friction );
   afm->updateContact();
@@ -539,8 +616,8 @@ int main(int argc, char* argv[])
   double Z_drop = Zbegin;
   blitz::Array<double,1> x_prev(model.dof());
   blitz::Array<double,1> u_prev(model.dof());
-  model.getField(solver);
-  for(int i=0; i<model.dof(); i++ ) x_prev(i) = solver.field(i);
+  model.getField(solver2);
+  for(int i=0; i<model.dof(); i++ ) x_prev(i) = solver2.field(i);
   u_prev = 0.0;
 
   // %%%%%%%%%%%%%%%%%%%%%%
@@ -552,7 +629,7 @@ int main(int argc, char* argv[])
   // Following variables is for output from LoopShellBody::Remesh()
   uint elementsChanged = 0;
 
-  for(double Z = Zbegin; /*Z<Zend+0.5*dZ*//*Z>=Zbegin*/; Z+=dZ, step++) {
+  for(double Z = Zbegin; ;Z+=dZ, step++) {
     
     // initial guess
     if(step==1) {
@@ -560,14 +637,14 @@ int main(int argc, char* argv[])
       for(int a=0; a<defNodes.size(); a++ ) {
 	defNodes[a]->addPoint(2,0.5*dZ);
       }
-      model.getField(solver);
+      model.getField(solver2);
     } else if( dZ > 0 ){ // 
       // add scaled version of previous displacement as an initial
       // guess, but only in loading direction
       for(int i=0; i<model.dof(); i++ ) {
-	solver.field(i) = x_prev(i) + 0.99*dZ*u_prev(i);
+	solver2.field(i) = x_prev(i) + 0.99*dZ*u_prev(i);
       }      
-      model.putField(solver);
+      model.putField(solver2);
     }
 
     // move glass up by dZ
@@ -589,8 +666,8 @@ int main(int argc, char* argv[])
       if(viter==viterMax-1) vr.setViscosity(minViscosity);
 
       blitz::Array<double,1> vSave(model.dof());
-      model.getField(solver);
-      for(int i=0; i<model.dof(); i++ ) vSave(i) = solver.field(i);
+      model.getField(solver2);
+      for(int i=0; i<model.dof(); i++ ) vSave(i) = solver2.field(i);
       
       if(verbose) std::cout << std::endl 
 			    << "VISCOUS ITERATION: " << viter 
@@ -603,11 +680,11 @@ int main(int argc, char* argv[])
       afm->updateContact();
 
 
-      model.computeAndAssemble(solver, false, true, false);
+      model.computeAndAssemble(solver2, false, true, false);
       model.print("contact");
 
       
-      solver.solve( &model );
+      solver2.solve( &model );
       vrEnergy = vr.energy();
       bdEnergy = bd->energy();
 
@@ -615,7 +692,7 @@ int main(int argc, char* argv[])
 	std::cout << "ENERGY:" << std::endl
 		  << "viscous energy = " << vrEnergy << std::endl
 		  << "   body energy = " << bdEnergy << std::endl
-		  << "  total energy = " << solver.function() << std::endl
+		  << "  total energy = " << solver2.function() << std::endl
 		  << std::endl;
       }
 
@@ -641,7 +718,7 @@ int main(int argc, char* argv[])
       // step forward in "time", relaxing viscous energy & forces 
       vr.step();
 
-      if(vrEnergy < std::abs(vrTol*bdEnergy) && solver.projectedGradientNorm()<=pgtol &&
+      if(vrEnergy < std::abs(vrTol*bdEnergy) && solver2.projectedGradientNorm()<=pgtol &&
 	 std::max( afm->penetration(), glass->penetration() ) < 1.0e-2*std::abs(dZ) ) {
 	// viscous energy is small enough; exit
 	break;
@@ -659,7 +736,7 @@ int main(int argc, char* argv[])
 		<< "        height = " << height << std::endl
 		<< "   indentation = " << originalHeight-height << std::endl
 		<< std::endl;
-      }
+    }
 
     //
     // Do we want to keep this solution or back up and try again?
@@ -671,7 +748,7 @@ int main(int argc, char* argv[])
 
     // Compute displacement
     for(int i=0; i<model.dof(); i++ ) {
-      u_prev(i) = ( solver.field(i) - x_prev(i) )/std::abs(dZ);
+      u_prev(i) = ( solver2.field(i) - x_prev(i) )/std::abs(dZ);
     }
 
     // If displacement was bigger than dZ, some buckling event must
@@ -680,7 +757,7 @@ int main(int argc, char* argv[])
     if( max( abs( u_prev ) ) > 1.0 ) u_prev = 0.0;
 
     // Save current (successful) state as previous
-    for(int i=0; i<model.dof(); i++ ) x_prev(i) = solver.field(i);
+    for(int i=0; i<model.dof(); i++ ) x_prev(i) = solver2.field(i);
 
     if ( unload && Z >= Zend ) { // reached max indentation, now unload by reversing dZ
       dZ = -dZ;
@@ -702,14 +779,15 @@ int main(int argc, char* argv[])
 
 	//If some elements have changed then we need to reset the
 	//reference configuration with average side lengths
-	bd->SetRefConfiguration(EquilateralEdgeLength);
+	bd->SetRefConfiguration(EdgeLength);
 
 	//We also need to recompute the neighbors for PotentialBody
 	PrBody->recomputeNeighbors(PotentialSearchRF);
-      }
+	
+	//Relax again after remeshing
+	solver2.solve( &model );
 
-      //TODO: MAY HAVE TO CALL RECOMPUTENEIGHBOUR AGAIN FOR VERY SMALL
-      //PotentialSearchRad
+      }
 
     }// Remeshing ends here
 
@@ -718,9 +796,9 @@ int main(int argc, char* argv[])
     FvsZ << std::setw( 24 ) << std::setprecision(16) 
 	 << originalHeight-height
 	 << std::setw( 24 ) << std::setprecision(16) 
-	 << glass->FZ()/scalingFactor
+	 << glass->FZ()
 	 << std::setw( 24 ) << std::setprecision(16) 
-	 << afm->FZ()/scalingFactor
+	 << afm->FZ()
 	 << std::setw( 10 ) 
 	 << step
 	 << std::endl;
@@ -824,5 +902,71 @@ void insertValenceInVtk(const std::string fileName, vtkSmartPointer<vtkPolyData>
   appendTo->close();
 }
 
+///////////////////////////////////////////////////////////////////////////
+//                                                                       //
+//                    CALCEDGELENANDSTDDEV BEGINS                        //
+//                                                                       //
+///////////////////////////////////////////////////////////////////////////
+/*
+  Calculates average edge lengths of triangles in the mesh and the
+  standard deviation in the edge lengths.
+*/
 
+std::vector<double> calcEdgeLenAndStdDev
+(std::vector< DeformationNode<3>* > defNodes, 
+ vector< tvmet::Vector<int,3> > connectivities){
+
+  double EdgeLength = 0.0;
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
+  for(int i=0; i<connectivities.size(); i++) {
+    std::vector<int> cm(3);
+    for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
+    // Edge vectors in current config.
+    tvmet::Vector<double,3> 
+      e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
+      e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
+      e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
+      eCent(defNodes[cm[2]]->point());
+    // Compute average edge length for each triangle
+    double temp = 
+      (tvmet::norm2(e31) + tvmet::norm2(e32) + tvmet::norm2(e12))/3.0;
+
+#pragma omp atomic
+    EdgeLength += temp;
+  }
+  EdgeLength /= connectivities.size();  
+
+  // Calculate the standard deviation of side lengths of the
+  // equilateral triangles
+  double stdDevEdgeLen = 0.0;
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
+  for(int i=0; i<connectivities.size(); i++) {
+    std::vector<int> cm(3);
+    for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
+    // Edge vectors in current config.
+    tvmet::Vector<double,3> 
+      e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
+      e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
+      e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
+      eCent(defNodes[cm[2]]->point());
+    double temp = std::pow(tvmet::norm2(e31) - EdgeLength,2.0) +
+      std::pow(tvmet::norm2(e32) - EdgeLength,2.0) +
+      std::pow(tvmet::norm2(e12) - EdgeLength,2.0);
+    
+#pragma omp atomic
+    stdDevEdgeLen += temp;
+  }
+
+  stdDevEdgeLen /= connectivities.size();
+  stdDevEdgeLen = sqrt(stdDevEdgeLen);
+
+  std::vector<double> result;
+  result.push_back(EdgeLength);
+  result.push_back(stdDevEdgeLen);
+  return result;
+}
 

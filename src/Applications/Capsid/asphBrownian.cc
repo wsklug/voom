@@ -270,7 +270,7 @@ int main(int argc, char* argv[])
   string actualFile;
 
   ofstream myfile;
-  std::string dataOutputFile = "asphVsFVKMorse.dat";
+  std::string dataOutputFile = "BrownianRelax.dat";
 
   //If the file already exists then open it in append mode
   if(!ifstream(dataOutputFile.c_str())){
@@ -288,13 +288,14 @@ int main(int argc, char* argv[])
   //Parameters for the l-BFGS solver
   int m=5;
 
-  //int maxIter = 1e6;
-  int maxIter=100;
+  int maxIter1 = 1e2;
+  int maxIter2=1e5;
 
   double factr=1.0e+1;
   double pgtol=1e-7;
   int iprint = 1;
-  Lbfgsb solver(3*nodes.size(), m, factr, pgtol, iprint, maxIter );
+  Lbfgsb solver1(3*nodes.size(), m, factr, pgtol, iprint, maxIter1 );
+  Lbfgsb solver2(3*nodes.size(), m, factr, pgtol, iprint, maxIter2 );
 
   typedef FVK MaterialType;
   typedef LoopShellBody<MaterialType> LSB;
@@ -340,9 +341,8 @@ int main(int argc, char* argv[])
   double vrEnergy;
   double bdEnergy;
   double PrEnergy;
+  double energy = 0.0;
 
-  //***************************  SOLUTION LOOP ***************************//
-    
   //The Bodies
   MaterialType bending(KC,KG,C0,0.0,0.0);
   LSB * bd = new LSB(bending, connectivities, nodes, quadOrder, pressure,
@@ -370,10 +370,17 @@ int main(int argc, char* argv[])
   std::cout << "Pressure = " << pressure << endl
 	    << "Capsid radius = "<< Ravg << endl;
 
-  for(int n=0; n<nodes.size(); n++) {
-    for(int i=0; i<nodes[n]->dof(); i++) nodes[n]->setForce(i,0.0);
-  } 
-    
+  bool checkConsistency = false;
+  if(checkConsistency){
+    std::cout<< "Checking consistency......"<<std::endl;
+    bk.updateKick();
+    bd->checkConsistency(true);
+    PrBody->checkConsistency(true);
+  }
+
+
+  //***************************  SOLUTION LOOP ***************************//  
+  
   for(int viter = continueFromNum-1; viter < viterMax; viter++) {
 
     std::cout << std::endl 
@@ -385,11 +392,11 @@ int main(int argc, char* argv[])
     bk.updateKick();
 
     //For debugging we have limited the number of solver iterations to
-    //500 so that we can see the intermediate results before the
+    //100 so that we can see the intermediate results before the
     //solver diverges
     for(int z=0; z<interimIter; z++){
 	
-      solver.solve( &model );
+      solver1.solve( &model );
       //Print the files
       sstm << fname <<"-interim-" << nameSuffix << "-"<< z <<".vtk";
       rName = sstm.str();
@@ -410,148 +417,152 @@ int main(int argc, char* argv[])
     vrEnergy = vr.energy();
     bdEnergy = bd->energy();
     PrEnergy = PrBody->energy();
+    energy = solver1.function();
     
     std::cout << "ENERGY:" << std::endl
 	      << "viscous energy = " << vrEnergy << std::endl
 	      << "protein energy = " << PrEnergy << std::endl
 	      << "bending energy = " << bdEnergy << std::endl
-	      << "  total energy = " << solver.function() << std::endl
+	      << "  total energy = " << energy   << std::endl
 	      << std::endl;
     std::cout << "VISCOSITY: " << std::endl
 	      << "          velocity = " << vr.velocity() << std::endl
 	      << " updated viscosity = " << vr.viscosity() << std::endl
 	      << std::endl;
+
+    //*******************  REMESHING **************************//
+    bool remesh = true;
+    double ARtol = 1.5;
+    uint elementsChanged = 0;
+    
+    if(remesh) {     
+      elementsChanged = bd->Remesh(ARtol,bending,quadOrder);
       
-    // step forward in "time", relaxing viscous energy & forces 
-    vr.step();
-  } 
-    
-  // REMESHING
-  bool remesh = true;
-  double ARtol = 1.5;
-  uint elementsChanged = 0;
-
-  if(remesh) {     
-    elementsChanged = bd->Remesh(ARtol,bending,quadOrder);
-
-    //Print out the number of elements that changed due to remeshing
-    if(elementsChanged > 0){
-      std::cout<<"Number of elements that changed after remeshing = "
-	       <<elementsChanged<<"."<<std::endl;
-
-      //If some elements have changed then we need to reset the
-      //reference configuration with average side lengths
-      bd->SetRefConfiguration(EdgeLength);
-
-      //We also need to recompute the neighbors for PotentialBody
-      PrBody->recomputeNeighbors(PotentialSearchRF);
+      //Print out the number of elements that changed due to remeshing
+      if(elementsChanged > 0){
+	std::cout<<"Number of elements that changed after remeshing = "
+		 <<elementsChanged<<"."<<std::endl;
 	
-      //Relax again after remeshing
-      solver.solve( &model );
+	//If some elements have changed then we need to reset the
+	//reference configuration with average side lengths
+	bd->SetRefConfiguration(EdgeLength);
+	
+	//We also need to recompute the neighbors for PotentialBody
+	PrBody->recomputeNeighbors(PotentialSearchRF);
+	
+	//Relax again after remeshing
+	solver2.solve( &model );
+	energy = solver2.function();
+      }
     }
-  }
+    //*********************************************************//
+  
+    std::cout << "Shape relaxed." << std::endl
+	      << "Energy = " << energy << std::endl;
+
+    //Calculate maximum principal strains in all elements
+    //bd->calcMaxPrincipalStrains();
+
+    //********** Print relaxed configuration ************//
+    sstm << fname <<"-relaxed-" << nameSuffix;
+    rName = sstm.str();
+    model.print(rName);
+    sstm <<"-bd1.vtk";
+    actualFile = sstm.str();
+    sstm.str("");
+    sstm.clear();
+    sstm << fname <<"-relaxed-" << nameSuffix <<".vtk";
+    rName = sstm.str();
+    std::rename(actualFile.c_str(),rName.c_str());
+    sstm.str("");
+    sstm.clear();
+    //****************************************************//
+
+    //Re-calculate triangle edge length mean and deviation
+    lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);
+    EdgeLength = lengthStat[0];
+    stdDevEdgeLen = lengthStat[1];
+    std::cout<<"After relaxing with Morse potential: "<< endl
+	     <<"   Average triangle edge length = "<< std::setprecision(10)
+	     << EdgeLength << endl
+	     <<"   Standard deviation = " << std::setprecision(10)
+	     << stdDevEdgeLen << endl;
+    std::cout.precision(6);    
+
+    //Calculate centre of sphere as average of position vectors of all nodes.
+    tvmet::Vector<double,3> Xavg(0.0);
+    for ( int i = 0; i<defNodes.size(); i++){
+      Xavg += defNodes[i]->point();
+    }
+    Xavg /= defNodes.size();
     
-  std::cout << "Shape relaxed." << std::endl
-	    << "Energy = " << solver.function() << std::endl;
-
-
-  //Calculate maximum principal strains in all elements
-  //bd->calcMaxPrincipalStrains();
-
-  sstm << fname <<"-relaxed-" << nameSuffix;
-  rName = sstm.str();
-  model.print(rName);
-  sstm <<"-bd1.vtk";
-  actualFile = sstm.str();
-  sstm.str("");
-  sstm.clear();
-  sstm << fname <<"-relaxed-" << nameSuffix <<".vtk";
-  rName = sstm.str();
-  std::rename(actualFile.c_str(),rName.c_str());
-  sstm.str("");
-  sstm.clear(); // Clear state flags
-
-  //Re-calculate triangle edge length mean and deviation
-  lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);
-  EdgeLength = lengthStat[0];
-  stdDevEdgeLen = lengthStat[1];
-  std::cout<<"After relaxing with Morse potential: "<< endl
-	   <<"   Average triangle edge length = "<< std::setprecision(10)
-	   << EdgeLength << endl
-	   <<"   Standard deviation = " << std::setprecision(10)
-	   << stdDevEdgeLen << endl;
-  std::cout.precision(6);    
-
-  //Calculate centre of sphere as average of position vectors of all nodes.
-  tvmet::Vector<double,3> Xavg(0.0);
-  for ( int i = 0; i<defNodes.size(); i++){
-    Xavg += defNodes[i]->point();
-  }
-  Xavg /= defNodes.size();
-    
-  //We will calculate radius using the quadrature points
-  LSB::FeElementContainer elements = bd->shells();
-  std::vector<double> qpRadius(elements.size(),0.0);
+    //We will calculate radius using the quadrature points
+    LSB::FeElementContainer elements = bd->shells();
+    std::vector<double> qpRadius(elements.size(),0.0);
 
 #ifdef _OPENMP
 #pragma omp parallel for
 #endif
-  for(int e=0; e < elements.size();e++){
+    for(int e=0; e < elements.size();e++){
 
-    const LS::NodeContainer eleNodes = elements[e]->nodes();      
-    LS::QuadPointContainer quadPoints = elements[e]->quadraturePoints();
+      const LS::NodeContainer eleNodes = elements[e]->nodes();      
+      LS::QuadPointContainer quadPoints = elements[e]->quadraturePoints();
 
-    for(LS::ConstQuadPointIterator quadPoint = quadPoints.begin();
-	quadPoint != quadPoints.end(); ++quadPoint){
+      for(LS::ConstQuadPointIterator quadPoint = quadPoints.begin();
+	  quadPoint != quadPoints.end(); ++quadPoint){
 
-      LoopShellShape s = (*quadPoint).shape;
-      const LoopShellShape::FunctionArray fn = s.functions();
-      tvmet::Vector<double,3> Xq(0.0);
+	LoopShellShape s = (*quadPoint).shape;
+	const LoopShellShape::FunctionArray fn = s.functions();
+	tvmet::Vector<double,3> Xq(0.0);
 
-      for(int i=0;i<fn.size();i++){
-	Xq += tvmet::mul(eleNodes[i]->point(),fn(i));
+	for(int i=0;i<fn.size();i++){
+	  Xq += tvmet::mul(eleNodes[i]->point(),fn(i));
+	}
+
+	double qpR = tvmet::norm2(Xq-Xavg);
+	qpRadius[e] = qpR;
       }
-
-      double qpR = tvmet::norm2(Xq-Xavg);
-      qpRadius[e] = qpR;
     }
-  }
     
-  Ravg = 0.0;
-  for ( int i = 0; i < qpRadius.size(); i++){
-    Ravg += qpRadius[i];
-  }
-  Ravg /= qpRadius.size();
-  std::cout<<"Radius of capsid after relaxation = "<< Ravg << endl;
+    Ravg = 0.0;
+    for ( int i = 0; i < qpRadius.size(); i++){
+      Ravg += qpRadius[i];
+    }
+    Ravg /= qpRadius.size();
+    std::cout<<"Radius of capsid after relaxation = "<< Ravg << endl;
   
-  double dRavg2 = 0.0;
-  for ( int i = 0; i<qpRadius.size(); i++){
-    double dR =  qpRadius[i]-Ravg; 
-    dRavg2 += dR*dR;
+    double dRavg2 = 0.0;
+    for ( int i = 0; i<qpRadius.size(); i++){
+      double dR =  qpRadius[i]-Ravg; 
+      dRavg2 += dR*dR;
+    }
+    dRavg2 /= qpRadius.size();
+
+    double asphericity = dRavg2/(Ravg*Ravg);
+    double gammaCalc = Y*Ravg*Ravg/KC;
+    
+    // //Calculate Average Principal Strain
+    // std::vector<double> maxStrain =  bd->getMaxPrincipalStrains();
+    // double avgStrain = 0.0;
+    // for(int e=0; e < maxStrain.size(); e++){
+    //   avgStrain += maxStrain[e];
+    // }
+    // avgStrain /= maxStrain.size();
+
+    // myfile<< Ravg <<"\t\t"<< Y <<"\t\t"<< asphericity
+    // 	  <<"\t\t"<< gamma <<"\t\t"<< gammaCalc
+    // 	  <<"\t\t"<< avgStrain << "\t\t" << solver1.function() 
+    // 	  << endl;
+
+    myfile<< nameSuffix++<<"\t\t"<< Ravg <<"\t\t"<< Y <<"\t\t"<< asphericity
+	  <<"\t\t"<< gamma <<"\t\t"<< gammaCalc
+	  <<"\t\t" << energy 
+	  << endl;
+   
+    // step forward in "time", relaxing viscous energy & forces 
+    vr.step();
   }
-  dRavg2 /= qpRadius.size();
-
-  double asphericity = dRavg2/(Ravg*Ravg);
-  double gammaCalc = Y*Ravg*Ravg/KC;
-    
-  // //Calculate Average Principal Strain
-  // std::vector<double> maxStrain =  bd->getMaxPrincipalStrains();
-  // double avgStrain = 0.0;
-  // for(int e=0; e < maxStrain.size(); e++){
-  //   avgStrain += maxStrain[e];
-  // }
-  // avgStrain /= maxStrain.size();
-
-  // myfile<< Ravg <<"\t\t"<< Y <<"\t\t"<< asphericity
-  // 	  <<"\t\t"<< gamma <<"\t\t"<< gammaCalc
-  // 	  <<"\t\t"<< avgStrain << "\t\t" << solver.function() 
-  // 	  << endl;
-
-  myfile<< nameSuffix++<<"\t\t"<< Ravg <<"\t\t"<< Y <<"\t\t"<< asphericity
-	<<"\t\t"<< gamma <<"\t\t"<< gammaCalc
-	<<"\t\t" << solver.function() 
-	<< endl;    
-    
+   
   //Release the dynamically allocated memory
   delete bd;
   delete PrBody;

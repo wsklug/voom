@@ -37,6 +37,11 @@ namespace voom
       Vector3D xi(_rng.random(),
 				     _rng.random(),_rng.random());
       _delta_xB[i] = xi*sqrt(_D*_dt);
+
+      //Add the Brownian-kick to current coordinates of the nodes
+      for(int j=0; j < 3; j++){
+	_nodes[i]->addPoint(j,_delta_xB[i][j]);
+      }
     }
   }
 

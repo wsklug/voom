@@ -292,12 +292,14 @@ int main(int argc, char* argv[])
   int m=5;
   
   //int maxIter = 1e6;
-  int maxIter=100;
+  int maxIter1=100;
+  int maxIter2=1e5;
 
   double factr=1.0e+1;
   double pgtol=1e-7;
   int iprint = 1;
-  Lbfgsb solver(3*nodes.size(), m, factr, pgtol, iprint, maxIter );
+  Lbfgsb solver1(3*nodes.size(), m, factr, pgtol, iprint, maxIter1 );
+  Lbfgsb solver2(3*nodes.size(), m, factr, pgtol, iprint, maxIter2 );
 
   typedef FVK MaterialType;
   typedef LoopShellBody<MaterialType> LSB;
@@ -355,8 +357,8 @@ int main(int argc, char* argv[])
      
     std::cout<< "Spring constant: " << springConstant << endl;
     std::cout<< "Relaxing the mesh using harmonic potential..."<< endl;
-  
-    solver.solve( &model1 );
+    solver2.solve( &model1 );
+    
     std::cout<<"Harmonic potential relaxation complete." << endl;
 
     //Print to VTK file
@@ -429,6 +431,8 @@ int main(int argc, char* argv[])
     bdc.push_back(PrBody);
     bdc.push_back(bd);    
     Model model(bdc,nodes);
+    
+    double energy = 0;
      
     std::cout<< "Morse potential parameters:" << endl
 	     << "sigma = " << sigma <<" epsilon = " << epsilon
@@ -441,19 +445,18 @@ int main(int argc, char* argv[])
     PrBody->compute(true, false, false);
     std::cout << "Initial protein body energy = " << PrBody->energy() << endl;
      
-    std::cout << "Relaxing shape for gamma = " << gamma<< std::endl
-	      << "Energy = " << solver.function() << std::endl;
+    std::cout << "Relaxing shape for gamma = " << gamma<< std::endl;
      
     for(int n=0; n<nodes.size(); n++) {
       for(int i=0; i<nodes[n]->dof(); i++) nodes[n]->setForce(i,0.0);
     }
      
     //For debugging we have limited the number of solver iterations to
-    //500 so that we can see the intermediate results before the
+    //100 so that we can see the intermediate results before the
     //solver diverges
     for(int z=0; z< interimIter; z++){
 
-      solver.solve( &model );
+      solver1.solve( &model );
       //Print the files
       sstm << fname <<"-interim-" << nameSuffix << "-"<< z <<".vtk";
       rName = sstm.str();
@@ -470,6 +473,8 @@ int main(int argc, char* argv[])
       sstm.str("");
       sstm.clear(); // Clear state flags
     }
+    
+    energy = solver1.function();
     
     // REMESHING
     bool remesh = true;
@@ -492,7 +497,8 @@ int main(int argc, char* argv[])
 	PrBody->recomputeNeighbors(PotentialSearchRF);
 
 	//Relax again after remeshing
-	solver.solve( &model );
+	solver2.solve( &model );
+	energy = solver2.function();
       }
 
     }// Remeshing ends here
@@ -501,7 +507,7 @@ int main(int argc, char* argv[])
     //bd->calcMaxPrincipalStrains();
 
     std::cout << "Shape relaxed." << std::endl
-	      << "Energy = " << solver.function() << std::endl;
+	      << "Energy = " << energy << std::endl;
      
     //Selectively print the relaxed shapes
     if(currPrintFlag){
@@ -592,13 +598,12 @@ int main(int argc, char* argv[])
 
     //myfile<< stepNumber++<<"\t\t"<< Ravg <<"\t\t"<< Y <<"\t\t"<< asphericity
     //	  <<"\t\t"<< gamma <<"\t\t"<< gammaCalc
-    //	  <<"\t\t"<< avgStrain << "\t\t" << solver.function() 
+    //	  <<"\t\t"<< avgStrain << "\t\t" << solver1.function() 
     //	  << endl;
 
     myfile<< nameSuffix++<<"\t\t"<< Ravg <<"\t\t"<< Y <<"\t\t"<< asphericity
     	  <<"\t\t"<< gamma <<"\t\t"<< gammaCalc
-    	  <<"\t\t" << solver.function() 
-    	  << endl;
+    	  <<"\t\t" << energy << endl;
         
 
     //Release the dynamically allocated memory
