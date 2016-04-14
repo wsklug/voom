@@ -9,7 +9,7 @@ InflateFact	1.0
 Pressure	0.0
 PotentialSF	0.30
 epsilon		2.0
-sigma		0.10725597
+sigma		0.08757413
 Rshift		0.12
 RconnSF		0.30
 nMCsteps	15000
@@ -23,4 +23,10 @@ NumNodePerPr	50
 PrMaxNum	1350
 PrintEvery	10
 StepWise	0
+NT		1
 KMCflag		0
+Length		-7.74094
+Zmin            -0.333
+Zmax            0.333
+PotType		0
+BodyType	0

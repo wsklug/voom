@@ -12,9 +12,9 @@ epsilon		2.0
 sigma		24.562162
 Rshift		27.57
 RconnSF		68.9
-nMCsteps	170000
+nMCsteps	34000
 T01		0.5
-T02		12.5
+T02		2.0
 FinalRatio	1.0e-3
 CompNeighInt	1
 MCmethod	1
@@ -23,5 +23,5 @@ NumNodePerPr	50
 PrMaxNum	1350
 PrintEvery	50
 StepWise	1
-NT		10
+NT		2
 KMCflag		1

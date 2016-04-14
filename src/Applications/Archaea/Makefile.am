@@ -1,4 +1,4 @@
-bin_PROGRAMS    = archaea archaeaS archaeaT4 archaeaThermal archaeaPr
+bin_PROGRAMS    = archaea archaeaS archaeaT4 archaeaThermal archaeaPr minArchaea
 INCLUDES        =-I$(srcdir)/../../       		\
 		-I$(srcdir)/../../Body/		\
 		-I$(srcdir)/../../Model/		\
@@ -17,6 +17,7 @@ archaeaS_SOURCES = archaeaS.cc
 archaeaT4_SOURCES = archaeaT4.cc
 archaeaThermal_SOURCES = archaeaThermal.cc
 archaeaPr_SOURCES = archaeaPr.cc
+minArchaea_SOURCES = minArchaea.cc
 AM_LDFLAGS    = -L$(blitz_libraries) \
         -L../                          	\
         -L../../Materials/             	\

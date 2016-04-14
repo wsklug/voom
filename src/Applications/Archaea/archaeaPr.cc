@@ -370,7 +370,8 @@ int main(int argc, char* argv[])
 
     cout << "Number of harmonic springs = " << ind << endl;
 
-    PrBody = new HarmonicProteinBody(Proteins, Mat, PotentialSearchRF, HarmonicConn, epsilon, Rshift);
+    double kHarm = 36.0 * epsilon / (Rshift*Rshift); 
+    PrBody = new HarmonicProteinBody(Proteins, Mat, PotentialSearchRF, HarmonicConn, kHarm, Rshift);
 
     //Compute average particle distance along spirals
     vector<double > spacing(HarmonicConn.size(), 0.0);

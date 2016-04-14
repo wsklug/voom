@@ -17,10 +17,10 @@ T01		5.0
 T02		0.0
 FinalRatio	1.0e-3
 CompNeighInt	1
-MCmethod	0
+MCmethod	1
 ResetT		0.0
 NumNodePerPr	50
 PrMaxNum	1350
 PrintEvery	10
 StepWise	0
-KMCflag		0
+KMCflag		1

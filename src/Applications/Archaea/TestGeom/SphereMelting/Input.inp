@@ -1,10 +1,10 @@
 ModelName	Sphere_4.vtk
 OutputFile      SphMelting
-InitialConf	Sphiter_Pr_1500.vtk
+InitialConf	Sphere_0.vtk
 FixedList	None
 ICprovided	1
 ICtol		0.0001
-VTKflag		2
+VTKflag		1
 InflateFact	1.0
 Pressure	0.0
 PotentialSF	0.30
@@ -12,9 +12,9 @@ epsilon		2.0
 sigma		0.10725597
 Rshift		0.12
 RconnSF		0.30
-nMCsteps	170000
+nMCsteps	34000
 T01		0.5
-T02		12.5
+T02		2.0
 FinalRatio	1.0e-3
 CompNeighInt	1
 MCmethod	1
@@ -23,5 +23,5 @@ NumNodePerPr	50
 PrMaxNum	1350
 PrintEvery	50
 StepWise	1
-NT		10
+NT		2
 KMCflag		1
