@@ -66,6 +66,7 @@ namespace voom
     _volume = 0.0;
     _area = 0.0;
     _totalCurvature = 0.0;
+    _equivalentAsphericity = 0.0;
 	  
     // initialize _nDOF and find shell (position) nodes
 
@@ -360,13 +361,24 @@ namespace voom
 //   schedule(static) default(shared)		\
 //   reduction(+:V) reduction(+:A) 
 // #endif	      
+      std::vector<double > radii;
+      double Ravg = 0.0;
       for(int si=sBegin; si<sEnd; si++) {
 	if( !_active[si] ) continue;
 	FeElement_t* s=_shells[si];
 	volume += s->volume();     
 	area += s->area();
 	totalCurvature += s->totalCurvature();
+	radii.push_back(1.0/s->totalCurvature());
+	Ravg += 1.0/s->totalCurvature();
       }
+
+      Ravg /= double(radii.size());
+      double deltaRsq = 0.0;
+      for(int r = 0; r < radii.size(); r++) {
+	deltaRsq += pow(radii[r] - Ravg, 2.0);
+      }
+      _equivalentAsphericity = deltaRsq/(double(radii.size()) * Ravg * Ravg);
 
       _volume=volume;
       _area=area;

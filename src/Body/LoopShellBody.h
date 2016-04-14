@@ -144,6 +144,8 @@ namespace voom
 
     double totalCurvature() const { return _totalCurvature;}
     double prescribedTotalCurvature() const { return _prescribedTotalCurvature;}
+
+    double equivalentAsphericity() const { return _equivalentAsphericity;}
     
     void SetRefConfiguration(double edge);
 
@@ -318,6 +320,8 @@ namespace voom
     double _prescribedTotalCurvature;
     double _penaltyTotalCurvature;
     MultiplierNode * _totalCurvatureNode;
+
+    double _equivalentAsphericity;
 
     ConstraintContainer _constraints;
 

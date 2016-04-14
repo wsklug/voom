@@ -12,4 +12,4 @@ AM_CPPFLAGS =	-I$(srcdir)/..			\
 		-I$(vtk_includes)		
 
 lib_LIBRARIES = libBody.a
-libBody_a_SOURCES = Body.cc GenericBody.cc PotentialBody.cc ViscosityBody.cc ProteinBody.cc
+libBody_a_SOURCES = Body.cc GenericBody.cc PotentialBody.cc ViscosityBody.cc ProteinBody.cc HarmonicProteinBody.cc
