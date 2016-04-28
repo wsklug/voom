@@ -568,8 +568,12 @@ int main(int argc, char* argv[])
   Zavg /= defNodes.size();
 
   // create indentor and plate
-  double afmR = 1.0;
-  tvmet::Vector<double,3> xc; xc = 0.0, 0.0, Zmax+afmR; 
+  double afmR = 1.0*Ravg;
+  tvmet::Vector<double,3> xc; xc = 0.0, 0.0, Zmax+afmR;
+ 
+  std::cout << "AFM Indenter radius =" << afmR << std::endl
+	    << "AFM Indenter center = (" << xc[0] << "," 
+	    << xc[1] << "," << xc[2] << ")" << std::endl;
 
   double friction = friction_inp;
 
@@ -590,10 +594,10 @@ int main(int argc, char* argv[])
   double Zend=Zmin+1.0*Ravg;
   double dZ = (Zend-Zbegin)/100;
   if(indent_inp > 0.0) {
-    Zend = Zbegin+indent_inp;
+    Zend = Zbegin+indent_inp*Ravg;
   }
   if(step_inp > 0.0) {
-    dZ = step_inp;
+    dZ = step_inp*Ravg;
   }
 
   // add some viscosity for regularization

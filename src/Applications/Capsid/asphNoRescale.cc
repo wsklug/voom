@@ -175,6 +175,13 @@ int main(int argc, char* argv[])
 	    << extractedEdges->GetOutput()->GetNumberOfCells()
 	    <<std::endl; 
 
+  vtkSmartPointer<vtkDataArray> displacements;
+
+  if(continueFromNum > 1){
+    displacements = mesh->GetPointData()->GetVectors("displacements");
+  }
+
+
   // create vector of nodes
   //double Rcapsid = 1.0;
   int dof=0;
@@ -186,7 +193,16 @@ int main(int argc, char* argv[])
   for(int a=0; a<mesh->GetNumberOfPoints(); a++) {
     int id=a;
     DeformationNode<3>::Point x;
-    mesh->GetPoint(a, &(x[0]));
+    if(continueFromNum > 1){
+      DeformationNode<3>::Point d;
+      DeformationNode<3>::Point temp;
+      displacements->GetTuple(a,&(d[0]));
+      mesh->GetPoint(a, &(temp[0]));
+      x = temp + d;
+    }
+    else{
+      mesh->GetPoint(a, &(x[0]));
+    }
     Ravg += tvmet::norm2(x);
     NodeBase::DofIndexMap idx(3);
     for(int j=0; j<3; j++) idx[j]=dof++;
