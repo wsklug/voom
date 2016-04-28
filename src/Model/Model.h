@@ -90,7 +90,7 @@ namespace voom
     void computeAndAssemble( Solver_t & solver, bool f0, bool f1, bool f2 );
 
     //! Get the number of degrees of freedom in the model
-    int dof() const {return _dof;} 
+    const int dof() const {return _dof;} 
 
     const BodyContainer & bodies() const {return _bodies;}
 
@@ -101,6 +101,16 @@ namespace voom
 
     //! check consistency
     bool checkRank(const int rank, bool numerical=false);
+
+    //! calculate normal modes
+    void normalModes(bool eigenvectors, int nmodes, std::vector<double> &weight, double dens, std::string filename);
+
+    void normalModes(bool eigenvectors, int nmodes, std::string filename);
+
+    void normalModes_all(bool eigenvectors, int nmodes, std::vector<double> &weight, double dens, std::string filename);
+    void normalModes_all(bool eigenvectors, int nmodes, std::string filename);
+    
+    void SHdisp(int l,int m,double x,double y,double z,std::vector<double>& dx);
 
     void print(std::string name) {      
 //       for(ConstBodyIterator b=_bodies.begin(); b!=_bodies.end(); b++)

@@ -33,7 +33,7 @@ int main() {
     Vector3D  x( X[id] );
 
     // perturb current positions by random displacement
-    for(int i=0; i<3; i++) x(i) += 0.01*(rand()/((double)RAND_MAX)-0.5);
+//     for(int i=0; i<3; i++) x(i) += 0.01*(rand()/((double)RAND_MAX)-0.5);
     x+=u[id];
 
     cout << id << " (" 

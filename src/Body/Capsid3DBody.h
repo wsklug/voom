@@ -100,7 +100,13 @@ namespace voom
 		const unsigned quadOrder);
     
     //! Virtual destructor
-    virtual ~Capsid3DBody() {;}
+    ~Capsid3DBody()
+    {
+      for(int i =0; i<_elements.size(); i++)
+      {
+	delete _elements[i];
+      } 
+    }
     
     //! Do mechanics on Body
     void compute( bool f0, bool f1, bool f2 );

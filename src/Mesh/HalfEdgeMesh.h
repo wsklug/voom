@@ -80,8 +80,6 @@ namespace voom {
     std::vector< Face* > faces;
     std::vector< Vertex* > vertices;
 
-    std::vector< std::vector< HalfEdge* > > boundaryLoops;
-
     //! Connectivity of a single triangle
     typedef tvmet::Vector<int,3> TriangleConnectivity;
 

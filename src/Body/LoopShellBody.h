@@ -124,10 +124,14 @@ namespace voom
       }
     }
 
-    FeElementContainer & shells() {return _shells;}
+    FeElementContainer & shells() {return _shells;};
+    FeNodeContainer & shellsNodes() {return _shellNodes;};
     
     //! Do mechanics on Body
     void compute( bool f0, bool f1, bool f2 );
+
+    //! calculate the curvatures at all elements
+    void cal_curv(std::vector<double> &curv);
     
     double volume() const{ return _volume; }
     double prescribedVolume() const { return _prescribedVolume; }
@@ -141,6 +145,8 @@ namespace voom
     double totalCurvature() const { return _totalCurvature;}
     double prescribedTotalCurvature() const { return _prescribedTotalCurvature;}
     
+    void SetRefConfiguration(double edge);
+
     //! get pressure
     double pressure() const {return _pressureNode->point();}
 
@@ -194,7 +200,7 @@ namespace voom
     void createOpenDXData(const std::string& fileName, 
 			  const int nWhichForce = 2);
 
-    void printParaview(const std::string fileName) const ;
+    void printParaview(const std::string fileName) const;
 
     void printObj(const std::string name) const;
     
@@ -221,6 +227,19 @@ namespace voom
 
     void pushBackConstraint( Constraint * c ) { _constraints.push_back( c ); }
 
+    double fixedPressure() const { return _fixedPressure; }
+
+    double fixedTension() const { return _fixedTension; }
+
+    void updateFixedPressure() {
+      _fixedPressure = _pressureNode->point();
+    }
+
+    void updateFixedTension() {
+      _fixedTension = _tensionNode->point();
+    }
+
+
     void updateFixedForce(double P, double T, double TC){
       _fixedPressure = P;
       _fixedTension  = T;
@@ -242,6 +261,36 @@ namespace voom
     //! Mark an element as inactive so it will not be computed
     void deactivate(int e) { _active[e] = false; }
 
+
+
+    // ----------------------------------------- //
+    // New functions //
+
+    // Compute average edge length
+    double AverageEdgeLength();
+
+    // Compute element neighbors
+    std::vector<std::vector<uint > > ComputeElementNeighBors(std::vector<tvmet::Vector<int,3> > ConnTable);
+
+    // Remesh elements with bad aspect ratio
+    uint Remesh(double ARtol, Material_t material, uint quadOrder);
+
+    // Create Shell FE
+    void CreateLoopFE(ConnectivityContainer & connectivities, Material_t material, uint quadOrder, bool remeshing);
+
+    // Calculate and return maximum principal strain (using right
+    // Cauchy-Green strain) for all active elements
+    void calcMaxPrincipalStrains();
+
+    //Get Maximum Principal Strains
+    std::vector<double> getMaxPrincipalStrains() {return _maxPrincipalStrain;};
+
+    void setAreaConstraint(GlobalConstraint AreaConstr) {_areaConstraint = AreaConstr;};
+    void setVolumeConstraint(GlobalConstraint VolConstr) {_volumeConstraint = VolConstr;};
+    // ----------------------------------------- //
+
+
+
   private:
 
     //! Store corner valences in a vector for building irregular elements
@@ -255,6 +304,10 @@ namespace voom
 
     //! vector of boolean flags to activate/deactivate elements
     std::vector<bool> _active;
+
+    //! vector of largest eigen value of right Cauchy Green strain for
+    //! each element
+    std::vector<double> _maxPrincipalStrain;
 
     // for volume constraint
     GlobalConstraint _volumeConstraint;

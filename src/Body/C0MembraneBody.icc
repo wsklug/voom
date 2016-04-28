@@ -10,16 +10,6 @@
 #include <string>
 #include <fstream>
 #include <blitz/array-impl.h>
-#include <boost/lexical_cast.hpp>
-#include <vtkSmartPointer.h>
-#include <vtkXMLUnstructuredGridWriter.h>
-#include <vtkUnstructuredGrid.h>
-#include <vtkCell.h>
-#include <vtkCellArray.h>
-#include <vtkIdList.h>
-#include <vtkDoubleArray.h>
-#include <vtkPointData.h>
-#include <vtkCellData.h>
 
 #if defined(_OPENMP)
 #include <omp.h>
@@ -28,10 +18,6 @@
 #ifdef WITH_MPI
 #include <mpe.h>
 #endif
-
-// LAPACK FORTRAN subroutine for computing eigenvalues and eigenvectors
-extern "C" void dsyev_(char *jobz, char *uplo, int *n, double *a, int *lda,
-                       double *w, double *work, int *lwork, int *info);
 
 namespace voom
 {
@@ -122,6 +108,7 @@ namespace voom
   template< class Quadrature_t, class Material_t, class Shape_t >
   void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::compute( bool f0, bool f1, bool f2 )
   {
+
     int eBegin=0, eEnd=_elements.size();
     int sBegin=0, sEnd=_membranes.size();
 #ifdef WITH_MPI
@@ -142,6 +129,10 @@ namespace voom
     // Initialize energy and forces
     if(f0) _energy = 0.0;
 
+#ifdef _OPENMP	
+#pragma omp parallel for 			\
+  schedule(static) default(shared)		
+#endif	  
      for(int si=sBegin; si<sEnd; si++) {
        if( !_active[si] ) continue;
        MembraneElement_t* s=_membranes[si];
@@ -283,290 +274,221 @@ namespace voom
     return;
   }
 	
+  //! return the deformation invariants for elements
   template<class Quadrature_t, class Material_t, class Shape_t>
-  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::resetEquilateral(double hTarget) {
-    double hAve = 1.0;
-    if ( hTarget <= 0 ) {
-      // compute average element edge length
-      double hAve = 0.0;
-      for(int e = 0; e<_membranes.size(); e++) {
-	double h=0.0;
-	const MembraneNodeContainer & nds = _membranes[e]->nodes();
-	for(int a=0; a<nds.size(); a++) {
-	  h += norm2( nds[a]->position() - nds[(a+1) % nds.size()]->position() );
-	}
-	h /= nds.size();
-	hAve += h;
-      }
-      hAve /= _membranes.size();
-      hTarget = hAve;
-    }
-    std::cout << "Reseting all elements to be equilateral with element edge length " << hAve << std::endl; 
+  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::calculateDeformationInvariants(std::vector<double>& I1, std::vector<double>& J)
+  {
+    //int eBegin=0, eEnd=_elements.size();
+    int sBegin=0, sEnd=_membranes.size();
     
-    // reset all elements to be equilalateral with average edge
-    // length in ref config.
-    for(MembraneElementIterator e=_membranes.begin(); 
-	e!=_membranes.end(); e++) {
-      (*e)->updateRefConfiguration( hTarget );
-    }	
-    
-    return;
+    for(int si=sBegin; si<sEnd; si++) {
+       if( !_active[si] ) continue;
+       MembraneElement_t* s=_membranes[si];
+       s->invariants(I1[si],J[si]);
+     }
   }
 
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::SetRefConfiguration(double edge)
+  {
+    int sBegin=0, sEnd=_membranes.size();
+    for(int si=sBegin; si<sEnd; si++) {
+      if( !_active[si] ) continue;
+      MembraneElement_t* s=_membranes[si];
+      s->SetRefConfiguration(edge);
+     }
+    
+    for(int si=sBegin; si<sEnd; si++) {
+       if( !_active[si] ) continue;
+       MembraneElement_t* s=_membranes[si];
+       s->invariants(I1[si],J[si]);
+     }
+  }
+
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::SetRefConfiguration(double edge)
+  {
+  }
+
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::SetRefConfiguration(double edge)
+  {
+    int sBegin=0, sEnd=_membranes.size();
+    for(int si=sBegin; si<sEnd; si++) {
+      if( !_active[si] ) continue;
+      MembraneElement_t* s=_membranes[si];
+      s->SetRefConfiguration(edge);
+     }
+  }
 	
   //! create input file used by Paraview, a 3D viewer
   template<class Quadrature_t, class Material_t, class Shape_t>
-  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::printParaview(std::string name) const
+  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::printParaview(const std::string name) const
   {
 
     int numShells = _membranes.size();
-       
+    
+    blitz::Array<double,1> energy(blitz::shape(numShells));
+    blitz::Array<double,1> curvature(blitz::shape(numShells));
+
+    energy = 0.0;
+    curvature = 0.0;
+
+#ifdef WITH_MPI
+    int eBegin=0, eEnd=0;
+    MPE_Decomp1d( _membranes.size(), _nProcessors, _processorRank, 
+		  &eBegin, &eEnd );
+    eBegin--;
+#endif
+
+#ifdef WITH_MPI
+    for(int e=eBegin; e<eEnd && e<_membranes.size(); e++) {
+	const MembraneElement_t*const*const pe=&(_membranes[e]);
+#else
+    ConstMembraneElementIterator pe = _membranes.begin();
+    for ( int e = 0; pe != _membranes.end(); pe++, e++) {
+#endif
+      int npts=0;
+      typename MembraneElement_t::ConstQuadPointIterator 
+	p = (*pe)->quadraturePoints().begin();
+      for( ; p != (*pe)->quadraturePoints().end(); p++){
+	energy(e) += p->material.energyDensity();
+	curvature(e) += p->material.meanCurvature();
+	npts++;
+      }
+      energy(e) /= (double)( npts );
+      curvature(e) /= (double)( npts );
+    }
+
+// //     char pid[30]; 
+// //     sprintf(pid, "%d", _processorRank);
+// //     std::string dataName = name + ".printData." + pid;
+// //     std::ofstream dataStream(dataName.c_str());
+// //     dataStream << energy << std::endl
+// // 	       << curvature << std::endl;
+// //     dataStream.close();
+
+// #ifdef WITH_MPI
+//     blitz::Array<double,1> globalsum(blitz::shape(numShells));
+//     globalsum = 0.0;
+//     MPI_Reduce(energy.data(), globalsum.data(), energy.size(), 
+// 	       MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+//     blitz::cycleArrays(energy,globalsum);
+//     MPI_Reduce(curvature.data(), globalsum.data(), curvature.size(), 
+// 	       MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+//     blitz::cycleArrays(curvature,globalsum);
+// #endif
+
+// #ifdef WITH_MPI
+//     if(_processorRank!=0) {
+//       return;
+//     }
+// #endif
+
+// //     dataName = name + ".printData.sum";
+// //     dataStream.open(dataName.c_str());
+// //     dataStream << energy << std::endl
+// // 	       << curvature << std::endl;
+// //     dataStream.close();
+
+    std::string fileName = name + ".vtk";
+    std::ofstream ofs(fileName.c_str());
+//     ofs.open(fileName.c_str(), std::ios::out);
+    if (!ofs) {
+      std::cout << "can not open output ("
+		<< fileName
+		<< ") file." << std::endl;
+      exit(0);
+    }
+    
     ////////////////////////////////////////////////////////////////////
     //
     //    Node Section
     //
-    vtkSmartPointer<vtkPoints> points = 
-      vtkSmartPointer<vtkPoints>::New();
-
-    // insert nodal postions
+    ofs << "# vtk DataFile Version 2.0\n"
+	<< "Test example" << std::endl
+	<< "ASCII" << std::endl
+	<< "DATASET POLYDATA" << std::endl
+	<< "POINTS  " << _membraneNodes.size() << "  double" << std::endl;
+    
+    //
+    // output nodal postions
     ConstMembraneNodeIterator pn = _membraneNodes.begin();
     for ( ; pn!= _membraneNodes.end(); pn ++) {
       const Vector3D & nodalPos =  (*pn)->position();
-      points->InsertNextPoint(nodalPos(0),nodalPos(1),nodalPos(2));
+      ofs << std::setprecision(16) 
+	  << nodalPos(0) << "  "
+	  << nodalPos(1) << "  "
+	  << nodalPos(2) << std::endl;
     }
 
     /////////////////////////////////////////////////////////////////////
     //
     //    Element Section
     //
-    vtkSmartPointer<vtkUnstructuredGrid> unstructuredGrid = 
-      vtkSmartPointer<vtkUnstructuredGrid>::New();
-    unstructuredGrid->SetPoints(points);
-    //! Insert Cells
-    unstructuredGrid->Allocate(_membranes.size());
-    int nodes_per_element = _membranes[0]->nodes().size();
-
-    int vtk_cell_type=0;
-    if( nodes_per_element == 3 ) {
-      // 3-node triangle
-      vtk_cell_type = 5;
-    } else if( nodes_per_element == 6 ) {
-      // 6-node triangle
-      vtk_cell_type = 22;
-    } 
-
+    int nActiveMembranes=0;
     for(int e=0; e<_membranes.size(); e++) {
-      vtkIdType connect[nodes_per_element];
-      for(int a=0; a<nodes_per_element; a++) {      
-	connect[a] =  _membranes[e]->nodes()[a] -> id();
-      }
-      unstructuredGrid->InsertNextCell(vtk_cell_type,nodes_per_element,connect);
+      if(_active[e]) nActiveMembranes++;
+    }
+    ofs << "POLYGONS  " << nActiveMembranes << "  "
+	<< 4*nActiveMembranes << std::endl;
+    for(int e=0; e<_membranes.size(); e++) {
+      if(!_active[e])  continue;
+      const MembraneElement_t * pe = _membranes[e];
+      const typename MembraneElement_t::NodeContainer & pnc = (pe)->nodes();
+      ofs << 3 << "  "
+	  << std::setw(10) << pnc[0] -> id()
+	  << std::setw(10) << pnc[1] -> id()
+	  << std::setw(10) << pnc[2] -> id()
+	  << std::endl;
     }
 
+
+     	
+    //////////////////////////////////////////////////////////////////////////
     //
-    // nodal data
+    //  output color for each element ( corresponding to mean
+    //  curvature, energy...)
     //
-    vtkSmartPointer<vtkDoubleArray>
-      displacements = vtkSmartPointer<vtkDoubleArray>::New();
-    displacements->SetNumberOfComponents( 3 );
-    displacements->SetName( "Displacements" );
-    vtkSmartPointer<vtkDoubleArray>
-      forces = vtkSmartPointer<vtkDoubleArray>::New();
-    forces->SetNumberOfComponents( 3 );
-    forces->SetName( "Residual Forces" );
+    ofs << "CELL_DATA    " << nActiveMembranes << std::endl;
+    //
+    // output for strain energy
+    ofs << "SCALARS    strainEnergy    double    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for ( int e = 0; e<numShells; e++) {
+      if(!_active[e])  continue;
+      ofs << energy(e) << std::endl;
+    }
+    ofs << std::endl;
+
+    ofs << endl << "POINT_DATA " << _membraneNodes.size() << endl
+	<< "VECTORS displacements double" << endl;
+    /*     << "LOOKUP_TABLE displacements" << endl; */
+    //
+    // output nodal postions
     pn = _membraneNodes.begin();
     for ( ; pn!= _membraneNodes.end(); pn ++) {
       Vector3D nodalDisp;
       nodalDisp = (*pn)->point() - (*pn)->position();
+      ofs << std::setprecision(16) 
+	  << nodalDisp(0)
+	  << '\t' <<nodalDisp(1)
+	  << '\t' <<nodalDisp(2) << std::endl;
+    }
+    
+    ofs << endl << "VECTORS forces double" << endl;
+    /*     << "LOOKUP_TABLE displacements" << endl; */
+    //
+    // output nodal postions
+    pn = _membraneNodes.begin();
+    for ( ; pn!= _membraneNodes.end(); pn ++) {
       const Vector3D & nodalForce = (*pn)->force();
-      displacements->InsertNextTupleValue( nodalDisp.begin() );
-      forces->InsertNextTupleValue( nodalForce.begin() );
+      ofs << std::setprecision(16) 
+	  << nodalForce(0)
+	  << '\t' <<nodalForce(1)
+	  << '\t' <<nodalForce(2) << std::endl;
     }
-    unstructuredGrid->GetPointData()->AddArray( displacements );
-    unstructuredGrid->GetPointData()->AddArray( forces );
-    unstructuredGrid->GetPointData()->SetActiveVectors( displacements->GetName() );
- 
-    //
-    //  Element data
-    //
-    vtkSmartPointer<vtkDoubleArray> 
-      energyarray = vtkSmartPointer<vtkDoubleArray>::New();
-    energyarray->SetNumberOfComponents(1);
-    energyarray->SetName( "StrainEnergy");
-
-    ConstMembraneElementIterator pe = _membranes.begin();
-    for ( int e = 0; pe != _membranes.end(); pe++, e++) {
-      double energy=0.0;
-      int npts=0;
-      typename MembraneElement_t::ConstQuadPointIterator 
-	p = (*pe)->quadraturePoints().begin();
-      for( ; p != (*pe)->quadraturePoints().end(); p++){
-	energy += p->material.energyDensity();
-	npts++;
-      }
-      energy /= (double)( npts );
-      energyarray->InsertNextTupleValue(&energy);     
-    }
-
-    unstructuredGrid->GetCellData()->AddArray(energyarray);
-
-    // std::cout << "stresses = " << stresses[0] << std::endl;
-
-    vtkSmartPointer<vtkDoubleArray> 
-      PKstressarray = vtkSmartPointer<vtkDoubleArray>::New();
-    PKstressarray->SetNumberOfComponents(6);
-    PKstressarray->SetName( "2nd P-K Stresses");
-    
-    vtkSmartPointer<vtkDoubleArray> 
-      stressarray = vtkSmartPointer<vtkDoubleArray>::New();
-    stressarray->SetNumberOfComponents(3);
-    stressarray->SetName( "Principal Stresses");
-    
-    vtkSmartPointer<vtkDoubleArray> 
-      stressDir0 = vtkSmartPointer<vtkDoubleArray>::New();
-    stressDir0->SetNumberOfComponents(3);
-    stressDir0->SetName( "Stress Direction 0");
-    
-    vtkSmartPointer<vtkDoubleArray> 
-      stressDir1 = vtkSmartPointer<vtkDoubleArray>::New();
-    stressDir1->SetNumberOfComponents(3);
-    stressDir1->SetName( "Stress Direction 1");
-    
-    vtkSmartPointer<vtkDoubleArray> 
-      stressDir2 = vtkSmartPointer<vtkDoubleArray>::New();
-    stressDir2->SetNumberOfComponents(3);
-    stressDir2->SetName( "Stress Direction 2");
- 
-    vtkSmartPointer<vtkDoubleArray> 
-      strainarray = vtkSmartPointer<vtkDoubleArray>::New();
-    strainarray->SetNumberOfComponents(3);
-    strainarray->SetName( "Principal Strains");
-    
-    vtkSmartPointer<vtkDoubleArray> 
-      strainDir0 = vtkSmartPointer<vtkDoubleArray>::New();
-    strainDir0->SetNumberOfComponents(3);
-    strainDir0->SetName( "Strain Direction 0");
-    
-    vtkSmartPointer<vtkDoubleArray> 
-      strainDir1 = vtkSmartPointer<vtkDoubleArray>::New();
-    strainDir1->SetNumberOfComponents(3);
-    strainDir1->SetName( "Strain Direction 1");
-    
-    vtkSmartPointer<vtkDoubleArray> 
-      strainDir2 = vtkSmartPointer<vtkDoubleArray>::New();
-    strainDir2->SetNumberOfComponents(3);
-    strainDir2->SetName( "Strain Direction 2");
-
-    pe = _membranes.begin();
-    for ( int e = 0; pe != _membranes.end(); pe++, e++) {
-
-      Tensor3D S(0.0);
-      Tensor3D E(0.0);
-
-      int npts=(*pe)->quadraturePoints().size();
-      typename MembraneElement_t::ConstQuadPointIterator 
-	p = (*pe)->quadraturePoints().begin();
-      for( ; p != (*pe)->quadraturePoints().end(); p++){
-	  
-	double J = 0.0;
-	const Tensor2D & metricDual 
-	  =  p->material.shellGeometry().metricTensorInverse();
-	const Tensor2D & refDual 
-	  =  p->material.refShellGeometry().metricTensorInverse();
-	const Tensor2D & stressDual 
-	  =  p->material.stress();
-	const Tensor2D & strain
-	  =  p->material.strain();
-
-	const tvmet::Vector< Vector3D, 2 > & basis = p->material.refShellGeometry().a(); 
-	const tvmet::Vector< Vector3D, 2 > & dual = p->material.refShellGeometry().aDual();
-
-	for(int alpha=0; alpha<2; alpha++) {
-	  for( int beta=0; beta<2; beta++) {
-
-	    for( int I=0; I<3; I++ ) {
-	      for( int J=0; J<3; J++ ) {
-	
-		S(I,J) += stressDual(alpha,beta)*basis(alpha)(I)*basis(beta)(J);
-		E(I,J) += strain(alpha,beta)*dual(alpha)(I)*dual(beta)(J);
-
-	      }
-	    }
-	  }
-	}
-      }
-      S /= (double)( npts );
-      E /= (double)( npts );
-
-      double s[] = {S(0,0), S(1,1), S(2,2), S(1,2), S(0,2), S(0,1)};
-
-      PKstressarray->InsertNextTupleValue( s );
-
-      // compute Eigenvalues and Eigenvectors by calling LAPACK library
-      char jobz = 'V';
-      char uplo = 'L';
-      int  n    = 3;
-      int  lda  = n;
-      int  lwork = 3*n-1;
-      int  info;
-      double work[lwork];
-    
-      // calling lapack function here to compute
-      // eigenvalues and eigenvectors
-
-      double A[9], B[9];
-      for(int i=0; i<3; i++) {
-	for(int j=0; j<3; j++) {
-	  A[3*i+j] = S(i,j);
-	  B[3*i+j] = E(i,j);
-	}
-      }
-      double a[3];
-      double b[3];
-      dsyev_(&jobz, &uplo, &n, A, &lda, a, work, &lwork, &info);
-      dsyev_(&jobz, &uplo, &n, B, &lda, b, work, &lwork, &info);
-
-      stressarray->InsertNextTupleValue( a );
-      strainarray->InsertNextTupleValue( b );
-
-      Vector3D v;
-      S = trans(tvmet::Matrix<double, 3, 3>(A,A+9));
-      v = S(0,0), S(1,0), S(2,0);
-      stressDir0->InsertNextTupleValue( v.begin() );
-      v = S(0,1), S(1,1), S(2,1);
-      stressDir1->InsertNextTupleValue( v.begin() );
-      v = S(0,2), S(1,2), S(2,2);
-      stressDir2->InsertNextTupleValue( v.begin() );
-
-      E = trans(tvmet::Matrix<double, 3, 3>(B,B+9));
-      v = E(0,0), E(1,0), E(2,0);
-      strainDir0->InsertNextTupleValue( v.begin() );
-      v = E(0,1), E(1,1), E(2,1);
-      strainDir1->InsertNextTupleValue( v.begin() );
-      v = E(0,2), E(1,2), E(2,2);
-      strainDir2->InsertNextTupleValue( v.begin() );
-
-      // insert evals evecs
-
-    }
-
-    unstructuredGrid->GetCellData()->AddArray(stressarray);
-    unstructuredGrid->GetCellData()->AddArray(PKstressarray);
-    unstructuredGrid->GetCellData()->AddArray(strainarray);
-    unstructuredGrid->GetCellData()->AddArray(stressDir0);
-    unstructuredGrid->GetCellData()->AddArray(stressDir1);
-    unstructuredGrid->GetCellData()->AddArray(stressDir2);
-    unstructuredGrid->GetCellData()->AddArray(strainDir0);
-    unstructuredGrid->GetCellData()->AddArray(strainDir1);
-    unstructuredGrid->GetCellData()->AddArray(strainDir2);
-
-    std::string fileName = name + ".vtu";
-
-    vtkSmartPointer<vtkXMLUnstructuredGridWriter> writer = 
-      vtkSmartPointer<vtkXMLUnstructuredGridWriter>::New();
-    writer->SetFileName(fileName.c_str());
-    writer->SetInput(unstructuredGrid);
-    writer->Write();    
+    ofs.close();
 
     return;
   }
@@ -612,465 +534,509 @@ namespace voom
     return;
   }
 
-//   //! create input file used by Paraview, a 3D viewer
-//   template<class Quadrature_t, class Material_t, class Shape_t>
-//   void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::printParaview(std::string name) const
-//   {
-
-//     int numShells = _membranes.size();
+  //! create output file used by Paraview to display CELL vectors
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::printParaviewEigVec(const std::string name) const
+  {
+    std::string fileName = name + "-eigvec.vtk";
+    std::ofstream ofs(fileName.c_str());
+    if (!ofs) {
+      std::cout << "can not open output ("
+		<< fileName
+		<< ") file." << std::endl;
+      exit(0);
+    }
     
-//     blitz::Array<double,1> energy(blitz::shape(numShells));
+    int nActiveMembranes=0;
+    for(int e=0; e<_membranes.size(); e++) {
+      if(_active[e]) nActiveMembranes++;
+    }
 
-//     energy = 0.0;
-
-//     ConstMembraneElementIterator pe = _membranes.begin();
-//     for ( int e = 0; pe != _membranes.end(); pe++, e++) {
-//       int npts=0;
-//       typename MembraneElement_t::ConstQuadPointIterator 
-// 	p = (*pe)->quadraturePoints().begin();
-//       for( ; p != (*pe)->quadraturePoints().end(); p++){
-// 	energy(e) += p->material.energyDensity();
-// 	npts++;
-//       }
-//       energy(e) /= (double)( npts );
-//     }
-
-
-//     std::string fileName = name + ".vtk";
-//     std::ofstream ofs(fileName.c_str());
-// //     ofs.open(fileName.c_str(), std::ios::out);
-//     if (!ofs) {
-//       std::cout << "can not open output ("
-// 		<< fileName
-// 		<< ") file." << std::endl;
-//       exit(0);
-//     }
+    //    Node Section
+    // output nodal postions (positions of the element centroids)
+    ofs << "# vtk DataFile Version 2.0\n"
+	<< "Test example" << std::endl
+	<< "ASCII" << std::endl
+	<< "DATASET POLYDATA" << std::endl
+	<< "POINTS  " << nActiveMembranes << "  double" << std::endl;
     
-//     ////////////////////////////////////////////////////////////////////
-//     //
-//     //    Node Section
-//     //
-//     ofs << "# vtk DataFile Version 2.0\n"
-// 	<< "Test example" << std::endl
-// 	<< "ASCII" << std::endl
-// 	<< "DATASET UNSTRUCTURED_GRID" << std::endl
-// 	<< "POINTS  " << _membraneNodes.size() << "  double" << std::endl;
+    for(int e=0; e<_membranes.size(); e++) {
+      if(!_active[e])  continue;
+      const MembraneElement_t * pe = _membranes[e];
+      const typename MembraneElement_t::NodeContainer & pnc = (pe)->nodes();
+      Vector3D center(0);
+      for(int iNode=0; iNode<pnc.size();iNode++)
+        center += _membraneNodes[pnc[iNode]->id()]->position();
+      center /= pnc.size();
+      ofs << std::setprecision(16) 
+	  << center(0) << "  "
+	  << center(1) << "  "
+	  << center(2) << std::endl;
+    }
+
+    // output nodal displacements (displacements of the element centroids)
+    ofs << "POINT_DATA    " << nActiveMembranes << std::endl;
+    ofs << "VECTORS displacements double" << endl;
+    for(int e=0; e<_membranes.size(); e++) {
+      const MembraneElement_t * pe = _membranes[e];
+      const typename MembraneElement_t::NodeContainer & pnc = (pe)->nodes();
+      Vector3D center(0);
+      for(int iNode=0; iNode<pnc.size();iNode++)
+        center += _membraneNodes[pnc[iNode]->id()]->point()-_membraneNodes[pnc[iNode]->id()]->position();
+      center /= pnc.size();
+      ofs << std::setprecision(16) 
+	  << center(0) << "  "
+	  << center(1) << "  "
+	  << center(2) << std::endl;
+    }
     
-//     //
-//     // output nodal postions
-//     ConstMembraneNodeIterator pn = _membraneNodes.begin();
-//     for ( ; pn!= _membraneNodes.end(); pn ++) {
-//       const Vector3D & nodalPos =  (*pn)->position();
-//       ofs << std::setprecision(16) 
-// 	  << nodalPos(0) << "  "
-// 	  << nodalPos(1) << "  "
-// 	  << nodalPos(2) << std::endl;
-//     }
+    std::vector<Vector3D> evec1, evec2, evec3;
+    std::vector<double> eval1, eval2, eval3;
 
-//     /////////////////////////////////////////////////////////////////////
-//     //
-//     //    Element Section
-//     //
-//     int nActiveMembranes=0;
-//     for(int e=0; e<_membranes.size(); e++) {
-//       if(_active[e]) nActiveMembranes++;
-//     }
-
-//     int nodes_per_element = _membranes[0]->nodes().size();
-
-//     ofs << "CELLS  " << nActiveMembranes << "  "
-// 	<<  (nodes_per_element+1)*nActiveMembranes << std::endl;
-//     for(int e=0; e<_membranes.size(); e++) {
-//       if(!_active[e])  continue;
-//       const MembraneElement_t * pe = _membranes[e];
-//       const typename MembraneElement_t::NodeContainer & pnc = (pe)->nodes();
-//       ofs << nodes_per_element << "  ";
-//       for(int a=0; a<nodes_per_element; a++) {      
-// 	ofs << std::setw(10) << pnc[a] -> id();
-//       }
-//       ofs << std::endl;
-//     }
-
-//     int vtk_cell_type=0;
-//     if( nodes_per_element == 3 ) {
-//       // 3-node triangle
-//       vtk_cell_type = 5;
-//     } else if( nodes_per_element == 6 ) {
-//       // 6-node triangle
-//       vtk_cell_type = 22;
-//     } 
-    
-//     ofs << "CELL_TYPES  " << nActiveMembranes << std::endl;
-//     for(int f=0; f<nActiveMembranes; f++) {
-//       ofs << vtk_cell_type << std::endl;
-//     }
-
+    //calculate the eigenvalues of B=F*F^T
+    ConstMembraneElementIterator pe = _membranes.begin();
+    for ( int e = 0; pe != _membranes.end(); pe++, e++) {
+      if(!_active[e])  continue;
+      int npts=0;
+      Tensor3D F;
+      typename MembraneElement_t::QuadPointIterator 
+	p = (*pe)->quadraturePoints().begin();
+      for( ; p != (*pe)->quadraturePoints().end(); p++){
+	F = p->material.DefGradient();
+	npts++;
+      }
+      if(npts>1) std::cerr<<"printParaviewEigVec::Assumption of one GQ pt. not true"<<std::endl;
+      Tensor3D B(F*trans(F));
+      // compute Eigenvalues and Eigenvectors by calling LAPACK library
+      char jobz = 'V';
+      char uplo = 'L';
+      int  n    = 3;
+      int  lda  = n;
+      int  lwork = 3*n-1;
+      int  info;
+      double evalues[3];
+      double work[lwork];
+      
+      // calling lapack function here to compute
+      dsyev_(&jobz, &uplo, &n, B.data(),&lda, evalues, work, &lwork, &info);
+      if (info != 0) {
+	std::cout << "Something is wrong in DSYEV_" << std::endl;
+	exit(0);
+      }
+      Vector3D vec(row(B,0));      evec1.push_back(vec);
+      vec=row(B,1);      evec2.push_back(vec);
+      vec=row(B,2);      evec3.push_back(vec);
+      eval1.push_back(evalues[0]);
+      eval2.push_back(evalues[1]);
+      eval3.push_back(evalues[2]);
+    }
      	
-//     //////////////////////////////////////////////////////////////////////////
-//     //
-//     //  output color for each element ( corresponding to mean
-//     //  curvature, energy...)
-//     //
-//     ofs << "CELL_DATA    " << nActiveMembranes << std::endl;
-//     //
-//     // output for strain energy
-//     ofs << "SCALARS    strainEnergy    double    1" << std::endl;
-//     ofs << "LOOKUP_TABLE default" << std::endl;
-//     for ( int e = 0; e<numShells; e++) {
-//       if(!_active[e])  continue;
-//       ofs << energy(e) << std::endl;
-//     }
-//     ofs << std::endl;
-
-
-//     if( _stressDirections.size() > 0 ) {
-//       ofs << "FIELD FieldData " << 2*_stressDirections.size() << std::endl;
-//       // 
-//       // output Normal Cauchy stresses along stress directions 
-//       // 
-//       // on second thought, make that 2nd-PK stresses
-//       //
-//       for(int i=0; i<_stressDirections.size(); i++) {
-
-// 	std::string stressName = "S";
-// 	std::string strainName = "E";
-// 	stressName += boost::lexical_cast<std::string>( i );
-// 	strainName += boost::lexical_cast<std::string>( i );
-
-// 	blitz::Array<double,1> stress(blitz::shape(numShells));
-// 	blitz::Array<double,1> strain(blitz::shape(numShells));
-
-// 	stress = 0.0;
-// 	strain = 0.0;
-
-
-// 	ConstMembraneElementIterator pe = _membranes.begin();
-// 	for ( int e = 0; pe != _membranes.end(); pe++, e++) {
-
-// 	  int npts=0;
-// 	  typename MembraneElement_t::ConstQuadPointIterator 
-// 	    p = (*pe)->quadraturePoints().begin();
-// 	  for( ; p != (*pe)->quadraturePoints().end(); p++){
-// 	    Vector2D N(0.0);
-// 	    for(int alpha=0; alpha<2; alpha++) {
-// 	      N(alpha) += tvmet::dot( _stressDirections[i],  
-// 				      p->material.refShellGeometry().a()[alpha] 
-// 				      );
-// 	    }
-// 	    double J = 0.0;
-// 	    double s = 0.0;
-// 	    double E = 0.0;
-// 	    const Tensor2D & metricDual 
-// 	      =  p->material.shellGeometry().metricTensorInverse();
-// 	    const Tensor2D & refDual 
-// 	      =  p->material.refShellGeometry().metricTensorInverse();
-// 	    const Tensor2D & stressDual 
-// 	      =  p->material.stress();
-	  
-// 	    Tensor2D strainDual(0.0);
-	  
-// 	    for(int alpha=0; alpha<2; alpha++) {
-// 	      for( int beta=0; beta<2; beta++) {
-
-// 		for(int gamma=0; gamma<2; gamma++) {
-// 		  for(int nu=0; nu<2; nu++) {
-// 		    E += 
-// 		      refDual(alpha,gamma)*refDual(beta,nu)*
-// 		      ( p->material.strain()(gamma,nu) ) * N(alpha) * N(beta);
-// 		  }
-// 		}
-
-// 		J += metricDual(alpha,beta) * N(alpha) * N(beta);
-// 		s += stressDual(alpha,beta) * N(alpha) * N(beta);
-// 	      }
-// 	    }
-// 	    J *= ( p->material.shellGeometry().metric()    ) /
-// 	      ( p->material.refShellGeometry().metric() );
-	  
-// 	    stress(e) += s;// /J;
-// 	    strain(e) += E;
-// 	    npts++;
-// 	  }
-// 	  stress(e) /= (double)( npts );
-// 	  strain(e) /= (double)( npts );
-// 	}
-	
-	
-// 	ofs << stressName << " 1 " << numShells << " double" << std::endl;
-// 	for ( int e = 0; e<numShells; e++) {
-// 	  if(!_active[e])  continue;
-// 	  ofs << stress(e) << std::endl;
-// 	}
-// 	ofs << std::endl;
-
-// 	ofs << strainName << " 1 " << numShells << " double" << std::endl;
-// 	for ( int e = 0; e<numShells; e++) {
-// 	  if(!_active[e])  continue;
-// 	  ofs << strain(e) << std::endl;
-// 	}
-// 	ofs << std::endl;
-
-//       }
-//     } else {
-
-//       // if no stress directions are provided, compute principal stresses/strains
-
-//       std::vector<Tensor3D> stresses(numShells,Tensor3D(0.0) );
-//       std::vector<Tensor3D> strains(numShells,Tensor3D(0.0) );
-
-//       // std::cout << "stresses = " << stresses[0] << std::endl;
-
-//       ConstMembraneElementIterator pe = _membranes.begin();
-//       for ( int e = 0; pe != _membranes.end(); pe++, e++) {
-
-// 	int npts=(*pe)->quadraturePoints().size();
-// 	typename MembraneElement_t::ConstQuadPointIterator 
-// 	  p = (*pe)->quadraturePoints().begin();
-// 	for( ; p != (*pe)->quadraturePoints().end(); p++){
-	  
-// 	  double J = 0.0;
-// 	  const Tensor2D & metricDual 
-// 	    =  p->material.shellGeometry().metricTensorInverse();
-// 	  const Tensor2D & refDual 
-// 	    =  p->material.refShellGeometry().metricTensorInverse();
-// 	  const Tensor2D & stressDual 
-// 	    =  p->material.stress();
-// 	  const Tensor2D & strain
-// 	    =  p->material.strain();
-
-// 	  const tvmet::Vector< Vector3D, 2 > & basis = p->material.refShellGeometry().a(); 
-// 	  const tvmet::Vector< Vector3D, 2 > & dual = p->material.refShellGeometry().aDual();
-
-// 	  Tensor3D S(0.0);
-// 	  Tensor3D E(0.0);
-
-// 	  for(int alpha=0; alpha<2; alpha++) {
-// 	    for( int beta=0; beta<2; beta++) {
-
-// 	      for( int I=0; I<3; I++ ) {
-// 		for( int J=0; J<3; J++ ) {
-	
-// 		  S(I,J) += stressDual(alpha,beta)*basis(alpha)(I)*basis(beta)(J);
-// 		  E(I,J) += strain(alpha,beta)*dual(alpha)(I)*dual(beta)(J);
-
-// 		}
-// 	      }
-// 	    }
-// 	  }
-// 	  stresses[e] = stresses[e] + S;
-// 	  strains[e] = strains[e] + E;
-
-// 	  stresses[e] = 0.5*(stresses[e]+trans(stresses[e]));
-// 	  strains[e] = 0.5*(strains[e]+trans(strains[e]));
-// 	}
-// 	stresses[e] /= (double)( npts );
-// 	strains[e] /= (double)( npts );
-//       }
-
-//       // std::cout << "stresses = " << stresses[0] << std::endl;
-
-
-//       std::vector< Vector3D > SeVals(numShells);	
-//       std::vector< Vector3D > EeVals(numShells);	
-//       std::vector< Tensor3D > SeVecs(numShells);	
-//       std::vector< Tensor3D > EeVecs(numShells);	
-
-//       for ( int e = 0; e<numShells; e++) {
-// 	if(!_active[e])  continue;
-
-// 	// eigenDecomposition(stresses[e], SeVecs[e], SeVals[e]);
-// 	// eigenDecomposition(strains[e], EeVecs[e], EeVals[e]);
-//     // compute Eigenvalues and Eigenvectors by calling LAPACK library
-// 	char jobz = 'V';
-// 	char uplo = 'L';
-// 	int  n    = 3;
-// 	int  lda  = n;
-// 	int  lwork = 3*n-1;
-// 	int  info;
-// 	double work[lwork];
+    //  output vectors for each element (point in this file)
+    ofs << "VECTORS    Beigvec1    double    " << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) {
+      ofs << std::setprecision(16) 
+	  << evec1[e](0)
+	  << '\t' <<evec1[e](1)
+	  << '\t' <<evec1[e](2) << std::endl;
+    }
+    ofs << std::endl;
     
-// 	// calling lapack function here to compute
-// 	// eigenvalues and eigenvectors
-
-// 	SeVecs[e] = stresses[e];
-// 	double * A = &(SeVecs[e](0,0));
-// 	double * W = &(SeVals[e](0));
-// 	dsyev_(&jobz, &uplo, &n, A,
-// 	       &lda, W, work, &lwork, &info);
-
-// 	EeVecs[e] = strains[e];
-// 	A = &(EeVecs[e](0,0));
-// 	W = &(EeVals[e](0));
-// 	dsyev_(&jobz, &uplo, &n, A,
-// 	       &lda, W, work, &lwork, &info);
-//       }
-	
-//       // std::cout << " SeVals = " << SeVals[0] << std::endl;
-//       // std::cout << " SeVecs = " << SeVecs[0] << std::endl;
-
-//       ofs << "FIELD FieldData 2 " << std::endl;
-
-//       ofs << " SeVals " << " 3 " << numShells << " double" << std::endl;
-//       for ( int e = 0; e<numShells; e++) {
-// 	if(!_active[e])  continue;
-
-// 	for(int i=0; i<3; i++ ) {
-// 	  ofs << SeVals[e](i) << " ";
-// 	}
-// 	ofs << std::endl;
-//       }
-//       ofs << std::endl;
-
-//       ofs << " EeVals " << " 3 " << numShells << " double" << std::endl;
-//       for ( int e = 0; e<numShells; e++) {
-// 	if(!_active[e])  continue;
-
-// 	for(int i=0; i<3; i++ ) {
-// 	  ofs << EeVals[e](i) << " ";
-// 	}
-// 	ofs << std::endl;
-//       }
-//       ofs << std::endl;
-
-//       ofs << endl << "VECTORS SeVec0 double" << endl;
-
-//       for ( int e = 0; e<numShells; e++) {
-// 	if(!_active[e])  continue;
-
-// 	ofs << std::setprecision(16) 
-// 	    << SeVecs[e](0,0) << '\t' 
-// 	    << SeVecs[e](1,0) << '\t' 
-// 	    << SeVecs[e](2,0) << std::endl;
-//       }
-   
-//       ofs << endl << "VECTORS SeVec1 double" << endl;
-
-//       for ( int e = 0; e<numShells; e++) {
-// 	if(!_active[e])  continue;
-
-// 	ofs << std::setprecision(16) 
-// 	    << SeVecs[e](0,1) << '\t' 
-// 	    << SeVecs[e](1,1) << '\t' 
-// 	    << SeVecs[e](2,1) << std::endl;
-//       }
-
-//       ofs << endl << "VECTORS SeVec2 double" << endl;
-
-//       for ( int e = 0; e<numShells; e++) {
-// 	if(!_active[e])  continue;
-
-// 	ofs << std::setprecision(16) 
-// 	    << SeVecs[e](0,2) << '\t' 
-// 	    << SeVecs[e](1,2) << '\t' 
-// 	    << SeVecs[e](2,2) << std::endl;
-//       }
-
-//       ofs << endl << "VECTORS EeVec0 double" << endl;
-
-//       for ( int e = 0; e<numShells; e++) {
-// 	if(!_active[e])  continue;
-
-// 	ofs << std::setprecision(16) 
-// 	    << EeVecs[e](0,0) << '\t' 
-// 	    << EeVecs[e](1,0) << '\t' 
-// 	    << EeVecs[e](2,0) << std::endl;
-//       }
-   
-//       ofs << endl << "VECTORS EeVec1 double" << endl;
-
-//       for ( int e = 0; e<numShells; e++) {
-// 	if(!_active[e])  continue;
-
-// 	ofs << std::setprecision(16) 
-// 	    << EeVecs[e](0,1) << '\t' 
-// 	    << EeVecs[e](1,1) << '\t' 
-// 	    << EeVecs[e](2,1) << std::endl;
-//       }
-
-//       ofs << endl << "VECTORS EeVec2 double" << endl;
-
-//       for ( int e = 0; e<numShells; e++) {
-// 	if(!_active[e])  continue;
-
-// 	ofs << std::setprecision(16) 
-// 	    << EeVecs[e](0,2) << '\t' 
-// 	    << EeVecs[e](1,2) << '\t' 
-// 	    << EeVecs[e](2,2) << std::endl;
-//       }
-
-//     }
-
-//     ofs << endl << "POINT_DATA " << _membraneNodes.size() << endl
-// 	<< "VECTORS displacements double" << endl;
-//     /*     << "LOOKUP_TABLE displacements" << endl; */
-//     //
-//     // output nodal postions
-//     pn = _membraneNodes.begin();
-//     for ( ; pn!= _membraneNodes.end(); pn ++) {
-//       Vector3D nodalDisp;
-//       nodalDisp = (*pn)->point() - (*pn)->position();
-//       ofs << std::setprecision(16) 
-// 	  << nodalDisp(0)
-// 	  << '\t' <<nodalDisp(1)
-// 	  << '\t' <<nodalDisp(2) << std::endl;
-//     }
+    ofs << "VECTORS    Beigvec2    double    " << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) {
+      ofs << std::setprecision(16) 
+	  << evec2[e](0)
+	  << '\t' <<evec2[e](1)
+	  << '\t' <<evec2[e](2) << std::endl;
+    }
+    ofs << std::endl;
     
-//     ofs << endl << "VECTORS forces double" << endl;
-//     /*     << "LOOKUP_TABLE displacements" << endl; */
-//     //
-//     // output nodal postions
-//     pn = _membraneNodes.begin();
-//     for ( ; pn!= _membraneNodes.end(); pn ++) {
-//       const Vector3D & nodalForce = (*pn)->force();
-//       ofs << std::setprecision(16) 
-// 	  << nodalForce(0)
-// 	  << '\t' <<nodalForce(1)
-// 	  << '\t' <<nodalForce(2) << std::endl;
-//     }
-//     ofs.close();
-
-//     return;
-//   }
-
-//   //! create Alias-Wavefront .obj file
-//   template<class Quadrature_t, class Material_t, class Shape_t>
-//   void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::printObj(const std::string name) const
-//   {
-// #ifdef WITH_MPI
-//     if(_processorRank!=0) return;
-// #endif
-
-//     std::string fileName = name + ".obj";
-//     std::ofstream ofs(fileName.c_str(), std::ios::out);
-//     if (!ofs) {
-//       std::cout << "can not open output ("
-// 		<< fileName
-// 		<< ") file." << std::endl;
-//       exit(0);
-//     }
-
-//     // output nodal postions
-//     ConstMembraneNodeIterator pn = _membraneNodes.begin();
-//     for ( ; pn!= _membraneNodes.end(); pn ++) {
-//       const Vector3D & nodalPos =  (*pn)->position();
-//       ofs << "v " << std::setprecision(16) 
-// 	  << std::setw(24) << nodalPos(0) 
-// 	  << std::setw(24) << nodalPos(1) 
-// 	  << std::setw(24) << nodalPos(2) << std::endl;
-//     }
+    ofs << "VECTORS    Beigvec3    double    " << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) {
+      ofs << std::setprecision(16) 
+	  << evec3[e](0)
+	  << '\t' <<evec3[e](1)
+	  << '\t' <<evec3[e](2) << std::endl;
+    }
+    ofs << std::endl;
+    //  output eigen values for each element (point in this file)
+    ofs << "SCALARS    B-Eval1    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) 
+      ofs << eval1[e] << std::endl; 
     
-//     // output face connectivities
-//     for(ConstMembraneElementIterator pe=_membranes.begin(); pe!=_membranes.end(); pe++) {
-//       const typename MembraneElement_t::NodeContainer & pnc = (*pe)->nodes();
-//       ofs << "f "
-// 	  << std::setw(10) << pnc[0] -> id()
-// 	  << std::setw(10) << pnc[1] -> id()
-// 	  << std::setw(10) << pnc[2] -> id()
-// 	  << std::endl;
-//     }
-//     ofs.close();		
+    ofs << "SCALARS    B-Eval2    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) 
+      ofs << eval2[e] << std::endl; 
 
-//     return;
-//   }
+    ofs << "SCALARS    B-Eval3    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) 
+      ofs << eval3[e] << std::endl; 
+
+    // Calculate the eigenevectors and eigenvalues of cauchy stress and output that
+    evec1.clear(); evec2.clear(); evec3.clear();
+    eval1.clear(); eval2.clear(); eval3.clear();
+
+    pe = _membranes.begin();
+    for ( int e = 0; pe != _membranes.end(); pe++, e++) {
+      if(!_active[e])  continue;
+      int npts=0;
+      Tensor3D sigma;
+      typename MembraneElement_t::QuadPointIterator 
+	p = (*pe)->quadraturePoints().begin();
+      for( ; p != (*pe)->quadraturePoints().end(); p++){
+	sigma = p->material.cauchyStress();
+	npts++;
+      }
+      if(npts>1) std::cerr<<"printParaviewEigVec::Assumption of one GQ pt. not true"<<std::endl;
+      // compute Eigenvalues and Eigenvectors by calling LAPACK library
+      char jobz = 'V';
+      char uplo = 'L';
+      int  n    = 3;
+      int  lda  = n;
+      int  lwork = 3*n-1;
+      int  info;
+      double evalues[3];
+      double work[lwork];
+      
+      // calling lapack function here to compute
+      dsyev_(&jobz, &uplo, &n, sigma.data(),&lda, evalues, work, &lwork, &info);
+      if (info != 0) {
+	std::cout << "Something is wrong in DSYEV_" << std::endl;
+	exit(0);
+      }
+      double TOL=1e-12;
+      Vector3D vec;
+
+      if(std::fabs(evalues[0])<TOL){
+      vec=row(sigma,0);      evec1.push_back(vec);
+      eval1.push_back(evalues[0]);
+      vec=row(sigma,1);      evec2.push_back(vec);
+      eval2.push_back(evalues[1]);
+      vec=row(sigma,2);      evec3.push_back(vec);
+      eval3.push_back(evalues[2]);}
+
+      else if(std::fabs(evalues[1])<TOL) {
+      vec=row(sigma,1);      evec1.push_back(vec);
+      eval1.push_back(evalues[1]);
+      vec=row(sigma,0);      evec2.push_back(vec);
+      eval2.push_back(evalues[0]);
+      vec=row(sigma,2);      evec3.push_back(vec);
+      eval3.push_back(evalues[2]);}
+
+      else {
+      vec=row(sigma,2);      evec1.push_back(vec);
+      eval1.push_back(evalues[2]);
+      vec=row(sigma,0);      evec2.push_back(vec);
+      eval2.push_back(evalues[0]);
+      vec=row(sigma,1);      evec3.push_back(vec);
+      eval3.push_back(evalues[1]);}
+    }
+     	
+    //  output vectors for each element (point in this file)
+    ofs << "VECTORS    cauchy-eigvec1    double    " << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) {
+      ofs << std::setprecision(16) 
+	  << evec1[e](0)
+	  << '\t' <<evec1[e](1)
+	  << '\t' <<evec1[e](2) << std::endl;
+    }
+    ofs << std::endl;
+    
+    ofs << "VECTORS    cauchy-eigvec2    double    " << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) {
+      ofs << std::setprecision(16) 
+	  << evec2[e](0)
+	  << '\t' <<evec2[e](1)
+	  << '\t' <<evec2[e](2) << std::endl;
+    }
+    ofs << std::endl;
+    
+    ofs << "VECTORS    cauchy-eigvec3    double    " << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) {
+      ofs << std::setprecision(16) 
+	  << evec3[e](0)
+	  << '\t' <<evec3[e](1)
+	  << '\t' <<evec3[e](2) << std::endl;
+    }
+    ofs << std::endl;
+    //  output eigen values for each element (point in this file)
+    ofs << "SCALARS    cauchy-Eval1    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) 
+      ofs << eval1[e] << std::endl; 
+    
+    ofs << "SCALARS    cauchy-Eval2    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) 
+      ofs << eval2[e] << std::endl; 
+
+    ofs << "SCALARS    cauchy-Eval3    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) 
+      ofs << eval3[e] << std::endl; 
+    ofs.close();
+
+    return;
+  }
+
+  //! create output file used by Paraview to display CELL vectors
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::printParaview2(const std::string name) const
+  {
+    std::string fileName = name + "-eigvec.vtk";
+    std::ofstream ofs(fileName.c_str());
+    if (!ofs) {
+      std::cout << "can not open output ("
+		<< fileName
+		<< ") file." << std::endl;
+      exit(0);
+    }
+    
+    int nActiveMembranes=0;
+    for(int e=0; e<_membranes.size(); e++) {
+      if(_active[e]) nActiveMembranes++;
+    }
+
+    //    Node Section
+    // output nodal postions (positions of the element centroids)
+    ofs << "# vtk DataFile Version 2.0\n"
+	<< "Test example" << std::endl
+	<< "ASCII" << std::endl
+	<< "DATASET POLYDATA" << std::endl
+	<< "POINTS  " << _membraneNodes.size() << "  double" << std::endl;
+    
+    ConstMembraneNodeIterator pn = _membraneNodes.begin();
+    for ( ; pn!= _membraneNodes.end(); pn ++) {
+      const Vector3D & nodalPos =  (*pn)->position();
+      ofs << std::setprecision(16) 
+	  << nodalPos(0) << "  "
+	  << nodalPos(1) << "  "
+	  << nodalPos(2) << std::endl;
+    }
+
+    /////////////////////////////////////////////////////////////////////
+    //
+    //    Element Section
+    //
+    ofs << "POLYGONS  " << nActiveMembranes << "  "
+	<< 4*nActiveMembranes << std::endl;
+    for(int e=0; e<_membranes.size(); e++) {
+      if(!_active[e])  continue;
+      const MembraneElement_t * pe = _membranes[e];
+      const typename MembraneElement_t::NodeContainer & pnc = (pe)->nodes();
+      ofs << 3 << "  "
+	  << std::setw(10) << pnc[0] -> id()
+	  << std::setw(10) << pnc[1] -> id()
+	  << std::setw(10) << pnc[2] -> id()
+	  << std::endl;
+    }
+
+    // output nodal displacements (displacements of the element centroids)
+    ofs << "POINT_DATA  " << _membraneNodes.size() << std::endl;
+    
+    ofs << "VECTORS displacements double" << endl;
+    pn = _membraneNodes.begin();
+    for ( ; pn!= _membraneNodes.end(); pn ++) {
+      Vector3D nodalDisp;
+      nodalDisp = (*pn)->point() - (*pn)->position();
+      ofs << std::setprecision(16) 
+	  << nodalDisp(0)
+	  << '\t' <<nodalDisp(1)
+	  << '\t' <<nodalDisp(2) << std::endl;
+    }
+    
+    std::vector<Vector3D> evec1, evec2, evec3;
+    std::vector<double> eval1, eval2, eval3;
+
+    //calculate the eigenvalues of B=F*F^T
+    ConstMembraneElementIterator pe = _membranes.begin();
+    for ( int e = 0; pe != _membranes.end(); pe++, e++) {
+      if(!_active[e])  continue;
+      int npts=0;
+      Tensor3D F;
+      typename MembraneElement_t::QuadPointIterator 
+	p = (*pe)->quadraturePoints().begin();
+      for( ; p != (*pe)->quadraturePoints().end(); p++){
+	F = p->material.DefGradient();
+	npts++;
+      }
+      if(npts>1) std::cerr<<"printParaview2::Assumption of one GQ pt. not true"<<std::endl;
+      Tensor3D B(F*trans(F));
+      // compute Eigenvalues and Eigenvectors by calling LAPACK library
+      char jobz = 'V';
+      char uplo = 'L';
+      int  n    = 3;
+      int  lda  = n;
+      int  lwork = 3*n-1;
+      int  info;
+      double evalues[3];
+      double work[lwork];
+      
+      // calling lapack function here to compute
+      dsyev_(&jobz, &uplo, &n, B.data(),&lda, evalues, work, &lwork, &info);
+      if (info != 0) {
+	std::cout << "Something is wrong in DSYEV_" << std::endl;
+	exit(0);
+      }
+      Vector3D vec(row(B,0));      evec1.push_back(vec);
+      vec=row(B,1);      evec2.push_back(vec);
+      vec=row(B,2);      evec3.push_back(vec);
+      eval1.push_back(evalues[0]);
+      eval2.push_back(evalues[1]);
+      eval3.push_back(evalues[2]);
+    }
+     	
+    //  output vectors for each element (point in this file)
+    ofs << "CELL_DATA    " << nActiveMembranes << std::endl;
+    ofs << "VECTORS    Beigvec1    double    " << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) {
+      ofs << std::setprecision(16) 
+	  << evec1[e](0)
+	  << '\t' <<evec1[e](1)
+	  << '\t' <<evec1[e](2) << std::endl;
+    }
+    ofs << std::endl;
+    
+    ofs << "VECTORS    Beigvec2    double    " << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) {
+      ofs << std::setprecision(16) 
+	  << evec2[e](0)
+	  << '\t' <<evec2[e](1)
+	  << '\t' <<evec2[e](2) << std::endl;
+    }
+    ofs << std::endl;
+    
+    ofs << "VECTORS    Beigvec3    double    " << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) {
+      ofs << std::setprecision(16) 
+	  << evec3[e](0)
+	  << '\t' <<evec3[e](1)
+	  << '\t' <<evec3[e](2) << std::endl;
+    }
+    ofs << std::endl;
+    //  output eigen values for each element (point in this file)
+    ofs << "SCALARS    B-Eval1    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) 
+      ofs << eval1[e] << std::endl; 
+    
+    ofs << "SCALARS    B-Eval2    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) 
+      ofs << eval2[e] << std::endl; 
+
+    ofs << "SCALARS    B-Eval3    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) 
+      ofs << eval3[e] << std::endl; 
+
+    // Calculate the eigenevectors and eigenvalues of cauchy stress and output that
+    evec1.clear(); evec2.clear(); evec3.clear();
+    eval1.clear(); eval2.clear(); eval3.clear();
+
+    pe = _membranes.begin();
+    for ( int e = 0; pe != _membranes.end(); pe++, e++) {
+      if(!_active[e])  continue;
+      int npts=0;
+      Tensor3D sigma;
+      typename MembraneElement_t::QuadPointIterator 
+	p = (*pe)->quadraturePoints().begin();
+      for( ; p != (*pe)->quadraturePoints().end(); p++){
+	sigma = p->material.cauchyStress();
+	npts++;
+      }
+      if(npts>1) std::cerr<<"printParaview2::Assumption of one GQ pt. not true"<<std::endl;
+      // compute Eigenvalues and Eigenvectors by calling LAPACK library
+      char jobz = 'V';
+      char uplo = 'L';
+      int  n    = 3;
+      int  lda  = n;
+      int  lwork = 3*n-1;
+      int  info;
+      double evalues[3];
+      double work[lwork];
+      
+      // calling lapack function here to compute
+      dsyev_(&jobz, &uplo, &n, sigma.data(),&lda, evalues, work, &lwork, &info);
+      if (info != 0) {
+	std::cout << "Something is wrong in DSYEV_" << std::endl;
+	exit(0);
+      }
+      double TOL=1e-12;
+      Vector3D vec;
+
+      if(std::fabs(evalues[0])<TOL){
+      vec=row(sigma,0);      evec1.push_back(vec);
+      eval1.push_back(evalues[0]);
+      vec=row(sigma,1);      evec2.push_back(vec);
+      eval2.push_back(evalues[1]);
+      vec=row(sigma,2);      evec3.push_back(vec);
+      eval3.push_back(evalues[2]);}
+
+      else if(std::fabs(evalues[1])<TOL) {
+      vec=row(sigma,1);      evec1.push_back(vec);
+      eval1.push_back(evalues[1]);
+      vec=row(sigma,0);      evec2.push_back(vec);
+      eval2.push_back(evalues[0]);
+      vec=row(sigma,2);      evec3.push_back(vec);
+      eval3.push_back(evalues[2]);}
+
+      else {
+      vec=row(sigma,2);      evec1.push_back(vec);
+      eval1.push_back(evalues[2]);
+      vec=row(sigma,0);      evec2.push_back(vec);
+      eval2.push_back(evalues[0]);
+      vec=row(sigma,1);      evec3.push_back(vec);
+      eval3.push_back(evalues[1]);}
+    }
+     	
+    //  output vectors for each element (point in this file)
+    ofs << "VECTORS    cauchy-eigvec1    double    " << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) {
+      ofs << std::setprecision(16) 
+	  << evec1[e](0)
+	  << '\t' <<evec1[e](1)
+	  << '\t' <<evec1[e](2) << std::endl;
+    }
+    ofs << std::endl;
+    
+    ofs << "VECTORS    cauchy-eigvec2    double    " << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) {
+      ofs << std::setprecision(16) 
+	  << evec2[e](0)
+	  << '\t' <<evec2[e](1)
+	  << '\t' <<evec2[e](2) << std::endl;
+    }
+    ofs << std::endl;
+    
+    ofs << "VECTORS    cauchy-eigvec3    double    " << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) {
+      ofs << std::setprecision(16) 
+	  << evec3[e](0)
+	  << '\t' <<evec3[e](1)
+	  << '\t' <<evec3[e](2) << std::endl;
+    }
+    ofs << std::endl;
+    //  output eigen values for each element (point in this file)
+    ofs << "SCALARS    cauchy-Eval1    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) 
+      ofs << eval1[e] << std::endl; 
+    
+    ofs << "SCALARS    cauchy-Eval2    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) 
+      ofs << eval2[e] << std::endl; 
+
+    ofs << "SCALARS    cauchy-Eval3    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for ( int e = 0; e<nActiveMembranes; e++) 
+      ofs << eval3[e] << std::endl; 
+    ofs.close();
+
+    return;
+  }
 
 } // namespace voom

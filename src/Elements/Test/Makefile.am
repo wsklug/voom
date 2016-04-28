@@ -1,5 +1,5 @@
-bin_PROGRAMS    = nonlinElasQuadTet axi contract angle entropicSpring c0membranegl c0membrane c0_membrane_configurational springshell
-AM_CPPFLAGS        =                 	\
+bin_PROGRAMS    = test3dEl testMem testMemMod testPotential
+AM_CPPFLAGS     =                 	\
 	-I$(blitz_includes)            	\
 	-I$(tvmet_includes)            	\
 	-I$(srcdir)/../          	\
@@ -10,23 +10,18 @@ AM_CPPFLAGS        =                 	\
 	-I$(srcdir)/../../Geometry/     \
 	-I$(srcdir)/../../Quadrature/   \
 	-I$(srcdir)/../../Shape/    
-nonlinElasQuadTet_SOURCES    = nonlinElasQuadTet.cc
-contract_SOURCES = contract.cc
-axi_SOURCES    = axi.cc
-angle_SOURCES    = angle.cc
-entropicSpring_SOURCES    = entropicSpring.cc
-c0membranegl_SOURCES    = c0membranegl.cc
-c0membrane_SOURCES    = c0membrane.cc
-c0_membrane_configurational_SOURCES = c0_membrane_configurational.cc
-springshell_SOURCES = springshell.cc
+test3dEl_SOURCES = Element3D_TEST.cc
+testMem_SOURCES = MembraneTest.cc
+testMemMod_SOURCES = MembraneModTest.cc
+testPotential_SOURCES = TestPotential.cc
 LDFLAGS    = -L$(blitz_libraries) \
-	-L../                          \
-	-L../../VoomMath/                  \
-	-L../../Materials/            \
-	-L../../Geometry/             \
-	-L../../Quadrature/           \
+	-L../                     \
+	-L../../VoomMath/         \
+	-L../../Materials/        \
+	-L../../Geometry/         \
+	-L../../Quadrature/       \
 	-L../../Shape/                 
-LDADD      = 	\
+LDADD      = 	        \
 	-lQuadrature	\
         -lElements	\
 	-lMaterials	\
@@ -35,4 +30,3 @@ LDADD      = 	\
 	-lVoomMath	\
 	-lblitz		\
 	-lm
-

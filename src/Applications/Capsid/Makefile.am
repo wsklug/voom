@@ -1,4 +1,4 @@
-bin_PROGRAMS    = relax indent refine disassemble grow dual
+bin_PROGRAMS    = relax countValence refine disassemble grow dual indentWparticles indent asphVsFVK asphVsFVKcont asphmodVsFVK asphmodVsFVKcont asphVsFVKMorse asphNoRescale asphBrownian asphPressureRamp
 AM_CPPFLAGS =-I$(srcdir)/../../       		\
 		-I$(srcdir)/../../Body/		\
 		-I$(srcdir)/../../Model/		\
@@ -58,7 +58,7 @@ LDADD	= -lblitz              		\
 	-lgfortran
 #
 # capsid_lbfgsb_SOURCES    =  capsid-lbfgsb.cc 
-indent_SOURCES    =  indent.cc 
+countValence_SOURCES    =  countValence.cc 
 #
 relax_SOURCES    =  relax.cc 
 #
@@ -69,3 +69,23 @@ dual_SOURCES    =  dual.cc
 disassemble_SOURCES    =  disassemble.cc 
 #
 grow_SOURCES    =  grow.cc C0MembraneGLoutput.cc
+#
+indentWparticles_SOURCES    =  indentWparticles.cc 
+#
+indent_SOURCES = indent.cc
+#
+asphVsFVK_SOURCES = asphVsFVK.cc
+#
+asphVsFVKcont_SOURCES = asphVsFVKcont.cc
+#
+asphmodVsFVK_SOURCES = asphmodVsFVK.cc
+#
+asphmodVsFVKcont_SOURCES = asphmodVsFVKcont.cc
+#
+asphVsFVKMorse_SOURCES = asphVsFVKMorse.cc
+#
+asphNoRescale_SOURCES = asphNoRescale.cc
+#
+asphBrownian_SOURCES = asphBrownian.cc
+#
+asphPressureRamp_SOURCES = asphPressureRamp.cc

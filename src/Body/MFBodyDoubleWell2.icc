@@ -1,0 +1,620 @@
+#include <string>
+#include <fstream>
+#include <blitz/array-impl.h>
+#include "VoomMath.h"
+
+
+#if defined(_OPENMP)
+#include <omp.h>
+#endif
+
+#ifdef WITH_MPI
+#include <mpi.h>
+#endif
+
+////////////////////////////////////////////////////////////////////
+// LAPACK subroutine for computing eigenvalues and eigenvectors
+//
+// define prototype of LAPACK functions
+extern "C" void dsyev_(char *jobz, char *uplo, int *n, double *a, int *lda,
+		       double *w, double *work, int *lwork, int *info);
+
+namespace voom
+{
+  using std::endl;
+  using std::cout;
+  //! Initialize the body given a set of nodes and support sizes
+  template<class Material_t, class Shape_t>
+  void MFBodyDoubleWell<Material_t,Shape_t>::initializeBody
+  (Material_t material,
+   const NodeContainer & nodes,
+   const std::vector<double> & node_volume, 
+   const std::vector<double> & supp_size, 
+   const std::vector<Tensor3D> & Fhatinv)
+  {
+    
+#ifdef WITH_MPI
+    MPI_Comm_size( MPI_COMM_WORLD, &_nProcessors );
+    MPI_Comm_rank( MPI_COMM_WORLD, &_processorRank );
+#endif
+        
+    // initialize _nDOF
+    _dof = 0;
+    _nodes = nodes;
+    
+    for(ConstNodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) {
+      _dof+=(*n)->dof();
+      MFNode_t * sn = dynamic_cast<MFNode_t*>(*n);
+      if( sn ) _MFnodes.push_back(sn); 
+    }
+    //create the grid
+    //find the maximum support size
+    double maxSupp=0.;
+    for(int i=0;i<supp_size.size();i++)
+      if(supp_size[i]>maxSupp) maxSupp=supp_size[i];
+    //find the maximum nodal volume
+    double maxVol=0.;
+    for(int i=0;i<node_volume.size();i++)
+      if(node_volume[i]>maxVol) maxVol=node_volume[i];
+    double maxRad=pow(maxVol*3./4.0/3.14,1.0/3.0);
+    NodeBin grid(maxSupp+maxRad,maxSupp+maxRad,maxSupp+maxRad,_MFnodes);
+    
+    std::cout << "MFBodyDoubleWell::initializeBody(): dof = "<< _dof 
+	      << std::endl;
+    std::cout << "Cubic B-spline kernel is used. It doesn't have kronecker delta property."<<std::endl;
+    //construct the quadrature points which are the same as the nodes
+    // with shape functions, material and weights associated
+    _quadPoints.reserve(_nodes.size());
+    int i=0;
+    for(ConstMFNodeIterator n=_MFnodes.begin(); n!=_MFnodes.end(); n++) {
+      double weight = node_volume[i];
+      double radius = pow(weight*3./4.0/3.14,1.0/3.0);
+      Shape_t shape = MFShape();
+      MFShape::CoordinateArray p((*n)->getPosition(0),(*n)->getPosition(1),(*n)->getPosition(2));
+      shape.compute(p,_MFnodes,supp_size,grid.GetList(p),radius);
+      shape.checkPartitionOfUnity(p,_MFnodes);
+      _quadPoints.push_back(QuadPointStruct(weight,material,shape,Fhatinv[i]));
+      i++;
+    }
+  }
+  //! Initialize the body with a set of nodes, support sizes and support-sizes for modified kernel 
+  template<class Material_t, class Shape_t>
+  void MFBodyDoubleWell<Material_t,Shape_t>::initializeBody
+  (Material_t material,
+   const NodeContainer & nodes,
+   const std::vector<double> & node_volume,
+   const std::vector<double> & supp_size,
+   const std::vector<double> & supp_size_hat, 
+   const std::vector<Tensor3D> & Fhatinv)
+  {
+    
+#ifdef WITH_MPI
+    MPI_Comm_size( MPI_COMM_WORLD, &_nProcessors );
+    MPI_Comm_rank( MPI_COMM_WORLD, &_processorRank );
+#endif
+        
+    // initialize _nDOF
+    _dof = 0;
+    _nodes = nodes;
+    
+    for(ConstNodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) {
+      _dof+=(*n)->dof();
+      MFNode_t * sn = dynamic_cast<MFNode_t*>(*n);
+      if( sn ) _MFnodes.push_back(sn); 
+    }
+
+    //create the grid
+    //find the maximum support size
+    double maxSupp=0.;
+    for(int i=0;i<supp_size.size();i++)
+      if(supp_size[i]>maxSupp) maxSupp=supp_size[i];
+    //find the maximum nodal volume
+    double maxVol=0.;
+    for(int i=0;i<node_volume.size();i++)
+      if(node_volume[i]>maxVol) maxVol=node_volume[i];
+    double maxRad=pow(maxVol*3./4.0/3.14,1.0/3.0);
+    NodeBin grid(maxSupp+maxRad,maxSupp+maxRad,maxSupp+maxRad,_MFnodes);
+    
+    std::cout << "MFBodyDoubleWell::initializeBody(): dof = "<< _dof 
+	      << std::endl;
+    std::cout << "Modified kernel is used (primitive+enrichment) which has kronecker delta property."<<std::endl;
+    //construct the quadrature points which are the same as the nodes
+    // with shape functions, material and weights associated
+    _quadPoints.reserve(_nodes.size());
+    int i=0;
+    for(ConstMFNodeIterator n=_MFnodes.begin(); n!=_MFnodes.end(); n++) {
+      double weight = node_volume[i];
+      double radius = pow(weight*3.0/4.0/3.14,1.0/3.0);
+      Shape_t shape = MFShape();
+      MFShape::CoordinateArray p((*n)->getPosition(0),(*n)->getPosition(1),(*n)->getPosition(2));
+      //std::cout << "Modified kernel is used (primitive+enrichment) which has kronecker delta property."<<std::endl;
+      shape.compute_mod(p,_MFnodes,supp_size,supp_size_hat,grid.GetList(p),radius);
+      shape.checkPartitionOfUnity(p,_MFnodes);
+      _quadPoints.push_back(QuadPointStruct(weight,material,shape,Fhatinv[i]));
+      i++;
+    }
+  }
+  
+  template<class Material_t, class Shape_t>
+  void MFBodyDoubleWell<Material_t,Shape_t>::initializeBody
+  (Material_t material,
+   const NodeContainer & nodes,
+   const std::vector<double> & node_volume, 
+   const std::vector<double> & supp_size,
+   const double sing_order,
+   const std::vector<Tensor3D> & Fhatinv)
+  {
+    
+#ifdef WITH_MPI
+    MPI_Comm_size( MPI_COMM_WORLD, &_nProcessors );
+    MPI_Comm_rank( MPI_COMM_WORLD, &_processorRank );
+#endif
+        
+    // initialize _nDOF
+    _dof = 0;
+    _nodes = nodes;
+    
+    for(ConstNodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) {
+      _dof+=(*n)->dof();
+      MFNode_t * sn = dynamic_cast<MFNode_t*>(*n);
+      if( sn ) _MFnodes.push_back(sn); 
+    }
+    
+    std::cout << "MFBodyDoubleWell::initializeBody(): dof = "<< _dof 
+	      << std::endl;
+    std::cout << "Singular kernel is used (with singularity "<<sing_order<<" ) which has kronecker delta property."<<std::endl;
+    //construct the quadrature points which are the same as the nodes
+    // with shape functions, material and weights associated
+    _quadPoints.reserve(_nodes.size());
+    int i=0;
+    for(ConstMFNodeIterator n=_MFnodes.begin(); n!=_MFnodes.end(); n++) {
+      double weight = node_volume[i];
+      double radius = pow(weight*3./4.0/3.14,1.0/3.0);
+      Shape_t shape = MFShape();
+      MFShape::CoordinateArray p((*n)->getPosition(0),(*n)->getPosition(1),(*n)->getPosition(2));
+      shape.compute_sing(p,_MFnodes,supp_size,radius,sing_order);
+      shape.checkPartitionOfUnity(p,_MFnodes);
+      _quadPoints.push_back(QuadPointStruct(weight,material,shape,Fhatinv[i]));
+      i++;
+    }
+  }
+  
+  //! Constructor for the quadrature points (same as nodes)
+  template<class Material_t, class Shape_t >
+  MFBodyDoubleWell<Material_t,Shape_t>::QuadPointStruct::
+  QuadPointStruct(double w, const Material_t & m, const Shape_t & s, Tensor3D F):weight(w),material(m),Fhatinv(F)
+  {
+    shapeFunctions = s.functions();
+    shapexDerivatives = s.xderivative();
+    shapeyDerivatives = s.yderivative();
+    shapezDerivatives = s.zderivative();
+    neighbours = s.neighb();
+  }
+  
+  //! compute function
+  template<class Material_t, class Shape_t >
+  void MFBodyDoubleWell<Material_t,Shape_t>::compute( bool f0, bool f1, bool f2 )
+  {
+    // Predictor/corrector approach for contact
+    for(ContactIterator c=_contacts.begin(); c!=_contacts.end(); c++) {
+      (*c)->predict();
+    }
+
+    // Initialize energy, forces and stiffness to be all zero
+    double _strainEnergy=0.0;
+    if(f0) _energy = 0.0;
+    if(f1) {
+      for(MFNodeIterator n=_MFnodes.begin(); n!=_MFnodes.end(); n++) 
+	for(int i=0; i<(*n)->dof(); i++)
+	  (*n)->setForce(i,0.0);
+    }
+    // Need to zero out stiffness too!!!!!!!!!!
+    
+    // compute energy, forces and stiffness matrix in each node
+    // loop through all nodes
+#ifdef _OPENMP	
+#pragma omp parallel for			\
+  schedule(static) default(shared) 
+#endif	
+    double energy1=0.,energy2=0.,energynorm=0.;
+    for(ConstQuadPointIterator p=_quadPoints.begin(); 
+	p!=_quadPoints.end(); p++){
+      // compute deformation gradient
+      Tensor3D F(0.0);
+      const typename MFShape::FunctionContainer &  shp = p->shapeFunctions;
+      const typename MFShape::FunctionContainer &  xDN = p->shapexDerivatives;
+      const typename MFShape::FunctionContainer &  yDN = p->shapeyDerivatives;
+      const typename MFShape::FunctionContainer &  zDN = p->shapezDerivatives;
+      const typename MFShape::NodeNContainer & neighbours = p->neighbours;
+      
+      for(int a=0; a<neighbours.size(); a++) {
+	const Vector3D & xa = _MFnodes[neighbours[a]]->point();
+	for(int i=0; i<3; i++) {
+	  F(i,0) += xa(i)*xDN[a];
+	  F(i,1) += xa(i)*yDN[a];
+	  F(i,2) += xa(i)*zDN[a];
+	}
+      }
+      const double weight = p->weight;
+      //material w.r.t. the first state
+      Material_t material1 = p->material;
+      material1.setDeformationGradient(F);
+      material1.updateState(f0,f1,f2);
+      //material w.r.t. the second state
+      Material_t material2 = p->material;
+      const Tensor3D Fhatinv = p->Fhatinv;
+      const Tensor3D Fel(F*Fhatinv);
+      //calculate the energy density of first state w.r.t second to normalize the elastic property
+      material2.setDeformationGradient(Fhatinv);
+      material2.updateState(true,false,false);
+      const double EDnorm=material2.energyDensity();
+      if(EDnorm<1e-5) std::cout<<"very low EDnorm = "<<EDnorm<<std::endl
+                               <<" Fhatinv = "<< Fhatinv << std::endl
+                               <<" determinant = "<<determinant(Fhatinv)<<std::endl;
+      material2.setDeformationGradient(Fel);
+      material2.updateState(f0,f1,f2);
+      energy1 += material1.energyDensity()*weight;
+      energy2 += material2.energyDensity()*weight;
+      energynorm += EDnorm*weight;
+    }  
+    // compute energy
+    if ( f0 )	{
+      _strainEnergy += energy1*energy2/energynorm;
+    }
+    
+    // compute forces
+    if ( f1 ) {
+      for(ConstQuadPointIterator p=_quadPoints.begin(); 
+	p!=_quadPoints.end(); p++){
+        // compute deformation gradient
+        Tensor3D F(0.0);
+        const typename MFShape::FunctionContainer &  shp = p->shapeFunctions;
+        const typename MFShape::FunctionContainer &  xDN = p->shapexDerivatives;
+        const typename MFShape::FunctionContainer &  yDN = p->shapeyDerivatives;
+        const typename MFShape::FunctionContainer &  zDN = p->shapezDerivatives;
+        const typename MFShape::NodeNContainer & neighbours = p->neighbours;
+  
+        for(int a=0; a<neighbours.size(); a++) {
+	  const Vector3D & xa = _MFnodes[neighbours[a]]->point();
+	  for(int i=0; i<3; i++) {
+	    F(i,0) += xa(i)*xDN[a];
+	    F(i,1) += xa(i)*yDN[a];
+	    F(i,2) += xa(i)*zDN[a];
+	  }
+        }
+        const double weight = p->weight;
+        //material w.r.t. the first state
+        Material_t material1 = p->material;
+        material1.setDeformationGradient(F);
+        material1.updateState(f0,f1,f2);
+        //material w.r.t. the second state
+        Material_t material2 = p->material;
+        const Tensor3D Fhatinv = p->Fhatinv;
+        const Tensor3D Fel(F*Fhatinv);
+        //calculate the energy density of first state w.r.t second to normalize the elastic property
+        material2.setDeformationGradient(Fel);
+        material2.updateState(f0,f1,f2);
+        //with respect to the first state
+	const Tensor3D & P1 = material1.piolaStress();
+        const Tensor3D tempP1(P1);
+	//with respect to the second state
+	const Tensor3D & P2 = material2.piolaStress();
+        const Tensor3D tempP2(P2);
+        const Tensor3D P((tempP1*energy2 + energy1*tempP2*tvmet::trans(Fhatinv))/energynorm);
+	
+        for (int a=0; a<neighbours.size(); a++) {
+	  for(int i=0; i<3; i++) {
+	    // for(int J=0; J<3; J++) {
+	    _MFnodes[neighbours[a]]->addForce( i, P(i,0)*xDN[a]*weight + P(i,1)*yDN[a]*weight + P(i,2)*zDN[a]*weight );
+	    // }  
+	  }
+	} 
+      } // end force calcs
+    } // end quad points loop
+      
+	// compute stiffness matrix
+      if( f2 ) {
+	//std::cerr << std::endl << std::endl << "\t"
+	//    << "No stiffness matrix yet!" 
+	//    << std::endl << std::endl;
+      }
+      
+    
+    
+    if(f0) _energy = _strainEnergy;
+        
+    // Compute energy and forces of elements (like Rigid contact elements)
+    for(int ei=0; ei<_elements.size(); ei++) _elements[ei]->compute( f0, f1, f2);
+
+    // Add energies of elements to that of meshfree nodes
+    if(f0) for(int ei=0; ei<_elements.size(); ei++) _energy += _elements[ei]->energy();
+    
+    // Predictor/corrector approach for contact
+    for(ContactIterator c=_contacts.begin(); c!=_contacts.end(); c++) {
+      (*c)->correct();
+    }
+    return;
+  }
+  
+  //! create input file used by Paraview, a 3D viewer
+  template<class Material_t, class Shape_t >
+  void MFBodyDoubleWell<Material_t,Shape_t>::printParaview(const std::string name) const
+  {
+    // will output data to a .vtk file
+    
+    std::string fileName = name + ".vtk";
+    std::ofstream ofs(fileName.c_str());
+    if (!ofs) {
+      std::cout << "can not open output ("
+		<< fileName
+		<< ") file." << std::endl;
+      exit(0);
+    }
+    
+    //    Node Section
+    ofs << "# vtk DataFile Version 2.0\n"
+	<< "Test example" << std::endl
+	<< "ASCII" << std::endl
+	<< "DATASET UNSTRUCTURED_GRID" << std::endl
+	<< "POINTS  " << _MFnodes.size() << "  double" << std::endl;
+    
+    // output nodal reference postions
+    ConstMFNodeIterator pn = _MFnodes.begin();
+    for ( ; pn!= _MFnodes.end(); pn ++) {
+      const Vector3D & nodalPos =  (*pn)->position();
+      ofs << std::setprecision(16) 
+	  << nodalPos(0) << "  "
+	  << nodalPos(1) << "  "
+	  << nodalPos(2) << std::endl;
+    }
+    //Append the mesh data from file mesh.vtk into this file before appending displacements
+    ofs.close();
+    char temp[100];
+    sprintf(temp,"cat mesh.vtk >> %s",fileName.c_str());
+    system(temp);
+    ofs.open(fileName.c_str(),std::ios::app); 
+    
+    //output nodal final positions
+    ofs << endl << "POINT_DATA " << _MFnodes.size() << endl
+	<< "VECTORS displacements float" << endl;
+    
+    // output nodal final postions
+    pn = _MFnodes.begin();
+    for ( ; pn!= _MFnodes.end(); pn ++) {
+      Vector3D nodalDisp;
+      nodalDisp = (*pn)->point() - (*pn)->position();
+      ofs << std::setprecision(16) 
+	  << nodalDisp(0)
+	  << '\t' <<nodalDisp(1)
+	  << '\t' <<nodalDisp(2) << std::endl;
+    }
+    
+    ofs.close();
+    
+    return;
+  }
+  
+ //! create input file of output data used by Paraview, a 3D viewer
+  template<class Material_t, class Shape_t>
+  void MFBodyDoubleWell<Material_t,Shape_t>::printParaviewPostProcess(const std::string name) const
+  {
+    // will calculate stress and strains and output data to a .vtk file
+
+#ifdef WITH_MPI
+    if(_processorRank!=0) {
+      return;
+    }
+#endif
+    printParaview(name);
+    std::string fileName = name + ".vtk";
+    std::ofstream ofs(fileName.c_str(),std::ios::app);
+    if (!ofs) {
+      std::cout << "can not open output ("
+		<< fileName
+		<< ") file." << std::endl;
+      exit(0);
+    }
+	
+    // output for von Mises stress
+    ofs << "SCALARS    MisesStress    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for(ConstQuadPointIterator p=_quadPoints.begin();p!=_quadPoints.end(); p++){
+      
+      // compute deformation gradient
+      Tensor3D F(0.0);
+      const typename MFShape::FunctionContainer &  shp = p->shapeFunctions;
+      const typename MFShape::FunctionContainer &  xDN = p->shapexDerivatives;
+      const typename MFShape::FunctionContainer &  yDN = p->shapeyDerivatives;
+      const typename MFShape::FunctionContainer &  zDN = p->shapezDerivatives;
+      const typename MFShape::NodeNContainer & neighbours = p->neighbours;
+      
+      for(int a=0; a<neighbours.size(); a++) {
+	const Vector3D & xa = _MFnodes[neighbours[a]]->point();
+	for(int i=0; i<3; i++) {
+	  F(i,0) += xa(i)*xDN[a];
+	  F(i,1) += xa(i)*yDN[a];
+	  F(i,2) += xa(i)*zDN[a];
+	}
+      }
+      std::cout<<"Calculation of stress is not correct. It doesn't use the double well."<<std::endl; 
+      Material_t material = p->material;
+      
+      // send updated deformation gradient to material
+      material.setDeformationGradient(F);
+      
+      // compute strain energy and/or 1st PK stress
+      material.updateState(true,true,false); 
+      ofs << material.vonMisesStress() << std::endl;
+      }
+    ofs << std::endl;
+
+    // output for principal strains in each element
+    // output for jacobian
+    //ofs << "VECTORS PrincipalStrains floats" << endl;
+    ofs << "SCALARS Jacobian float 1" << std::endl;
+    ofs << "LOOKUP_TABLE default" << std::endl;
+    for(ConstQuadPointIterator p=_quadPoints.begin();p!=_quadPoints.end(); p++){
+      
+      //
+      // compute deformation gradient
+      //
+      Tensor3D F(0.0);
+      const typename MFShape::FunctionContainer &  shp = p->shapeFunctions;
+      const typename MFShape::FunctionContainer &  xDN = p->shapexDerivatives;
+      const typename MFShape::FunctionContainer &  yDN = p->shapeyDerivatives;
+      const typename MFShape::FunctionContainer &  zDN = p->shapezDerivatives;
+      const typename MFShape::NodeNContainer & neighbours = p->neighbours;
+      
+      for(int a=0; a<neighbours.size(); a++) {
+	const Vector3D & xa = _MFnodes[neighbours[a]]->point();
+	for(int i=0; i<3; i++) {
+	  F(i,0) += xa(i)*xDN[a];
+	  F(i,1) += xa(i)*yDN[a];
+	  F(i,2) += xa(i)*zDN[a];
+	}
+      }
+      
+    //  Material_t material = p->material;
+      
+      // send updated deformation gradient to material
+    //  material.setDeformationGradient(F);
+      
+      // compute strain energy and/or 1st PK stress
+    //  material.updateState(f0, f1, f2); 
+      Vector3D prinStrain; //calculate these from F, what is the right thing?
+      //prinStrain = (*pe)->CalcPrincipalStrains();
+      //ofs << std::setprecision(16)
+	  //<< prinStrain(0)
+	  //<< '\t' << prinStrain(1)
+	  //<< '\t' << prinStrain(2) << std::endl;
+      ofs << determinant(F) << std::endl;
+      }
+    ofs << std::endl;
+
+    // output nodal forces
+    ofs << endl << "VECTORS forces float" << endl;
+    ConstMFNodeIterator pn = _MFnodes.begin();
+    for ( ; pn!= _MFnodes.end(); pn ++) {
+      const Vector3D & nodalForce = (*pn)->force();
+      ofs << std::setprecision(16) 
+	  << nodalForce(0)
+	  << '\t' <<nodalForce(1)
+	  << '\t' <<nodalForce(2) << std::endl;
+    }
+    ofs.close();
+
+    return;
+  }
+
+  //! compute invariants
+  template<class Material_t, class Shape_t >
+  void MFBodyDoubleWell<Material_t,Shape_t>::cal_invariants( std::vector<double> & I1, std::vector<double> & I2, std::vector<double> & I3 )
+  {
+    // computes invariants of the deformation gradient at all the quadrature points (which for this class are assumed to be the same as nodes)
+    if(_nodes.size()!=_quadPoints.size()){
+      std::cout << "Number of nodes not equal to the number of quad points. Exiting"<<std::endl;
+      exit(0);
+    }
+    
+#ifdef _OPENMP	
+#pragma omp parallel for			\
+  schedule(static) default(shared) 
+#endif	
+    int inode=0;
+    for(ConstQuadPointIterator p=_quadPoints.begin(); 
+	p!=_quadPoints.end(); p++){
+      
+      // compute deformation gradient
+      Tensor3D F(0.0);
+      const typename MFShape::FunctionContainer &  xDN = p->shapexDerivatives;
+      const typename MFShape::FunctionContainer &  yDN = p->shapeyDerivatives;
+      const typename MFShape::FunctionContainer &  zDN = p->shapezDerivatives;
+      const typename MFShape::NodeNContainer & neighbours = p->neighbours;
+      
+      for(int a=0; a<neighbours.size(); a++) {
+	const Vector3D & xa = _MFnodes[neighbours[a]]->point();
+	for(int i=0; i<3; i++) {
+	  F(i,0) += xa(i)*xDN[a];
+	  F(i,1) += xa(i)*yDN[a];
+	  F(i,2) += xa(i)*zDN[a];
+	}
+      }
+      // compute the invariants
+      I1[inode] = F(0,0)*F(0,0) + F(0,1)*F(0,1) + F(0,2)*F(0,2) +
+	F(1,0)*F(1,0) + F(1,1)*F(1,1) + F(1,2)*F(1,2) +
+	F(2,0)*F(2,0) + F(2,1)*F(2,1) + F(2,2)*F(2,2);
+      I2[inode] = I1[inode]*I1[inode]/2. - (F(0,0)*F(0,2) + F(1,0)*F(1,2) + F(2,0)*F(2,2))*(F(0,0)*F(0,2) + F(1,0)*F(1,2) + F(2,0)*F(2,2)) - (F(0,1)*F(0,2) + F(1,1)*F(1,2) + F(2,1)*F(2,2))*(F(0,1)*F(0,2) + F(1,1)*F(1,2) + F(2,1)*F(2,2)) - (F(0,0)*F(0,1) + F(1,0)*F(1,1) + F(2,0)*F(2,1))*(F(0,0)*F(0,1) + F(1,0)*F(1,1) + F(2,0)*F(2,1)) - (F(0,0)*F(0,0) + F(1,0)*F(1,0) + F(2,0)*F(2,0))*(F(0,0)*F(0,0) + F(1,0)*F(1,0) + F(2,0)*F(2,0))/2 - (F(0,1)*F(0,1) + F(1,1)*F(1,1) + F(2,1)*F(2,1))*(F(0,1)*F(0,1) + F(1,1)*F(1,1) + F(2,1)*F(2,1))/2 - (F(0,2)*F(0,2) + F(1,2)*F(1,2) + F(2,2)*F(2,2))*(F(0,2)*F(0,2) + F(1,2)*F(1,2) + F(2,2)*F(2,2))/2;
+      //third invariant is det(C)=det(F)^2
+      I3[inode] = F(0,0)*(F(1,1)*F(2,2)-F(1,2)*F(2,1)) - F(0,1)*(F(1,0)*F(2,2)-F(2,0)*F(1,2)) + F(0,2)*(F(1,0)*F(2,1)-F(2,0)*F(1,1));
+      I3[inode] = I3[inode]*I3[inode];
+      inode++;
+      
+    } // end quad points loop
+    return;
+  }
+
+  //! compute stretch ratios
+  template<class Material_t, class Shape_t >
+  void MFBodyDoubleWell<Material_t,Shape_t>::cal_stretch_ratios( std::vector<double> & lam1, std::vector<double> & lam2, std::vector<double> & lam3 )
+  {
+    // computes stretch ratios of the deformation at all the quadrature points (which for this class are assumed to be the same as nodes)
+    if(_nodes.size()!=_quadPoints.size()){
+      std::cout << "Number of nodes not equal to the number of quad points. Exiting"<<std::endl;
+      exit(0);
+    }
+    
+#ifdef _OPENMP	
+#pragma omp parallel for			\
+  schedule(static) default(shared) 
+#endif	
+    int inode=0;
+    for(ConstQuadPointIterator p=_quadPoints.begin(); 
+	p!=_quadPoints.end(); p++){
+      
+      // compute deformation gradient
+      Tensor3D F(0.0);
+      const typename MFShape::FunctionContainer &  xDN = p->shapexDerivatives;
+      const typename MFShape::FunctionContainer &  yDN = p->shapeyDerivatives;
+      const typename MFShape::FunctionContainer &  zDN = p->shapezDerivatives;
+      const typename MFShape::NodeNContainer & neighbours = p->neighbours;
+      
+      for(int a=0; a<neighbours.size(); a++) {
+	const Vector3D & xa = _MFnodes[neighbours[a]]->point();
+	for(int i=0; i<3; i++) {
+	  F(i,0) += xa(i)*xDN[a];
+	  F(i,1) += xa(i)*yDN[a];
+	  F(i,2) += xa(i)*zDN[a];
+	}
+      }
+      // compute the stretch ratios (square root of eigenvalues of C)
+      Tensor3D C;
+      C = (tvmet::trans(F))*F;
+
+      // compute Eigenvalues and Eigenvectors by calling LAPACK library
+      char jobz = 'N';
+      char uplo = 'L';
+      int  n    = 3;
+      int  lda  = n;
+      int  lwork = 3*n-1;
+      int  info;
+      double eigenvalues[3];
+      double work[lwork];
+      
+      // calling lapack function here to compute
+      // eigenvalues of C1
+      dsyev_(&jobz, &uplo, &n, C.data(),
+	     &lda, eigenvalues, work, &lwork, &info);
+      lam1[inode]=eigenvalues[0];
+      lam2[inode]=eigenvalues[1];
+      lam3[inode]=eigenvalues[2];
+
+      if (info != 0) {
+	std::cout << "Something is wrong in DSYEV_" << std::endl;
+	exit(0);
+      }
+      inode++;
+      
+    } // end quad points loop
+    return;
+  }
+} // namespace voom

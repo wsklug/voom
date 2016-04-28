@@ -1,0 +1,4 @@
+Up to Feb 19 at 7:47 pm 
+LennardJones potential was used in the archaea analysis
+On Feb 19 at 7.47 pm
+We switched (hard coded in LennardJones!!!) to a spring (quadratic potential) and inlcuded 2 such potentials: one for first ring interactions and a second - weaker - one for second nearest neighbor interactions

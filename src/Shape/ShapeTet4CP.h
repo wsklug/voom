@@ -37,7 +37,24 @@ namespace voom
   public:
 
     //! Constructor.  Calls compute function.
-    ShapeTet4(const CoordinateArray & s) {
+    ShapeTet4() {
+      const unsigned int n=4;
+      _functions.resize(n);
+      _derivatives.resize(n);
+      _positions.resize(n);
+    
+      _positions[0] = 0.0, 0.0, 0.0;
+      _positions[1] = 1.0, 0.0, 0.0;
+      _positions[2] = 0.0, 1.0, 0.0;
+      _positions[3] = 0.0, 0.0, 1.0;
+
+      CoordinateArray s; 
+      s = 0.25, 0.25, 0.25;
+
+      compute(s);
+    }
+
+    ShapeTet4(CoordinateArray s) {
       const unsigned int n=4;
       _functions.resize(n);
       _derivatives.resize(n);

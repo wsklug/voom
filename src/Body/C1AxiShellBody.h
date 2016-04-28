@@ -142,9 +142,6 @@ namespace voom
     //! get pressure
     double fixedPressure() const {return _fixedPressure;}
 
-    //! set pressure
-    void setFixedPressure(double p)  {_fixedPressure=p;}
-
     //! get tension
     double tension() const {return _tensionNode->point();}
 

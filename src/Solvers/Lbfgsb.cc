@@ -164,7 +164,7 @@ namespace voom
 	// and we have opted to continue the iteration.
 	if ( _iprint>0 && isave[29]%_iprint == 0 ){
 // 	  char name[100];sprintf(name,"%d",isave[29]);
-	  if( _debug ) _model->print("lbfgsbiter");
+	  _model->print("lbfgsbiter");
 	  cout << setw(14) << scientific << right << dsave[12]
 	       << setw(14) << scientific << right << blitz::max(blitz::abs(_g))
 	       << setw(14) << scientific  << right << _f
@@ -180,7 +180,7 @@ namespace voom
       else if( strncmp(task,"CONV",4)==0 ) {
 	_computeAll();
 	cout << task << endl;
-	if( _debug ) _model->print("lbfgsbconv");
+	_model->print("lbfgsbconv");
 	break;
       }
 

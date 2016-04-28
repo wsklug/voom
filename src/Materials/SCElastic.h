@@ -66,10 +66,6 @@ namespace voom
 
     virtual double bendingEnergy() const {return _W;}
     virtual double stretchingEnergy() const {return 0;}
-
-    void setSpontaneousCurvature( double C0 ) { _C0 = C0; }
-
-
   };
   
 } //namespace voom

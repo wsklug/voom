@@ -98,10 +98,10 @@ HalfEdgeMesh::HalfEdgeMesh(const ConnectivityContainer & connectivities,
     }
 
     if(H->opposite == 0 ) {
-//       std::cout << "  Warning."
-// 		<< "  Couldn't find HalfEdge opposite to HalfEdge " << H->id 
-// 		<< ".  This HalfEdge is on the boundary."
-// 		<< std::endl;
+      std::cout << "  Warning."
+		<< "  Couldn't find HalfEdge opposite to HalfEdge " << H->id 
+		<< ".  This HalfEdge is on the boundary."
+		<< std::endl;
 
       H->vertex->boundary = true;
 
@@ -119,53 +119,6 @@ HalfEdgeMesh::HalfEdgeMesh(const ConnectivityContainer & connectivities,
     }
 	
   }
-
-  // Find boundary loops. Identify a boundary, and walk around it starting
-  // from one edge
-  
-  std::vector<int> edgeLoopLookup(halfEdges.size(), -1);
-
-  // std::vector< std::vector< HalfEdge* > > boundaryLoops;
-
-  for(int h=0; h<halfEdges.size(); h++) {
-
-    //  find a boundary edge not previously added to a loop
-    HalfEdge * H = halfEdges[h];
-    if( H->opposite == 0 && edgeLoopLookup[H->id] == -1 ) {
-
-      // found one, now walk around boundary, storing boundary edges
-      // in order
-
-      std::vector< HalfEdge * > loop;
-
-      HalfEdge * Hstart=H;
-      do {
-	loop.push_back( H );
-	edgeLoopLookup[H->id] = boundaryLoops.size();
-
-	// find next boundary edge (CCW around the boundary) by
-	// walking around H's vertex CW
-	H = H->next;
-	while ( H->opposite != 0 ) {
-	  H = H->opposite->next;
-	}
-      } while ( H != Hstart );
-
-      boundaryLoops.push_back( loop );
-      
-    }
-  }
-
-//   std::cout << "Identified " << boundaryLoops.size() << " boundary loops." 
-// 	    << std::endl;
-//   for(int L=0; L<boundaryLoops.size(); L++) {
-//     std::cout << "Loop " << L << " has " 
-// 	      << boundaryLoops[L].size() << " edges: ";
-//     for(int e=0; e<boundaryLoops[L].size(); e++) {
-//       std::cout << std::setw(10) << boundaryLoops[L][e]->id;
-//     }
-//     std::cout << std::endl;
-//   }
 
   std::cout << "HalfEdgeMesh built." << std::endl;
 	  

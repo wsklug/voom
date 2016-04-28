@@ -368,15 +368,10 @@ namespace voom
     blitz::Array<double,1> inplaneEnergy(blitz::shape(numShells));
     blitz::Array<double,1> curvature(blitz::shape(numShells));
 
-    blitz::Array<Tensor3D,1> strain(numShells);
-    blitz::Array<Tensor3D,1> stress(numShells);
-
     energy = 0.0;
     curvature = 0.0;
     bendingEnergy = 0.0;
     inplaneEnergy = 0.0;
-    strain = Tensor3D(0.0);
-    stress = Tensor3D(0.0);
 
 #ifdef WITH_MPI
     int eBegin=0, eEnd=0;
@@ -400,41 +395,12 @@ namespace voom
 	bendingEnergy(e) += p->material.bendingEnergy();
 	inplaneEnergy(e) += p->material.stretchingEnergy();
 	curvature(e) += p->material.meanCurvature();
-
-	// compute global Cartesian strain and stress
-	Tensor3D E(0.0),S(0.0);
-	const Tensor2D & Ecov = p->material.strain();
-	const Tensor2D & Scon = p->material.stress();
-
-	for(int alpha=0; alpha<2; alpha++) {
-	  const Vector3D & base_alpha = 
-	    p->material.refShellGeometry().a()[alpha];
-	  const Vector3D & dual_alpha = 
-	    p->material.refShellGeometry().aDual()[alpha];
-	  for(int beta=0; beta<2; beta++) {
-	    const Vector3D & base_beta = 
-	      p->material.refShellGeometry().a()[beta];
-	    const Vector3D & dual_beta = 
-	      p->material.refShellGeometry().aDual()[beta];
-	    for(int I=0; I<3; I++) {
-	      for(int J=0; J<3; J++) {
-		E(I,J) += Ecov(alpha,beta)*dual_alpha(I)*dual_beta(J);
-		S(I,J) += Scov(alpha,beta)*base_alpha(I)*base_beta(J);
-	      }
-	    }
-	  }
-	}
-	strain(e) += E;
-	stress(e) += S;
-
 	npts++;
       }
       energy(e) /= (double)( npts );
       bendingEnergy(e) /= (double)( npts );
       inplaneEnergy(e) /= (double)( npts );
       curvature(e) /= (double)( npts );
-      strain(e) /= (double)( npts );
-      stress(e) /= (double)( npts );
     }
 //     char pid[30]; 
 //     sprintf(pid, "%d", _processorRank);
@@ -527,7 +493,7 @@ namespace voom
     ofs << "CELL_DATA    " << _shells.size() << std::endl;
     //
     // output for strain energy
-    ofs << "SCALARS    strainEnergy    double    1" << std::endl;
+    ofs << "SCALARS    strainEnergy    float    1" << std::endl;
     ofs << "LOOKUP_TABLE default" << std::endl;
     for ( int e = 0; e<numShells; e++) 
       ofs << energy(e) << std::endl;
@@ -535,7 +501,7 @@ namespace voom
 
     //
     // output for strain energy
-    ofs << "SCALARS    bendingEnergy    double    1" << std::endl;
+    ofs << "SCALARS    bendingEnergy    float    1" << std::endl;
     ofs << "LOOKUP_TABLE default" << std::endl;
     for ( int e = 0; e<numShells; e++) 
       ofs << bendingEnergy(e) << std::endl;
@@ -543,7 +509,7 @@ namespace voom
 
     //
     // output for strain energy
-    ofs << "SCALARS    inplaneEnergy    double    1" << std::endl;
+    ofs << "SCALARS    inplaneEnergy    float    1" << std::endl;
     ofs << "LOOKUP_TABLE default" << std::endl;
     for ( int e = 0; e<numShells; e++) 
       ofs << inplaneEnergy(e) << std::endl;
@@ -553,24 +519,14 @@ namespace voom
     // output for mean curvature
     // since one color is mapping into one element, for
     // several guass points integration, we compute their average value
-    ofs << "SCALARS    meanCurvature    double    1" << std::endl;
-    ofs << "LOOKUP_TABLE default    " << std::endl;		
+    ofs << "SCALARS    meanCurvature    float    1" << std::endl;
+    ofs << "LOOKUP_TABLE meanCurvature    " << std::endl;		
     for ( int e = 0; e<numShells; e++) 
       ofs << curvature(e) << std::endl;
     ofs << std::endl;
 
-    //
-    // output for strain 
-    ofs << "TENSORS    strain    double" << std::endl;
-    ofs << "LOOKUP_TABLE default" << std::endl;
-    for ( int e = 0; e<numShells; e++) 
-      for( int I=0; I<3; I++)
-	for( int J=0; J<3; J++)
-	  ofs << strain(e)(I,J) << " "; 
-    ofs << std::endl;
-
     ofs << endl << "POINT_DATA " << _shellNodes.size() << endl
-	<< "VECTORS displacements double" << endl;
+	<< "VECTORS displacements float" << endl;
     /*     << "LOOKUP_TABLE displacements" << endl; */
     //
     // output nodal postions
@@ -584,7 +540,7 @@ namespace voom
 	  << '\t' <<nodalDisp(2) << std::endl;
     }
     
-    ofs << endl << "VECTORS forces double" << endl;
+    ofs << endl << "VECTORS forces float" << endl;
     /*     << "LOOKUP_TABLE displacements" << endl; */
     //
     // output nodal postions
@@ -598,7 +554,7 @@ namespace voom
     }
     //
     // output for reaction coordinate
-    ofs << "SCALARS    reacCoord    double    1" << std::endl;
+    ofs << "SCALARS    reacCoord    float    1" << std::endl;
     ofs << "LOOKUP_TABLE default" << std::endl;
 
     pn = _shellNodes.begin();

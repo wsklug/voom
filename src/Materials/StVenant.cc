@@ -144,12 +144,12 @@ namespace voom {
       _P = _F*S;
 
       double jac = determinant(_F);
-      _C = 1.0/jac*_P*(tvmet::trans(_F));
+      _cauchy = 1.0/jac*_P*(tvmet::trans(_F));
 
-      _vMises = 0.7071068*sqrt( ( _C(0,0) - _C(1,1) )*( _C(0,0) - _C(1,1) ) + 
-				( _C(1,1) - _C(2,2) )*( _C(1,1) - _C(2,2) ) + 
-				( _C(2,2) - _C(0,0) )*( _C(2,2) - _C(0,0) ) + 
-				6.0*( _C(0,1)*_C(0,1) + _C(0,2)*_C(0,2) + _C(1,2)*_C(1,2) ) );
+      _vMises = 0.7071068*sqrt( ( _cauchy(0,0) - _cauchy(1,1) )*( _cauchy(0,0) - _cauchy(1,1) ) + 
+				( _cauchy(1,1) - _cauchy(2,2) )*( _cauchy(1,1) - _cauchy(2,2) ) + 
+				( _cauchy(2,2) - _cauchy(0,0) )*( _cauchy(2,2) - _cauchy(0,0) ) + 
+				6.0*( _cauchy(0,1)*_cauchy(0,1) + _cauchy(0,2)*_cauchy(0,2) + _cauchy(1,2)*_cauchy(1,2) ) );
     }
   
     if (fl2) {

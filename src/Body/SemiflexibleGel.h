@@ -52,8 +52,6 @@
 #include "LeesEdwards.h"
 #include "PinchForce.h"
 #include "NematicProbTable.h"
-
-#include "AffinityElement.h"
 #include "AffinityMeasure.h"
 
 #ifdef WITH_MPI
@@ -114,7 +112,7 @@ namespace voom
     typedef std::vector< Pinch* > PinchContainer;
     typedef typename PinchContainer::iterator PinchIterator;
     typedef typename PinchContainer::const_iterator ConstPinchIterator;
-    
+
     typedef typename std::set<DefNode*> PinchNodeSet;
     typedef typename PinchNodeSet::iterator PinchNodeIterator;
 		
@@ -131,7 +129,7 @@ namespace voom
 
     typedef std::pair< double, double > doublePair;
     typedef typename std::vector< doublePair > doublePairContainer;
-    
+
     typedef std::pair< double, doublePair > doublePairWErrors;
     typedef typename std::vector< doublePairWErrors > doublePairWErrorsContainer;
 
@@ -233,7 +231,11 @@ namespace voom
     void removePrestress();
     
     int removeCrosslinks(TempFilamentContainer& tmpFils, double minLength);
-    
+
+    int removeLongFilCrosslinks(TempFilamentContainer& tmpFils, double L);
+
+    double computeLongFilCrosslinks(TempFilamentContainer & tmpFils, double L);    
+
     int collapseCrosslinks(TempFilamentContainer & tmpFils, double minLength);
 
     //! Do mechanics on Filaments
@@ -337,6 +339,10 @@ namespace voom
 
     double getMeanFilLen() { return _meanFilLen; }
 
+    double getMeanFilStreStiff() { return _meanFilStreStiff; }
+
+    double getMeanFilBendStiff() { return _meanFilBendStiff; }
+
     double crosslinkenergy();
 
     double bendingenergy();
@@ -357,13 +363,23 @@ namespace voom
       return ld;
     }
 
+    std::map< double, int > & getStreStiffDistro() {
+      std::map< double, int > & ssd = _filStreStiffFreqs;
+      return ssd;
+    }
+
+    std::map< double, int > & getBendStiffDistro() {
+      std::map< double, int > & bsd = _filBendStiffFreqs;
+      return bsd;
+    }
+
     std::map< double, int > & getNematicDistro() {
       std::map< double, int > & nd = _nematicFreqs;
       return nd;
     }
 
     std::map< doublePair, doublePair > getAngularEnergyDistro();
-    
+
     std::multimap< double, std::vector<double> > getDensityEnergyDistro(double scale);
 
     void cutOffEndsandCCD(double kcl, DefNodeContainer & dNodes);
@@ -374,11 +390,15 @@ namespace voom
 
     void computeFilLenDistro();
 
+    void computeFilStreStiffDistro();
+
+    void computeFilBendStiffDistro();
+
     void computeNematicOP();
 
     std::vector< std::pair<double,double> > computeNemCorrelations(double minSep, double step, double tol);
 
-    void printAngles(std::string & angleFile);
+    void printAngles(std::string & angleFile);	
 
     bool isSlave(DefNode* node) {
       if(_crossNodeMap.find(node) == _crossNodeMap.end()) return false;
@@ -414,7 +434,7 @@ namespace voom
 
     doublePairContainer affineMeasurement(double minLength, double stepSize, double maxLength, double shear, std::string measureType);
 
-    doublePairWErrorsContainer affineMeasurementHeadLevine(double minLength, double stepSize, double maxLength, double shear, double largestFil, bool getAngularDist);
+    doublePairWErrorsContainer affineMeasurementHeadLevine(double minLength, double stepSize, double maxLength, double shear, double smallestFil, double largestFil, bool getAngularDist);
 
     doublePairWErrorsContainer affineMeasurementHeadLevineInterpolated(double minLength, double stepSize, double maxLength, double shear, double largestFil);
 
@@ -433,7 +453,8 @@ namespace voom
     void computeCrossCorrelations(double len, double shear, std::string & fileName);
 
     double computeBucklingEnergy(double shear, double kap, double mu);
-    
+
+    void printLongShortStats(double shear, double L, double longshortratio);
 
   private:
 
@@ -465,15 +486,23 @@ namespace voom
 
     std::map< double, int > _filLenFreqs;
 
+    std::map< double, int > _filStreStiffFreqs;
+
+    std::map< double, int > _filBendStiffFreqs;
+
     std::map< double, int > _nematicFreqs;
 
     double _meanCLsep;
     
     double _nematicOP;
-    
+
     VectorND _nemDirector;
 
     double _meanFilLen;
+
+    double _meanFilStreStiff;
+
+    double _meanFilBendStiff;
 
     std::vector<TwoBodyPotential*> _tbp;
     

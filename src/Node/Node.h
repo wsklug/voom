@@ -299,7 +299,7 @@ namespace voom
     //! access normal
     const Point & normal() const {return _n;}
     //! access a component of normal
-    double normal( int i ) const 
+    const double normal( int i ) const 
     { assert(i<dim_n); return _n(i); }
     //! assign normal
     virtual void setNormal( const Point & n ) { 
@@ -398,7 +398,7 @@ namespace voom
     //! access velocity
     const Point & velocity() const {return _v;}
     //! access a component of velocity
-    double velocity( int i ) const 
+    const double velocity( int i ) const 
     { assert(i<dim_n); return _v(i); }
     //! assign velocity
     virtual void setVelocity( const Point & v ) { _v = v; }
@@ -406,7 +406,7 @@ namespace voom
     //! access acceleration
     const Point & acceleration() const {return _a;}
     //! access a component of acceleration
-    double acceleration( int i ) const 
+    const double acceleration( int i ) const 
     { assert(i<dim_n); return _a(i); }
     //! assign acceleration
     virtual void setAcceleration( const Point & a ) { _a = a; }
@@ -463,7 +463,7 @@ namespace voom
     //! access velocity
     const Point & velocity() const {return _v;}
     //! access a component of velocity
-    double velocity( int i ) const 
+    const double velocity( int i ) const 
     { assert(i<dim_n); return _v(i); }
     //! assign velocity
     virtual void setVelocity( const Point & v ) { _v = v; }
@@ -471,7 +471,7 @@ namespace voom
     //! access mobility
     const Matrix & mobility() const {return _M;}
     //! access a component of mobility
-    double getMobility( int i, int j ) const 
+    const double getMobility( int i, int j ) const 
     { assert(i<dim_n && j<dim_n); return _M(i,j); }
 
     //! assign mobility
@@ -486,7 +486,7 @@ namespace voom
     //! access drag
     const Matrix & drag() const {return _D;}
     //! access a component of drag
-    double getDrag( int i, int j ) const 
+    const double getDrag( int i, int j ) const 
     { assert(i<dim_n && j<dim_n); return _D(i,j); }
 
     //! assign drag

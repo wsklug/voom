@@ -73,8 +73,10 @@ namespace voom
 	a(0)           +=  DN[b](0)   * xb;
 	a(1)           +=  DN[b](1)   * xb;
       }
+
 	
       //std::cout<<_nodes[0]->point()<<std::endl;		
+
       Material_t& material = p->material;
       // compute shell geometry
       ShellGeometry geometry( a, aPartials );
@@ -113,9 +115,9 @@ namespace voom
 	// get stress and moment resultants
 	const tvmet::Vector< Vector3D, 3 >& sr = material.stressResultants();
 
-	double pressure = (_pressureNode==0) ? 0.0 : _pressureNode->point();
+	double pressure = _pressureNode->point();
 
-	double tension = (_tensionNode==0) ? 0.0 : _tensionNode->point();
+	double tension = _tensionNode->point();
 
 	// loop for all nodes to compute forces 
 	for (int a=0; a<_nodes.size(); a++) {
@@ -161,7 +163,7 @@ namespace voom
 
 
     if(f0) {
-      double pressure = (_pressureNode==0) ? 0.0 : _pressureNode->point();
+      double pressure = _pressureNode->point();
       _work = pressure * _volume;
 
       //double tension = _tensionNode->point();
@@ -183,75 +185,100 @@ namespace voom
 
   }
 
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  void C0Membrane<Quadrature_t, Material_t, Shape_t>::invariants(double& I1,double& J)
+  {
+    if(_quadPoints.size()!=1) std::cout<<"Expected only one quadrature point for returning invariants."<<std::endl;
+    // loop for every quadrature point
+    for(QuadPointIterator p=_quadPoints.begin(); 
+	p!=_quadPoints.end(); p++){
+      // compute position, basis vector, and derivatives of basis vector
+      tvmet::Vector< Vector3D, 2 > a;
+      tvmet::Matrix< Vector3D, 2, 2 > aPartials;
+      Vector3D zero(0);
+      a = zero, zero;
+      aPartials = zero, zero, zero, zero;
+
+      const typename Shape_t::FunctionContainer & N 
+	= p->shape.functions();
+      const typename Shape_t::DerivativeContainer & DN 
+	= p->shape.derivatives();
+
+      for (int b = 0; b < _nodes.size(); b++){
+	const DeformationNode<3>::Point & xb = _nodes[b]->point();
+	a(0)           +=  DN[b](0)   * xb;
+	a(1)           +=  DN[b](1)   * xb;
+      }
+	
+      //Material_t& material = p->material;
+      // compute shell geometry
+      ShellGeometry defgeometry( a, aPartials );
+      a = zero, zero;
+      aPartials = zero, zero, zero, zero;
+      for (int b = 0; b < _nodes.size(); b++){
+	const DeformationNode<3>::Point & Xb = _nodes[b]->position();
+	a(0)           +=  DN[b](0)   * Xb;
+	a(1)           +=  DN[b](1)   * Xb;
+      }
+      ShellGeometry refgeometry( a, aPartials );
+      
+      const tvmet::Vector< Vector3D, 2> & basis = defgeometry.a();
+      const tvmet::Vector<Vector3D,2> & refDual = refgeometry.aDual();
+     // const tvmet::Vector< Vector3D, 2 >& aDual = geometry.aDual();
+
+      Tensor3D F(0.0);
+      for(int alpha=0; alpha<2; alpha++){
+        for(int i=0; i<3; i++) {
+  	  for(int J=0; J<3; J++) {
+	    F(i,J) += basis(alpha)(i)*refDual(alpha)(J);	  
+	  }
+        }
+      }
+
+      Tensor3D C(0.0);
+      C = trans(F)*F;
+      I1 = C(0,0)+C(1,1)+C(2,2);
+      double trCSquare = 0.0;
+      for(int i=0; i<3; i++) {
+        for(int k=0; k<3; k++) {
+	  trCSquare += C(i,k)*C(k,i);
+        }
+      }
+      J = sqrt((I1*I1 - trCSquare)/2.0);
+    }
+    return; 
+  }
 
   template<class Quadrature_t, class Material_t, class Shape_t>
-  void C0Membrane<Quadrature_t, Material_t, Shape_t>::updateRefConfiguration( double edgeLength ) {
+  void C0Membrane<Quadrature_t, Material_t, Shape_t>::updateRefConfiguration() {
     for(QuadPointIterator p=_quadPoints.begin(); 
 	p!=_quadPoints.end(); p++){
       //
       // compute Shell geometry
       //
 			
-      // compute basis vector, and derivatives of basis vector
+      // compute position, basis vector, and derivatives of basis vector
+      Vector3D X(0.0);
       tvmet::Vector< Vector3D, 2 > a;
       tvmet::Matrix< Vector3D, 2, 2 > aPartials;
       Vector3D zero(0);
       a = zero, zero;
       aPartials = zero, zero, zero, zero;
 			
-      if( edgeLength > 0.0 ) {
-	// this is a hack to treat the reference geometry as if the
-	// element were equilateral in a flat sheet.
+      const typename Shape_t::FunctionContainer & N 
+	= p->shape.functions();
+      const typename Shape_t::DerivativeContainer & DN 
+	= p->shape.derivatives();
 
-	if(_nodes.size() == 3) { //triangle
-	//
-	//     ^ s^2
-	//    /
-	//   2
-	//  / \
-	// 0 - 1 --> s^1
-	// 
-	// X = (1-s^1-s^2)*X_0 + s^1*X_1 + s^2*X_2
-	// G_1 = X_{,1} = X_1-X_0
-	// G_2 = X_{,2} = X_2-X_0
-	//
-
-	a(0) = edgeLength, 0.0, 0.0;
-	a(1) = edgeLength*cos(M_PI/3.0), edgeLength*sin(M_PI/3.), 0.0;
-
-	} else if(_nodes.size() == 4) {
-	  //
-	  //     ^ s2
-	  //     |
-	  //  3-----2
-	  //  |  |  |
-	  // ----------> s1
-	  //  |  |  |
-	  //  0-----1
-	  //     |
-	  //
-	  // A_1 = h/2*( 1, 0)
-	  // A_2 = h/2*( 0, 1)
-	  a(0) = 0.5*edgeLength, 0.0, 0.0;
-	  a(1) = 0.0, 0.5*edgeLength, 0.0;
-	}
-	
-      } else {
-	// compute reference geometry correctly by interpolation from
-	// the reference coordinates of the nodes
-	const typename Shape_t::FunctionContainer & N 
-	  = p->shape.functions();
-	const typename Shape_t::DerivativeContainer & DN 
-	  = p->shape.derivatives();
-	
-	for (int b = 0; b < _nodes.size(); b++){
-	  const DeformationNode<3>::Point & Xb = _nodes[b]->position();
-	  a(0) += DN[b](0) * Xb;
-	  a(1) += DN[b](1) * Xb;
-	}
-      }		
-	
+      for (int b = 0; b < _nodes.size(); b++){
+	const DeformationNode<3>::Point & Xb = _nodes[b]->position();
+	X 	       +=   N[b]     * Xb;
+	a(0)           +=  DN[b](0)   * Xb;
+	a(1)           +=  DN[b](1)   * Xb;
+      }
+			
       Material_t& material = p->material;
+
       // compute shell geometry
       ShellGeometry refgeometry( a, aPartials );
 			
@@ -266,6 +293,31 @@ namespace voom
     return;
   }
    
+  //added to set the reference configuration explicitly
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  void C0Membrane<Quadrature_t, Material_t, Shape_t>::SetRefConfiguration(double edgelen) {
+    for(QuadPointIterator p=_quadPoints.begin(); 
+	p!=_quadPoints.end(); p++){
+      tvmet::Vector< Vector3D, 2 > a;
+      tvmet::Matrix< Vector3D, 2, 2 > aPartials;
+      a(0) = edgelen,0.,0.;
+      a(1) = edgelen*cos(M_PI/3.),edgelen*sin(M_PI/3.),0.;
+			
+      Material_t& material = p->material;
+
+      // compute shell geometry
+      ShellGeometry refgeometry( a, aPartials );
+			
+      // store the reference geometry in shell geometry class
+      material.setRefGeometry(refgeometry);
+
+      //material.updateState(true, true, true);
+
+    }    
+    compute(true,true,true);
+    
+    return;
+  }
 
   template<class Quadrature_t, class Material_t, class Shape_t>
   Vector3D 
@@ -291,5 +343,42 @@ namespace voom
 		
     return pos;
   }
+
+
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  const Tensor3D C0Membrane<Quadrature_t, Material_t, Shape_t>::cauchyStress()
+  {
+    Tensor3D sigma(0.0);
+    QuadPointIterator QPit = _quadPoints.begin();
+    double Atot = 0.0;
+    for( ; QPit != _quadPoints.end(); QPit++)
+    {
+      sigma += QPit->material.cauchyStress()*QPit->weight;
+      Atot += QPit->weight;
+    }
+    sigma /= Atot;
+
+    return sigma;
+  };
+
+  template<class Quadrature_t, class Material_t, class Shape_t>
+  const std::vector<double > C0Membrane<Quadrature_t, Material_t, Shape_t>::matInvariants()
+  {
+    std::vector<double > invariants(2, 0.0), tempInv(2, 0.0);
+    QuadPointIterator QPit = _quadPoints.begin();
+    double Atot = 0.0;
+    for( ; QPit != _quadPoints.end(); QPit++)
+    {
+      tempInv = QPit->material.invariants();
+      invariants[0] += tempInv[0]*QPit->weight;
+      invariants[1] += tempInv[1]*QPit->weight;
+      Atot += QPit->weight;
+    }
+    invariants[0] /= Atot;
+    invariants[1] /= Atot;
+
+    return invariants;
+  };
+
 
 } // namespace voom

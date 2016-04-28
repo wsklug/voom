@@ -80,7 +80,6 @@ namespace voom
       for(int a=0; a<_nodes.size(); a++) {
 	if( _active[a] ) {
 	  // Node is in contact; enforce equilibrium normal to surface
-	  // (also tangential if _friction=true)
 	  Vector3D n;
 	  n = _nodes[a]->point() - _xc;
 	  n /=  norm2(n);
@@ -93,10 +92,10 @@ namespace voom
 	    // tangent force 
 	      double ft = norm2( _forces(a) - fn*n );
 	    // check for slip
-	    if( ft < _friction*fn ) { 
+	      if( ft < _friction*fn ) { 
 	      // stick case
 	      _forces(a) = -_forces(a); 
-	    } else { 
+	      } else { 
 	      // slip case
 	      _forces(a) = -fn*n-_friction*fn*( _forces(a) - fn*n )/norm2( _forces(a) - fn*n );
 	      }
@@ -107,10 +106,12 @@ namespace voom
 	    _FZ += _forces(a)(2);
 	  } else { // node pulling away from surface
 	    _forces(a) = 0.0, 0.0, 0.0;
+	    _nodes[a]->updateForce( _forces(a) );
 	  }
 	} else {
 	  // Node is not in contact; contact force is zero
 	  _forces(a) = 0.0, 0.0, 0.0;
+	  _nodes[a]->updateForce( _forces(a) );
 	}
       }
       return;
@@ -121,10 +122,9 @@ namespace voom
     double energy() const {return -_FZ*(_R-_R0);}
 
     double getForce(int a, int i) const {
-      if( a >= 0 && a < _forces.size() && i >= 0 && i < 3 ) {
-	return _forces(a)(i);
-      }
-      return 0.0;
+      assert( a >= 0 && a < _forces.size() );
+      assert( i >= 0 && i < 3 );
+      return _forces(a)(i);
     }
 
     int active() const { 
@@ -133,6 +133,10 @@ namespace voom
 	if (_active[i]) n++;
       }
       return n; 
+    }
+
+    bool active_node(int i) {
+     return _active[i];
     }
 
   private:
@@ -205,8 +209,7 @@ namespace voom
       _FZ = 0.0;
       for(int a=0; a<_nodes.size(); a++) {
 	if( _active[a] ) {
-	  // Node is in contact; enforce equilibrium normal to surface
-	  // (also tangential if _friction=true)
+	  // Node is in contact; enforce equilibrium
 	  _forces(a) = _nodes[a]->force();
 	  Vector3D n;
 	  if(_up) n = 0.0, 0.0,  1.0;
@@ -217,12 +220,12 @@ namespace voom
             if(_friction<=1){
             // frictional contact;
 	    // tangent force 
-	    double ft = norm2( _forces(a) - fn*n );
+	      double ft = norm2( _forces(a) - fn*n );
 	    // check for slip
-	    if( ft < _friction*fn ) { 
+	      if( ft < _friction*fn ) { 
 	      // stick case
 	      _forces(a) = -_forces(a); 
-	    } else { 
+	      } else { 
 	      // slip case
 	      _forces(a) = -fn*n-_friction*fn*( _forces(a) - fn*n )/norm2( _forces(a) - fn*n );
 	      }
@@ -251,10 +254,9 @@ namespace voom
     void setZ(double Z) {_Z=Z;}
 
     double getForce(int a, int i) const {
-      if( a >= 0 && a < _forces.size() && i >= 0 && i < 3 ) {
-	return _forces(a)(i);
-      }
-      return 0.0;
+      assert( a >= 0 && a < _forces.size() );
+      assert( i >= 0 && i < 3 );
+      return _forces(a)(i);
     }
 
     int active() const { 
@@ -263,6 +265,10 @@ namespace voom
 	if (_active[i]) n++;
       }
       return n; 
+    }
+
+    bool active_node(int i) {
+     return _active[i];
     }
 
   private:

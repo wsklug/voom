@@ -73,16 +73,16 @@ namespace voom
       exit(0);
     }
     
-    double field(int i) const {return _x(i);}
-    double function() const {return _f;}
-    double gradient(int i) const {return _g(i);}
-    double hessian(int i, int j) const {
+    const double field(int i) const {return _x(i);}
+    const double function() const {return _f;}
+    const double gradient(int i) const {return _g(i);}
+    const double hessian(int i, int j) const {
       std::cerr << "No stiffness in ConjugateGradient solver." << std::endl;
       exit(0);
     };
     
     double & hessian(int i) { return hessian(i,i);}
-    double hessian(int i) const { return hessian(i,i);}
+    const double hessian(int i) const { return hessian(i,i);}
 
     const blitz::Array<double,1> & gradient() const {return _g;}
     const blitz::Array<double,2> & hessian() const;
@@ -139,6 +139,7 @@ namespace voom
 		      << _x << std::endl;
 	    _model->print("End");
 	    _model->computeAndAssemble( *this, true, true, false );
+	    std::cout << "In debug mode, L142 Lbfgsb.h" << std::endl;
 	    exit(0);
 	  }
 	}

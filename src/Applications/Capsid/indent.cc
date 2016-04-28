@@ -1,5 +1,6 @@
 #include <string>
 #include <iostream>
+#include <time.h>
 #include <vector>
 #include <fstream>
 #include <unistd.h>
@@ -17,10 +18,21 @@
 #include "RigidHemisphereAL.h"
 #include "RigidPlateAL.h"
 
-#include <vtkCell.h>
+#include <vtkDataSet.h>
+#include <vtkPointData.h>
+#include <vtkPolyData.h>
 #include <vtkDataSetReader.h>
 #include <vtkPolyDataWriter.h>
 #include <vtkPolyDataNormals.h>
+#include <vtkSmartPointer.h>
+#include <vtkUnstructuredGrid.h>
+#include <vtkGeometryFilter.h>
+#include <vtkSetGet.h>
+#include <vtkExtractEdges.h>
+#include <vtkCellArray.h>
+#include <vtkIdList.h>
+#include <vtkUnsignedIntArray.h>
+#include <vtkCell.h>
 
 #if defined(_OPENMP)
 #include <omp.h>
@@ -30,19 +42,23 @@ using namespace tvmet;
 using namespace std;
 using namespace voom;
 
-
+void insertValenceInVtk(const std::string fileName,\
+			vtkSmartPointer<vtkPolyData> mesh);
 
 int main(int argc, char* argv[])
 {
+  clock_t t1,t2;
+  t1=clock();
   if( argc < 2 ) {
-      cout << "Usage: indent modelName [-g gamma -p prestressFlag -n nsteps]." << endl;
-      return(0);
+    cout << "Usage: indent modelName [-g gamma -p prestressFlag -n nsteps]."
+	 << endl;
+    return(0);
   }
-
+  
 #if defined(_OPENMP)
   std::cout << omp_get_max_threads() << " OpenMP threads." << std::endl;
 #endif
-
+  
   bool verbose=true;
 #ifdef WITH_MPI
   MPI_Init( &argc, &argv );
@@ -50,7 +66,7 @@ int main(int argc, char* argv[])
   MPI_Comm_rank( MPI_COMM_WORLD, &procId );
   if( procId !=0 ) verbose=false;
 #endif
-
+  
   for(int i=0; i<argc; i++) {
     std::cout << std::setw(8) << i << "\t"
 	      << argv[i] << std::endl;
@@ -64,6 +80,8 @@ int main(int argc, char* argv[])
   double friction_inp=0.0;
   double minStep_inp=0.01;
   double step_inp=0.0;
+  // double remesh_inp=0.0; //
+  bool remesh = false;
   string prestressFlag = "yes";
   bool CST=false;
   bool badCommandLine=false;
@@ -86,13 +104,13 @@ int main(int argc, char* argv[])
       minStep_inp = std::atof(optarg);
       std::cout << "min step: " << minStep_inp << std::endl;
       break;
-//     case 'n':
-//       maxIter_inp = std::atof(optarg);
-//       std::cout << "max iterations: " << maxIter_inp << std::endl;
-//       break;
+      //     case 'n':
+      //       maxIter_inp = std::atof(optarg);
+      //       std::cout << "max iterations: " << maxIter_inp << std::endl;
+      //       break;
     case 'p' :
-//       if( std::string(optarg) == std::string("no") ) 
-	prestressFlag = std::string(optarg);
+      //       if( std::string(optarg) == std::string("no") ) 
+      prestressFlag = std::string(optarg);
       std::cout << "prestressFlag: " << prestressFlag << std::endl;
       break;
     case 's':
@@ -104,10 +122,11 @@ int main(int argc, char* argv[])
       std::cout << "viscosity: " << viscosity_inp << std::endl;
       break;
     case 'e':
-      if( std::string(optarg) == std::string("CST") )
+      if( std::string(optarg) == std::string("CST") ){
 	CST = true;
-      std::cout << "Using mixed formulation with CST elements for stretching."
-		<< std::endl;
+	std::cout << "Using mixed formulation with CST elements for stretching."
+		  << std::endl;
+      }
       break;
     case 'f':
       friction_inp = std::atof(optarg);
@@ -131,30 +150,69 @@ int main(int argc, char* argv[])
 	    << "option = "<< option << std::endl;
 
   if(gamma_inp <=0.0) {
-    std::cout << "gamma = " << gamma_inp << " but should be positive." << std::endl;
+    std::cout << "gamma = " << gamma_inp << " but should be positive." 
+	      << std::endl;
     return 0;
   }
 
   string inputFileName = modelName + ".vtk";
   vtkDataSetReader * reader = vtkDataSetReader::New();
   reader->SetFileName( inputFileName.c_str() );
-  // send through normals filter to ensure that triangle orientations
-  // are consistent
+
+  //We will use this object, shortly, to ensure consistent triangle orientations
   vtkPolyDataNormals * normals = vtkPolyDataNormals::New();
-  normals->SetInput( reader->GetOutput() );
+
+  //We have to pass a vtkPolyData to vtkPolyDataNormals::SetInput()
+  //If our input vtk file has vtkUnstructuredGridData instead of vtkPolyData
+  //then we need to convert it using vtkGeometryFilter
+  vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();
+  ds->Update();
+  if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
+    vtkSmartPointer<vtkUnstructuredGrid> unstructuredGrid = 
+      reader->GetUnstructuredGridOutput();    
+    vtkSmartPointer<vtkGeometryFilter> geometryFilter = 
+      vtkSmartPointer<vtkGeometryFilter>::New();
+    geometryFilter->SetInput(unstructuredGrid);
+    geometryFilter->Update(); 
+    vtkSmartPointer<vtkPolyData> polydata = geometryFilter->GetOutput();
+    normals->SetInput( polydata);
+  }
+  else{
+    normals->SetInput(reader->GetOutput());
+  }
+  
+  // send through normals filter to ensure that triangle orientations
+  // are consistent 
   normals->ConsistencyOn();
   normals->SplittingOff();
   normals->AutoOrientNormalsOn();
-  vtkPolyData * mesh = normals->GetOutput();
+  vtkSmartPointer<vtkPolyData> mesh = normals->GetOutput();
   mesh->Update();
   std::cout << "mesh->GetNumberOfPoints() = " << mesh->GetNumberOfPoints()
 	    << std::endl;
+
+  //Following few lines of code are meant to obtain number of edges
+  //from the mesh
+  vtkSmartPointer<vtkExtractEdges> extractedEdges = 
+    vtkSmartPointer<vtkExtractEdges>::New();
+  extractedEdges->SetInput(mesh);
+  extractedEdges->Update();
+  //Uncommenting the next line fetches the line entities, if you want 
+  //them : Amit
+  //vtkCellArray * lines = extractedEdges()->GetOutput()->GetLines();
+
+  //Number of Cells in vtkExtractEdges = number of edges : Amit
+  std::cout << "Number of edges in the mesh= " 
+	    << extractedEdges->GetOutput()->GetNumberOfCells()
+	    <<std::endl; 
+
 
   // create vector of nodes
   double Rcapsid = 1.0;
   int dof=0;
   std::vector< NodeBase* > nodes;
   std::vector< DeformationNode<3>* > defNodes;
+  // vector<ProteinNode *> Proteins;
   double Ravg = 0;
 
   // read in points
@@ -165,9 +223,12 @@ int main(int argc, char* argv[])
     Ravg += tvmet::norm2(x);
     NodeBase::DofIndexMap idx(3);
     for(int j=0; j<3; j++) idx[j]=dof++;
-    DeformationNode<3>* n = new DeformationNode<3>(id,idx,x);
+    DeformationNode<3>* n = new DeformationNode<3>(id,idx,x);    
     nodes.push_back( n );
     defNodes.push_back( n );
+    //We will add a Protein at every node - Amit
+    //ProteinNode * PrNode = new ProteinNode(n);
+    //Proteins.push_back(PrNode);
   }
   assert(nodes.size()!=0);
   Ravg /= nodes.size();
@@ -203,7 +264,8 @@ int main(int argc, char* argv[])
       defNodes[i]->setPoint(x);
       defNodes[i]->setPosition(x);
     }
-  } else {
+  }
+  else {
     for(int i=0; i<defNodes.size(); i++) {
       DeformationNode<3>::Point x;
       x = defNodes[i]->point();
@@ -215,17 +277,20 @@ int main(int argc, char* argv[])
 
   double Y = sqrt(gamma_inp);
   double KC = 1.0/Y;
+  
 
   // Introduce a numerical scaling factor to make energy and forces
   // large enough to avoid issues with machine precision.  Later
   // divide forces by factor when printing to file.
-  double scalingFactor=1.0e6;
+  double scalingFactor = 1.0;//e6;
   Y *= scalingFactor;
   KC *= scalingFactor;
 
+  //Amit: Set nu=0 and Yb=0 if you want LoopShellBody not to handle
+  //stretching anymore.
   double nu = 1.0/3.0;
+  double Yb=Y;
   double KG = -2.0*(1.0-nu)*KC;
-//   double KG = 0.0;
 
   if(verbose) 
     std::cout << " Y: " << Y << std::endl
@@ -237,10 +302,8 @@ int main(int argc, char* argv[])
   // create Body
   int quadOrder = 2;
 
-  double Yb=Y;
-  
   typedef FVK MaterialType;
-  if(CST) Yb=1.0e-6*Y;
+
   MaterialType bending( KC, KG, C0, Yb, nu );
 	
   typedef LoopShellBody<MaterialType> LSB;
@@ -248,6 +311,24 @@ int main(int argc, char* argv[])
   
   bd->setOutput(paraview);
 
+  double EquilateralEdgeLength = 0.0;
+
+  for(int i=0; i<connectivities.size(); i++) {
+    std::vector<int> cm(3);
+    for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
+    // Edge vectors in current config.
+    tvmet::Vector<double,3> 
+      e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
+      e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
+      e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
+      eCent(defNodes[cm[2]]->point());
+    // Compute average edge length for each triangle
+    EquilateralEdgeLength += 
+      (tvmet::norm2(e31) + tvmet::norm2(e32) + tvmet::norm2(e12))/3.0;
+  }
+  EquilateralEdgeLength /= connectivities.size();
+  std::cout<<"Average equilateral triangle edge length:"<<EquilateralEdgeLength<<endl;
+  
   // If we want pre-stress removed, then reset the reference
   // configuration for stretching, and reset the spontaneous curvature
   // for bending.
@@ -256,47 +337,21 @@ int main(int argc, char* argv[])
     bd->resetReference();
     for(Body::ElementIterator e=bd->elements().begin(); e!=bd->elements().end(); e++) {
       LoopShell<MaterialType> * lse = (LoopShell<MaterialType>*)(*e);
-      for(LoopShell<MaterialType>::QuadPointIterator p=lse->quadraturePoints().begin(); p!=lse->quadraturePoints().end(); p++) {
+      for(LoopShell<MaterialType>::QuadPointIterator p=lse->quadraturePoints().begin();
+	  p!=lse->quadraturePoints().end(); p++) {
 	p->material.setSpontaneousCurvature(2.0*( p->material.meanCurvature() ) );
       }
     }
+    bd->SetRefConfiguration(EquilateralEdgeLength);
   }
 
   // create Model
   Model::BodyContainer bdc;
   bdc.push_back(bd);
 
-  // stretching body
-  if(CST) {
-    std::vector< std::vector<int> > s_connectivities;
-    for(int i=0; i<connectivities.size(); i++) {
-      std::vector<int> c(3);
-      for(int j=0; j<3; j++) c[j]=connectivities[i](j);
-      s_connectivities.push_back(c);
-    }
-
-    MaterialType stretching( 0.0, 0.0, C0, Y, nu );
-    quadOrder = 1;
-    typedef C0MembraneBody<TriangleQuadrature,MaterialType,ShapeTri3> MB;
-    MB * bdm = new MB(stretching, s_connectivities, nodes, quadOrder, 0.0);
-    bdm->setOutput(paraview);
-
-    if( prestressFlag == "yes" ) {
-      // reset the ref configuration of all triangles to be
-      // equilateral
-      bdm->resetEquilateral();
-    } else {
-      // reset the ref configuration of all triangles to the current
-      // configuration
-      bdm->resetReference();      
-    }
-
-    bdc.push_back(bdm);
-  }
-
-
+  double ARtol = 1.1;    
+  
   Model model(bdc,nodes);
-
 
   int m=5;
   int maxIter=500;//1000;//model.dof();
@@ -305,6 +360,7 @@ int main(int argc, char* argv[])
   int iprint = 0;
   int maxIter_inp=0;
   ifstream lbfgsbinp("lbfgsb.inp");
+  
   lbfgsbinp >> iprint >> factr >> pgtol >> m >> maxIter_inp;
   if(verbose) 
     std::cout << "Input iprint: " << iprint << std::endl
@@ -314,21 +370,7 @@ int main(int argc, char* argv[])
 	      << "Input maxIter: " << maxIter_inp << std::endl;
   maxIter = std::max(maxIter,maxIter_inp);
 
-#if 1
   Lbfgsb solver(model.dof(), m, factr, pgtol, iprint, maxIter );//(true);
-
-
-#else
-  CGfast solver;
-  int restartStride = model.dof()/2;
-  int printStride = 100;//restartStride;
-  double tolLS = 1.0+0*pgtol/sqrt(model.dof());
-  int maxIterLS = 20;
-  double sigma = 5.0e-6;
-  solver.setParameters(CGfast::PR,
-		       maxIter,restartStride,printStride,
-		       pgtol,pgtol,tolLS,maxIterLS,sigma);
-#endif
 
   std::cout << "Relaxing shape for gamma = " << gamma_inp << std::endl
 	    << "Energy = " << solver.function() << std::endl;
@@ -378,10 +420,10 @@ int main(int argc, char* argv[])
   dRavg2 /= nodes.size();
   
   double gammaCalc = Y*Ravg*Ravg/KC;
-  double aspherity = dRavg2/(Ravg*Ravg);
+  double asphericity = dRavg2/(Ravg*Ravg);
   
   std::cout << "gamma = " << gammaCalc << endl
-	    << "aspherity = " << aspherity << endl;
+	    << "asphericity = " << asphericity << endl;
 
   std::cout << "Compressing capsid." << std::endl;
 
@@ -403,11 +445,6 @@ int main(int argc, char* argv[])
 
   double friction = friction_inp;
 
-//   RigidHemisphereContact * afm 
-//     = new RigidHemisphereContact( defNodes, afmR, xc, friction, pgtol );
-//   bd->pushBackConstraint( afm );
-//   RigidHemisphereElement * afm 
-//     = new RigidHemisphereElement( defNodes, afmR, xc, friction, pgtol );
   double k_AL = 1.0e2*scalingFactor;
   RigidHemisphereAL * afm 
     = new RigidHemisphereAL( defNodes, k_AL, afmR, xc, friction );
@@ -417,16 +454,8 @@ int main(int argc, char* argv[])
   std::cout << "Added afm to body." << std::endl;
 
   bool up=true;
-//   RigidPlateContact * glass
-//     = new RigidPlateContact( defNodes, Zmin, up, friction, pgtol );
-//   bd->pushBackConstraint( glass );
-//   RigidPlateElement * glass
-//     = new RigidPlateElement( defNodes, Zmin, up, friction, pgtol );
-  RigidPlateAL * glass
-    = new RigidPlateAL( defNodes, k_AL, Zmin, up, friction );
+  RigidPlateAL* glass  = new RigidPlateAL(defNodes, k_AL, Zmin, up, friction);
   bd->pushBack( glass );
-
-
 
   const double originalHeight=Zmax-Zmin;
   double Zbegin=Zmin;
@@ -468,6 +497,10 @@ int main(int argc, char* argv[])
   // %%%%%%%%%%%%%%%%%%%%%%
 
   int step=0;
+
+  // Following variables is for output from LoopShellBody::Remesh()
+  uint elementsChanged = 0;
+
   for(double Z = Zbegin; /*Z<Zend+0.5*dZ*//*Z>=Zbegin*/; Z+=dZ, step++) {
     
     // initial guess
@@ -513,13 +546,6 @@ int main(int argc, char* argv[])
 			    << "\t viscosity = " << vr.viscosity()
 			    << std::endl
 			    << std::endl;
-//       vr.step();
-
-//       if(viter == 0) {
-// 	glass->updateContact();
-// 	afm->updateContact();	
-// 	model.computeAndAssemble(solver, false, true, false);	
-//       }
 
       // update contact
       glass->updateContact();
@@ -553,23 +579,6 @@ int main(int argc, char* argv[])
  		  << "bottom penetration = " << glass->penetration() << std::endl;
       }
 	
-      // update viscosity
-//       if( vr.velocity() > 2*targetVelocity && vr.viscosity() < maxViscosity ) {
-
-// 	// Displacements very large; re-do last step with max viscosity
-// 	std::cout << std::endl
-// 		  << "Velocity too large.  Re-do previous step with max viscosity." 
-// 		  << std::endl << std::endl;
-// 	for(int i=0; i<model.dof(); i++ ) solver.field(i) = vSave(i);
-// 	model.putField(solver);
-// 	vr.setViscosity(maxViscosity);	
-//       } else {
-// 	// adjust viscosity to get velocity equal to target
-// 	double viscosity = vr.viscosity()*vr.velocity()/targetVelocity;
-// 	viscosity = std::max(viscosity,minViscosity);
-// 	vr.setViscosity(viscosity);
-//       }
-
       if(verbose) {
 	std::cout << "VISCOSITY: " << std::endl
 		  << "          velocity = " << vr.velocity() << std::endl
@@ -599,25 +608,11 @@ int main(int argc, char* argv[])
 		<< "        height = " << height << std::endl
 		<< "   indentation = " << originalHeight-height << std::endl
 		<< std::endl;
-      }
+    }
 
     //
     // Do we want to keep this solution or back up and try again?
     //
-//     if( afm->FZ() < F_prev && std::abs(dZ) > minStep_inp ) {
-//       // drop in force.  Reset viscosity, back up, and try a smaller increment 
-//       Z_drop = Z;
-//       std::cout << "Force drop after increment of "
-// 		<< dZ << std::endl;
-
-//       //vr.setViscosity(viscosity_inp);
-//       for(int i=0; i<model.dof(); i++ ) solver.field(i) = x_prev(i);
-//       model.putField(solver);
-//       Z -= dZ;
-//       dZ /= 2.0;
-//       std::cout << "Trying again with increment of " << dZ << std::endl;
-//       continue;
-//     } 
 
     //
     // Keeping solution
@@ -639,25 +634,30 @@ int main(int argc, char* argv[])
     if ( unload && Z >= Zend ) { // reached max indentation, now unload by reversing dZ
       dZ = -dZ;
     } 
-//     else if ( Z+dZ >= Zend ) { // almost at max indentation
-//       dZ = Zend - Z;    
-//     } else if ( Z < Z_drop && dZ > minStep_inp ) {
-//       // approaching previous drop point, take a smaller step forward
-//       dZ /= 2.0;
-//       std::cout << "Decreasing increment to " << dZ << std::endl;
-//     } else if ( afm->FZ() > F_prev && Z > Z_drop && dZ < step_inp ) {
-//       // past previous drop point, take a bigger step
-//       dZ *= 2.0;
-//       std::cout << "Increasing increment to " << dZ << std::endl;
-//     }
     F_prev = afm->FZ();
 
+    //This is where we remesh before next indentation step
 
-    for(int b=0; b<bdc.size(); b++) {
-      char name[100]; 
-      sprintf(name,"%s-body%d-step%04d",modelName.c_str(),b,step);
-      bdc[b]->printParaview(name);
-    }
+    // Do this only for the bending body since LoopShellBody is the
+    // only one that has remeshing implemented
+
+    if(remesh) {     
+      elementsChanged = bd->Remesh(ARtol,bending,quadOrder);
+
+      //Print out the number of elements that changed due to remeshing
+      if(elementsChanged > 0){
+	std::cout<<"Number of elements that changed after remeshing = "
+		 <<elementsChanged<<"."<<std::endl;
+
+	//If some elements have changed then we need to reset the
+	//reference configuration with average side lengths
+	bd->SetRefConfiguration(EquilateralEdgeLength);
+	
+      }
+    }// Remeshing ends here
+
+    //*********** BEGIN PRINTING OUTPUT (and log) FILES ***********//
+
     FvsZ << std::setw( 24 ) << std::setprecision(16) 
 	 << originalHeight-height
 	 << std::setw( 24 ) << std::setprecision(16) 
@@ -667,17 +667,105 @@ int main(int argc, char* argv[])
 	 << std::setw( 10 ) 
 	 << step
 	 << std::endl;
+   
+    for(int b=0; b<bdc.size(); b++) {
+      char name[100]; 
+      sprintf(name,"%s-body%d-step%04d",modelName.c_str(),b,step);
+      bdc[b]->printParaview(name);
+      //We will append Caspsomer POINT_DATA to the vtk output file
+      //printed by printParaview(), if such a file exists
+      sprintf(name,"%s-body%d-step%04d.vtk",modelName.c_str(),b,step);
+      if (ifstream(name)){      
+	insertValenceInVtk(name,mesh);
+      }
+    }
+    //************* END PRINTING OUTPUT FILES **************//
 
     // check if we are done
     if( unload && Z+dZ < Zbegin ) 
       break;
     else if( !unload && Z+dZ > Zend ) 
       break;
-  }
+    
+  }// Indentation Loop Ends
+
   FvsZ.close();
 
-  std::cout << "Indentation complete." << std::endl;
-
+  std::cout << "Indentation complete." << std::endl; 
+ 
+  t2=clock();
+  float diff ((float)t2-(float)t1);
+  std::cout<<"Total execution time: "<<diff/CLOCKS_PER_SEC
+	   <<" seconds"<<std::endl;
   return 0;
+
 }
+
+///////////////////////// END OF MAIN FUNCTION //////////////////////////////////
+/////////////////////////                     //////////////////////////////////
+
+///////////////////////// INSERTVALENCEINVTK BEGINS ///////////////////////////
+/////////////////////////                           //////////////////////////
+
+//The method insertValenceInVtk() inserts valence information in a vtk file
+//The calling method must ensure that 'fileName' exists and is a valid vtk file.
+//MUST use the extension '.vtk' in 'fileName'.
+//'mesh' is a pointer to a vtkPolyData
+
+void insertValenceInVtk(const std::string fileName, vtkSmartPointer<vtkPolyData> mesh){
+  ofstream * appendTo;
+
+  //Check that the file exists
+  assert(ifstream(fileName.c_str()));
+
+  vtkDataSetReader * reader = vtkDataSetReader::New();
+  reader->SetFileName(fileName.c_str());
+  
+  vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();  
+  ds->Update();
+  
+  //The following vtkUnsignedIntArray will be used to store the
+  //number of CELLS in the mesh that share the POINT denoted by the
+  //index of the vector
+  vtkSmartPointer<vtkUnsignedIntArray> countPointCells = 
+    vtkSmartPointer<vtkUnsignedIntArray>::New();
+  countPointCells->SetNumberOfValues(mesh->GetNumberOfPoints());
+  countPointCells->SetName("Valence");
+  
+  //cellIds will be used to temporarily hold the CELLS that use a
+  //point specified by a point id.
+  vtkSmartPointer<vtkIdList> cellIds = 
+    vtkSmartPointer<vtkIdList>::New();
+  
+  //We will use a vtkPolyDataWriter to write our modified output
+  //files that will have Capsomer information as well
+  vtkSmartPointer<vtkDataWriter> writer = 
+    vtkSmartPointer<vtkDataWriter>::New();
+  
+  if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
+    vtkSmartPointer<vtkUnstructuredGrid> usg 
+      = vtkUnstructuredGrid::SafeDownCast(ds);
+    usg->BuildLinks();
+    for(int p=0; p<ds->GetNumberOfPoints(); p++){
+      usg->GetPointCells(p,cellIds);
+      countPointCells->SetValue(p,cellIds->GetNumberOfIds());
+      cellIds->Reset();
+    }      
+  }                  
+  else if(ds->GetDataObjectType() == VTK_POLY_DATA){
+    vtkSmartPointer<vtkPolyData> pd = vtkPolyData::SafeDownCast(ds);
+    pd->BuildLinks();
+    for(int p=0; p<ds->GetNumberOfPoints(); p++){
+      pd->GetPointCells(p,cellIds);
+      countPointCells->SetValue(p,cellIds->GetNumberOfIds());
+      cellIds->Reset();
+    }	
+  }
+  ds->GetFieldData()->AddArray(countPointCells);
+  appendTo = new ofstream(fileName.c_str(),ofstream::app);
+  writer->WriteFieldData(appendTo,ds->GetFieldData());
+  appendTo->close();
+}
+
+
 

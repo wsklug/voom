@@ -91,6 +91,18 @@ namespace voom
     //! Rank of the element stiffness matrix
     virtual bool checkRank(const int rank);
 
+    virtual const Tensor3D cauchyStress()
+    {
+      Tensor3D A(0.0); 
+      return A;
+    }; 
+
+    virtual const std::vector<double > matInvariants()
+    {
+      std::vector<double > I(2, 0.0); 
+      return I;
+    };
+
   protected:
     double _energy;
 

@@ -68,7 +68,8 @@ namespace voom
     Tensor3D CalcCauchyStress();
     //! Calculates the principal strain vector in an element
     Vector3D CalcPrincipalStrains();
-
+  
+    void setYoungsModulus(double value);
     // Accessor functions
 
     //! Returns strain energy stored in an element

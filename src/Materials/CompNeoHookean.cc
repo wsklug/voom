@@ -9,7 +9,6 @@
 //
 
 #include <iostream>
-#include "VoomMath.h"
 #include "CompNeoHookean.h"
 
 //using namespace std;
@@ -124,6 +123,32 @@ namespace voom {
     return;
   }
 
+  double CompNeoHookean::vonMisesStress() const{
+      double jac = determinant(_F);
+
+      Tensor3D transF(0.0);
+      for(int i=0; i<3; i++) {
+	for(int J=0; J<3; J++) {
+	  transF(i,J) = _F(J,i);
+	}
+      }
+
+      Tensor3D Cauchy(0.0);
+      // = 1.0/jac*P*transF;
+
+      for(int i=0; i<3; i++) {
+	for(int J=0; J<3; J++) {
+	  Cauchy(i,J) = 1.0/jac*_P(i,J)*transF(i,J);
+	}
+      }
+
+      double vonMises = 0.7071068*sqrt((Cauchy(0,0)-Cauchy(1,1))*(Cauchy(0,0)-Cauchy(1,1)) + 
+				(Cauchy(1,1)-Cauchy(2,2))*(Cauchy(1,1)-Cauchy(2,2)) + 
+				(Cauchy(2,2)-Cauchy(0,0))*(Cauchy(2,2)-Cauchy(0,0)) + 
+				6.0*(Cauchy(0,1)*Cauchy(0,1)+Cauchy(0,2)*Cauchy(0,2)+Cauchy(1,2)*Cauchy(1,2)));
+      return vonMises;
+  }
+    
 
   void CompNeoHookean::ConsistencyTest()
   {

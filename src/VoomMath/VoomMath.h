@@ -30,9 +30,6 @@ namespace voom
 
   void tensorProduct(const Vector2D u, const Vector2D v, Tensor2D & T);
 
-  void eigenDecomposition( const Tensor3D & A, 
-			   Tensor3D & eVecs, 
-			   Vector3D & eVals   );
 };
 
 #endif // _VOOM_MATH_

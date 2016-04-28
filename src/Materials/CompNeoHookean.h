@@ -51,13 +51,17 @@ namespace voom {
     // General methods:
     //! Based on new deformation gradient tensor, F, calculates state of material (strain energy density, first Piola-Kirchhoff stress tensor)
     void updateState(bool f0, bool f1, bool f2);
-    
+    double vonMisesStress() const;
     // Tests:
     //! Consistency test
     void ConsistencyTest();
     static void MFITest();
     static void IsotropyTest();
-    
+    void setYoungsModulus(double E){_E=E;};
+    double getYoungsModulus(){return _E;};
+
+    //copy function is pure virtual
+    Material * copy() {};
     
   private:
     
