@@ -14,7 +14,9 @@
 #include "VoomMath.h"
 #include "Node.h"
 #include "ProteinLennardJones.h"
+#include "ProteinMorse.h"
 #include "ProteinBody.h"
+#include "HarmonicProteinBody.h"
 #include "KMCprotein.h"
 #include "MontecarloProtein.h"
 #include "Utils/PrintingProtein.h"
@@ -77,6 +79,9 @@ int main(int argc, char* argv[])
   // Geometry parameters to set periodic BC and compute average mean squared displacement in different regions
   double Length = -1.0, Zmin = 0.0, Zmax = 0.0;
 
+  // Potential and Body types
+  int PotType = 0;  // 0 -> Lennard Jones; 1 -> Morse
+  int BodyType = 0; // 0 -> One potential; 1 -> MultiplePotential 
   // Reading input from file passed as argument
   ifstream inp;
   inp.open(parameterFileName.c_str(), ios::in);
@@ -116,6 +121,8 @@ int main(int argc, char* argv[])
   inp >> temp >> Length;
   inp >> temp >> Zmin;
   inp >> temp >> Zmax;
+  inp >> temp >> PotType;
+  inp >> temp >> BodyType;
 
   inp.close();
 
@@ -149,7 +156,9 @@ int main(int argc, char* argv[])
        << " KMCflag                 : " << KMCflag           << endl
        << " Length                  : " << Length            << endl
        << " Zmin                    : " << Zmin              << endl
-       << " Zmax                    : " << Zmax              << endl;
+       << " Zmax                    : " << Zmax              << endl
+       << " PotType                 : " << PotType           << endl
+       << " BodyType                : " << BodyType          << endl;
 
 
 
@@ -310,10 +319,76 @@ int main(int argc, char* argv[])
 
 
   // Initiliaze potential material
-  ProteinLennardJones Mat(epsilon, sigma);
+  ProteinPotential * Mat;
+  if (PotType == 0) {
+    Mat = new ProteinLennardJones(epsilon, sigma);
+  } 
+  else if (PotType == 1) {
+    Mat = new  ProteinMorse(epsilon, sigma, Rshift);
+  }
 
   // Then initialize potential body
-  ProteinBody * PrBody = new ProteinBody(Proteins, &Mat, PotentialSearchRF, pressure);  
+  ProteinBody * PrBody;
+  if (BodyType == 0) {
+    PrBody = new ProteinBody(Proteins, Mat, PotentialSearchRF, pressure);  
+  }
+  else if (BodyType == 1) {
+
+    vector<vector<int > > HarmonicConn(912, vector<int >(2, 0));
+    uint ind = 0;
+    vector<int> SpiralCenters(8, 0);
+    SpiralCenters[0] = 912;
+    SpiralCenters[1] = 916;
+    SpiralCenters[2] = 914;
+    SpiralCenters[3] = 918;
+    SpiralCenters[4] = 913;
+    SpiralCenters[5] = 915;
+    SpiralCenters[6] = 917;
+    SpiralCenters[7] = 919;
+
+    for (uint j = 0; j < 8; j++) { // 8 spirals
+      uint sh = j*114;
+      for (uint i = 0; i < 56; i++) {
+	HarmonicConn[ind][0] = i + sh;
+	HarmonicConn[ind][1] = i+1 + sh;
+	ind++;
+      }
+      for (uint i = 0; i < 56; i++) {
+	HarmonicConn[ind][0] = 113 - i + sh;
+	HarmonicConn[ind][1] = 113 - i - 1 + sh;
+	ind++;
+      }
+      
+      HarmonicConn[ind][0] = 56 + sh;
+      HarmonicConn[ind][1] = SpiralCenters[j];
+      ind++;
+
+      HarmonicConn[ind][0] = SpiralCenters[j];
+      HarmonicConn[ind][1] = 113 + sh;
+      ind++;
+    }
+
+    cout << "Number of harmonic springs = " << ind << endl;
+
+    PrBody = new HarmonicProteinBody(Proteins, Mat, PotentialSearchRF, HarmonicConn, epsilon, Rshift);
+
+    //Compute average particle distance along spirals
+    vector<double > spacing(HarmonicConn.size(), 0.0);
+    double AvgSpacing = 0.0, StdSpacing = 0.0;
+    for (uint k = 0; k < HarmonicConn.size(); k++) {
+      ProteinNode *A = Proteins[HarmonicConn[k][0]];
+      ProteinNode *B = Proteins[HarmonicConn[k][1]];
+      spacing[k] = A->getDistance(B);
+      AvgSpacing += spacing[k];
+    }
+    AvgSpacing /= double( spacing.size() );
+    for (uint k = 0; k < HarmonicConn.size(); k++) {
+      StdSpacing += pow( spacing[k] - AvgSpacing, 2.0 );
+    }
+    StdSpacing = sqrt( StdSpacing / double( spacing.size() ) );
+    cout << "Average spacing = " << AvgSpacing << " and Std(Spacing) = " << StdSpacing << endl;
+  }
+  
   PrBody->compute(true, false, false);
   cout << "Initial protein body energy = " << PrBody->energy() << endl;
 
@@ -384,7 +459,7 @@ int main(int argc, char* argv[])
 
 
   if (KMCflag == 0) {
-    MontecarloProtein MCsolver(FreeProteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, ResetT, PrintEvery, nMCsteps, NT); 
+    MontecarloProtein MCsolver(FreeProteins, PrBody, PossibleHosts, MCmethod, &PrintArchaea, ResetT, PrintEvery, nMCsteps, NT, Length, Zmin, Zmax); 
     if (StepWise == 0) {
       MCsolver.SetTempSchedule(MCsolver.EXPONENTIAL, T01, T02, FinalRatio); }
       // MCsolver.SetTempSchedule(MCsolver.LINEAR, T01, T02, FinalRatio); }
