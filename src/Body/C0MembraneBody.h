@@ -181,6 +181,9 @@ namespace voom
     void printParaview2(const std::string fileName) const ;
     
     void printParaviewEigVec(const std::string fileName) const ;
+
+    void printObj(const std::string fileName) const ;
+
     void createInputFile(const std::string& filename);
     
     void resetReference() {

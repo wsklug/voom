@@ -297,28 +297,6 @@ namespace voom
       MembraneElement_t* s=_membranes[si];
       s->SetRefConfiguration(edge);
      }
-    
-    for(int si=sBegin; si<sEnd; si++) {
-       if( !_active[si] ) continue;
-       MembraneElement_t* s=_membranes[si];
-       s->invariants(I1[si],J[si]);
-     }
-  }
-
-  template<class Quadrature_t, class Material_t, class Shape_t>
-  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::SetRefConfiguration(double edge)
-  {
-  }
-
-  template<class Quadrature_t, class Material_t, class Shape_t>
-  void C0MembraneBody<Quadrature_t,Material_t,Shape_t>::SetRefConfiguration(double edge)
-  {
-    int sBegin=0, sEnd=_membranes.size();
-    for(int si=sBegin; si<sEnd; si++) {
-      if( !_active[si] ) continue;
-      MembraneElement_t* s=_membranes[si];
-      s->SetRefConfiguration(edge);
-     }
   }
 	
   //! create input file used by Paraview, a 3D viewer

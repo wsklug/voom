@@ -105,7 +105,9 @@ int main(int argc, char* argv[])
 
   vtkSmartPointer<vtkDataSetReader> reader = 
     vtkSmartPointer<vtkDataSetReader>::New();  
-  
+
+  vtkSmartPointer<vtkPolyData> mesh;  
+
   std::stringstream sstm;
   
   if(continueFromNum > 1){
@@ -117,6 +119,7 @@ int main(int argc, char* argv[])
     temp = sstm.str();
 
     reader->SetFileName(temp.c_str());
+    mesh = reader->GetPolyDataOutput();
 
     sstm.str("");
     sstm.clear();
@@ -127,38 +130,38 @@ int main(int argc, char* argv[])
   }
   else{
     reader->SetFileName( inputFileName.c_str() );
-  }
+    //We will use this object, shortly, to ensure consistent triangle
+    //orientations
+    vtkSmartPointer<vtkPolyDataNormals> normals = 
+      vtkSmartPointer<vtkPolyDataNormals>::New();
 
-  //We will use this object, shortly, to ensure consistent triangle
-  //orientations
-  vtkSmartPointer<vtkPolyDataNormals> normals = 
-    vtkSmartPointer<vtkPolyDataNormals>::New();
-
-  //We have to pass a vtkPolyData to vtkPolyDataNormals::SetInput() If
-  //our input vtk file has vtkUnstructuredGridData instead of
-  //vtkPolyData then we need to convert it using vtkGeometryFilter
-  vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();
-  ds->Update();
-  if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
-    vtkSmartPointer<vtkUnstructuredGrid> unstructuredGrid = 
-      reader->GetUnstructuredGridOutput();    
-    vtkSmartPointer<vtkGeometryFilter> geometryFilter = 
-      vtkSmartPointer<vtkGeometryFilter>::New();
-    geometryFilter->SetInput(unstructuredGrid);
-    geometryFilter->Update(); 
-    vtkSmartPointer<vtkPolyData> polydata = geometryFilter->GetOutput();
-    normals->SetInput( polydata);
-  }
-  else{
-    normals->SetInput(reader->GetOutput());
-  }
+    //We have to pass a vtkPolyData to vtkPolyDataNormals::SetInput() If
+    //our input vtk file has vtkUnstructuredGridData instead of
+    //vtkPolyData then we need to convert it using vtkGeometryFilter
+    vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();
+    ds->Update();
+    if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
+      vtkSmartPointer<vtkUnstructuredGrid> unstructuredGrid = 
+	reader->GetUnstructuredGridOutput();    
+      vtkSmartPointer<vtkGeometryFilter> geometryFilter = 
+	vtkSmartPointer<vtkGeometryFilter>::New();
+      geometryFilter->SetInput(unstructuredGrid);
+      geometryFilter->Update(); 
+      vtkSmartPointer<vtkPolyData> polydata = geometryFilter->GetOutput();
+      normals->SetInput( polydata);
+    }
+    else{
+      normals->SetInput(reader->GetOutput());
+    }
   
-  // send through normals filter to ensure that triangle orientations
-  // are consistent 
-  normals->ConsistencyOn();
-  normals->SplittingOff();
-  normals->AutoOrientNormalsOn();
-  vtkSmartPointer<vtkPolyData> mesh = normals->GetOutput();
+    // send through normals filter to ensure that triangle orientations
+    // are consistent 
+    normals->ConsistencyOn();
+    normals->SplittingOff();
+    normals->AutoOrientNormalsOn();
+    mesh = normals->GetOutput();
+  }
+
   mesh->Update();
   std::cout << "mesh->GetNumberOfPoints() = " << mesh->GetNumberOfPoints()
 	    << std::endl;
@@ -183,7 +186,7 @@ int main(int argc, char* argv[])
 
 
   // create vector of nodes
-  //double Rcapsid = 1.0;
+ 
   int dof=0;
   std::vector< NodeBase* > nodes;
   std::vector< DeformationNode<3>* > defNodes;
@@ -191,22 +194,30 @@ int main(int argc, char* argv[])
 
   // read in points
   for(int a=0; a<mesh->GetNumberOfPoints(); a++) {
+    
     int id=a;
-    DeformationNode<3>::Point x;
+    NodeBase::DofIndexMap idx(3);
+
+    for(int j=0; j<3; j++) idx[j]=dof++;
+
+    DeformationNode<3>::Point X;
+    DeformationNode<3>* n;
+
     if(continueFromNum > 1){
       DeformationNode<3>::Point d;
-      DeformationNode<3>::Point temp;
+      DeformationNode<3>::Point x;
       displacements->GetTuple(a,&(d[0]));
-      mesh->GetPoint(a, &(temp[0]));
-      x = temp + d;
+      mesh->GetPoint(a, &(X[0]));
+      x = X + d;
+      n = new DeformationNode<3>(id,idx,X,x);
+      Ravg += tvmet::norm2(x); 
     }
     else{
-      mesh->GetPoint(a, &(x[0]));
+      mesh->GetPoint(a, &(X[0]));
+      n = new DeformationNode<3>(id,idx,X);
+      Ravg += tvmet::norm2(X); 
     }
-    Ravg += tvmet::norm2(x);
-    NodeBase::DofIndexMap idx(3);
-    for(int j=0; j<3; j++) idx[j]=dof++;
-    DeformationNode<3>* n = new DeformationNode<3>(id,idx,x);    
+       
     nodes.push_back( n );
     defNodes.push_back( n );
   }
@@ -241,29 +252,32 @@ int main(int argc, char* argv[])
 	   << stdDevEdgeLen << endl;
   std::cout.precision(6);
   
-  // Rescale size of the capsid by the average equilateral edge length
-  for(int i=0; i<defNodes.size(); i++) {
-    DeformationNode<3>::Point x;
-    x = defNodes[i]->point();
-    x *= 1.0/EdgeLength;
-    defNodes[i]->setPoint(x);
-    defNodes[i]->setPosition(x);
+  if(continueFromNum == 1){
+    // Rescale size of the capsid by the average equilateral edge length
+    for(int i=0; i<defNodes.size(); i++) {
+      DeformationNode<3>::Point X;
+      X = defNodes[i]->position();
+      X *= 1.0/EdgeLength;
+      defNodes[i]->setPoint(X);
+      defNodes[i]->setPosition(X);
+    }
+    
+    //Recalculate edge lengths and capsid radius
+    lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);  
+    EdgeLength = lengthStat[0];
+
+    Ravg = 0.0;
+    for(int i=0; i < defNodes.size(); i++) {
+      DeformationNode<3>::Point x;
+      x = defNodes[i]->point();
+      double tempRadius = tvmet::norm2(x);
+      Ravg += tempRadius;
+    }
+    Ravg /= defNodes.size();
+    
+    std::cout<<"Radius of capsid after rescaling = "<< Ravg << endl;
+    
   }
-
-  //Recalculate edge lengths and capsid radius
-  lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);  
-  EdgeLength = lengthStat[0];
-
-  Ravg = 0.0;
-  for(int i=0; i < defNodes.size(); i++) {
-    DeformationNode<3>::Point x;
-    x = defNodes[i]->point();
-    double tempRadius = tvmet::norm2(x);
-    Ravg += tempRadius;
-  }
-  Ravg /= defNodes.size();
-
-  std::cout<<"Radius of capsid after rescaling = "<< Ravg << endl;
 
   //******************* READ FVK DATA FROM FILE **********************
 

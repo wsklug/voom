@@ -156,6 +156,15 @@ int main(int argc, char* argv[])
   double pressureFactor;
   bool harmonicRelaxNeeded;
   int interimIter = 10;
+  int continueFromNum = 1;
+  double Ravg = 0;
+  double Rshift = 1.0;
+  double Zmin;
+  double Zmax;
+  double afmR = 1.0*Ravg;
+  tvmet::Vector<double,3> xc(0.0);
+  double Z_glass;
+  double dZ;
 
   //Read epsilon and percentStrain from input file. percentStrain is
   //calculated so as to set the inflection point of Morse potential
@@ -168,57 +177,98 @@ int main(int argc, char* argv[])
 	      >> temp >> percentStrain
 	      >> temp >> pressureFactor
 	      >> temp >> harmonicRelaxNeeded
-	      >> temp >> interimIter;
+	      >> temp >> interimIter
+	      >> temp >> continueFromNum
+	      >> temp >> Ravg
+	      >> temp >> Rshift
+	      >> temp >> Zmax
+	      >> temp >> Zmin
+	      >> temp >> Z_glass
+	      >> temp >> dZ
+	      >> temp >> xc[0]
+	      >> temp >> xc[1]
+	      >> temp >> xc[2];
   
   miscInpFile.close();
 
-  string inputFileName = modelName + ".vtk";
   vtkDataSetReader * reader = vtkDataSetReader::New();
-  reader->SetFileName( inputFileName.c_str() );
+  vtkSmartPointer<vtkPolyData> mesh;
+  string inputFileName;
+  vtkSmartPointer<vtkDataArray> displacements;
 
-  //We will use this object, shortly, to ensure consistent triangle orientations
-  vtkPolyDataNormals * normals = vtkPolyDataNormals::New();
+  vtkSmartPointer<vtkPolyData> mesh_prev;
+  vtkSmartPointer<vtkDataArray> displacements_prev;
 
-  //We have to pass a vtkPolyData to vtkPolyDataNormals::SetInput()
-  //If our input vtk file has vtkUnstructuredGridData instead of vtkPolyData
-  //then we need to convert it using vtkGeometryFilter
-  vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();
-  ds->Update();
-  if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
-    vtkSmartPointer<vtkUnstructuredGrid> unstructuredGrid = 
-      reader->GetUnstructuredGridOutput();    
-    vtkSmartPointer<vtkGeometryFilter> geometryFilter = 
-      vtkSmartPointer<vtkGeometryFilter>::New();
-    geometryFilter->SetInput(unstructuredGrid);
-    geometryFilter->Update(); 
-    vtkSmartPointer<vtkPolyData> polydata = geometryFilter->GetOutput();
-    normals->SetInput( polydata);
+  if(continueFromNum > 0){
+    harmonicRelaxNeeded = false;
+    char name[100]; 
+    
+    //Read the latest VTK file
+    sprintf(name,"%s-body%d-step%04d",modelName.c_str(),1,continueFromNum);
+    inputFileName = string(name);
+    reader->SetFileName( inputFileName.c_str() );
+    mesh = reader->GetPolyDataOutput();
+    mesh->Update();
+    displacements = mesh->GetPointData()->GetVectors("displacements");
+
+    //Also read the second to last VTK file
+    sprintf(name,"%s-body%d-step%04d",modelName.c_str(),1,continueFromNum-1);
+    inputFileName = string(name);
+    reader->SetFileName( inputFileName.c_str() );
+    mesh_prev = reader->GetPolyDataOutput();
+    mesh_prev->Update();
+    displacements_prev = mesh->GetPointData()->GetVectors("displacements");
+    
+
   }
   else{
-    normals->SetInput(reader->GetOutput());
-  }
-  
-  // send through normals filter to ensure that triangle orientations
-  // are consistent 
-  normals->ConsistencyOn();
-  normals->SplittingOff();
-  normals->AutoOrientNormalsOn();
-  vtkSmartPointer<vtkPolyData> mesh = normals->GetOutput();
-  mesh->Update();
-  std::cout << "mesh->GetNumberOfPoints() = " << mesh->GetNumberOfPoints()
-	    << std::endl;
+    inputFileName = modelName + ".vtk";
+    reader->SetFileName( inputFileName.c_str() );
+    //We will use this object, shortly, to ensure consistent triangle orientations
+    vtkPolyDataNormals * normals = vtkPolyDataNormals::New();
 
-  //Following few lines of code are meant to obtain number of edges
-  //from the mesh
-  vtkSmartPointer<vtkExtractEdges> extractedEdges = 
-    vtkSmartPointer<vtkExtractEdges>::New();
-  extractedEdges->SetInput(mesh);
-  extractedEdges->Update();
+    //We have to pass a vtkPolyData to vtkPolyDataNormals::SetInput()
+    //If our input vtk file has vtkUnstructuredGridData instead of vtkPolyData
+    //then we need to convert it using vtkGeometryFilter
+    vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();
+    ds->Update();
+    if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
+      vtkSmartPointer<vtkUnstructuredGrid> unstructuredGrid = 
+	reader->GetUnstructuredGridOutput();    
+      vtkSmartPointer<vtkGeometryFilter> geometryFilter = 
+	vtkSmartPointer<vtkGeometryFilter>::New();
+      geometryFilter->SetInput(unstructuredGrid);
+      geometryFilter->Update(); 
+      vtkSmartPointer<vtkPolyData> polydata = geometryFilter->GetOutput();
+      normals->SetInput( polydata);
+    }
+    else{
+      normals->SetInput(reader->GetOutput());
+    }
   
-  //Number of Cells in vtkExtractEdges = number of edges : Amit
-  std::cout << "Number of edges in the mesh= " 
-	    << extractedEdges->GetOutput()->GetNumberOfCells()
-	    <<std::endl; 
+    // send through normals filter to ensure that triangle orientations
+    // are consistent 
+    normals->ConsistencyOn();
+    normals->SplittingOff();
+    normals->AutoOrientNormalsOn();
+    
+    mesh = normals->GetOutput();
+    mesh->Update();
+    std::cout << "mesh->GetNumberOfPoints() = " << mesh->GetNumberOfPoints()
+	      << std::endl;
+
+    //Following few lines of code are meant to obtain number of edges
+    //from the mesh
+    vtkSmartPointer<vtkExtractEdges> extractedEdges = 
+      vtkSmartPointer<vtkExtractEdges>::New();
+    extractedEdges->SetInput(mesh);
+    extractedEdges->Update();
+  
+    //Number of Cells in vtkExtractEdges = number of edges : Amit
+    std::cout << "Number of edges in the mesh= " 
+	      << extractedEdges->GetOutput()->GetNumberOfCells()
+	      <<std::endl;
+  }   
 
 
   // create vector of nodes
@@ -227,23 +277,36 @@ int main(int argc, char* argv[])
   int dof=0;
   std::vector< NodeBase* > nodes;
   std::vector< DeformationNode<3>* > defNodes;
-  // vector<ProteinNode *> Proteins;
-  double Ravg = 0;
-
+  
   // read in points
   for(int a=0; a<mesh->GetNumberOfPoints(); a++) {
     int id=a;
     DeformationNode<3>::Point x;
-    mesh->GetPoint(a, &(x[0]));
-    Ravg += tvmet::norm2(x);
+
+    if(continueFromNum > 0){
+      DeformationNode<3>::Point d;
+      DeformationNode<3>::Point temp;
+      displacements->GetTuple(a,&(d[0]));
+      mesh->GetPoint(a, &(temp[0]));
+      x = temp + d;
+    }
+    else{
+      mesh->GetPoint(a, &(x[0]));
+      Ravg += tvmet::norm2(x);
+    }
+    
     NodeBase::DofIndexMap idx(3);
     for(int j=0; j<3; j++) idx[j]=dof++;
     DeformationNode<3>* n = new DeformationNode<3>(id,idx,x);    
     nodes.push_back( n );
     defNodes.push_back( n );
   }
+
   assert(nodes.size()!=0);
-  Ravg /= nodes.size();
+
+  if(continueFromNum == 0){
+    Ravg /= nodes.size();
+  }
   cout << "Number of nodes: " <<nodes.size() << endl
        << "Ravg = " << Ravg << endl;
 
@@ -259,38 +322,24 @@ int main(int argc, char* argv[])
     connectivities.push_back(c);
   }
 
-  // Calculate side lengths average and std dev of the 
-  //equilateral triangles
-  std::vector<double> lengthStat = 
-    calcEdgeLenAndStdDev(defNodes,connectivities);  
-  double EdgeLength = lengthStat[0];
-  double stdDevEdgeLen = lengthStat[1];
-  std::cout<<"Before any relaxation :" << endl
-	   <<"   Average triangle edge length = "<< std::setprecision(10)
-	   << EdgeLength << endl
-	   <<"   Standard deviation = " << std::setprecision(10)
-	   << stdDevEdgeLen << endl;
-  std::cout.precision(6);
-
+  std::vector<double> lengthStat;  
+  double EdgeLength;
+  double stdDevEdgeLen;
   double C0 = 0.0;
 
-  // rescale size 
-  if( prestressFlag == "spherical" ) {
-    // make capsid spherical 
-
-    C0 = - 2.0/Rcapsid; // WSK: use minus sign here consistent with
-			// outward pointing surface normals.
-
-    for(int i=0; i<defNodes.size(); i++) {
-      DeformationNode<3>::Point x;
-      x = defNodes[i]->point();
-      double R = norm2(x);
-      x *= Rcapsid/R;
-      defNodes[i]->setPoint(x);
-      defNodes[i]->setPosition(x);
-    }
-  }
-  else {
+  if(continueFromNum == 0){
+    // Calculate side lengths average and std dev of the 
+    //equilateral triangles
+    lengthStat = calcEdgeLenAndStdDev(defNodes,connectivities);  
+    EdgeLength = lengthStat[0];
+    stdDevEdgeLen = lengthStat[1];
+    std::cout<<"Before any relaxation :" << endl
+	     <<"   Average triangle edge length = "<< std::setprecision(10)
+	     << EdgeLength << endl
+	     <<"   Standard deviation = " << std::setprecision(10)
+	     << stdDevEdgeLen << endl;
+    std::cout.precision(6);
+  
     //Rescale the capsid such that triangle edge-lengths are unity
     for(int i=0; i<defNodes.size(); i++) {
       DeformationNode<3>::Point x;
@@ -303,22 +352,23 @@ int main(int argc, char* argv[])
     //Recalculate edge lengths and capsid radius
     lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);  
     EdgeLength = lengthStat[0];
+
+    Ravg = 0.0;
+    for(int i=0; i < defNodes.size(); i++) {
+      DeformationNode<3>::Point x;
+      x = defNodes[i]->point();
+      double tempRadius = tvmet::norm2(x);
+      Ravg += tempRadius;
+    }
+    Ravg /= defNodes.size();
+
+    std::cout<<"Radius of capsid after rescaling = "<< Ravg << endl;
   }
-
-  Ravg = 0.0;
-  for(int i=0; i < defNodes.size(); i++) {
-    DeformationNode<3>::Point x;
-    x = defNodes[i]->point();
-    double tempRadius = tvmet::norm2(x);
-    Ravg += tempRadius;
-  }
-  Ravg /= defNodes.size();
-
-  std::cout<<"Radius of capsid after rescaling = "<< Ravg << endl;
-
 
   //Material properties
-  double Rshift = EdgeLength;
+  if(continueFromNum == 0){
+    Rshift = EdgeLength;
+  }
   double sigma  = (100/(Rshift*percentStrain))*log(2.0);
   double PotentialSearchRF=1.2*Rshift; 
   double springConstant = 2*sigma*sigma*epsilon;
@@ -353,7 +403,7 @@ int main(int argc, char* argv[])
   int iprint = 1;
 
   std::stringstream sstm;
-  string fname = inputFileName.substr(0,inputFileName.find("."));
+  string fname = modelName;
   string rName;
   string actualFile;
 
@@ -465,115 +515,118 @@ int main(int argc, char* argv[])
 
   Lbfgsb solver2(model.dof(), m, factr, pgtol, iprint, 1e5);
 
-  std::cout << "Relaxing shape for gamma = " << gamma_inp << std::endl;
+  if(continueFromNum == 0){
+
+    std::cout << "Relaxing shape for gamma = " << gamma_inp << std::endl;
   
-  for(int n=0; n<nodes.size(); n++) {
-    for(int i=0; i<nodes[n]->dof(); i++) nodes[n]->setForce(i,0.0);
-  }
+    for(int n=0; n<nodes.size(); n++) {
+      for(int i=0; i<nodes[n]->dof(); i++) nodes[n]->setForce(i,0.0);
+    }
     
-  for(int b=0; b<bdc.size(); b++) {
-    std::cout << "bdc[" << b << "]->compute()" << std::endl;
-    bdc[b]->compute(true,true,false);    
-  }
+    for(int b=0; b<bdc.size(); b++) {
+      std::cout << "bdc[" << b << "]->compute()" << std::endl;
+      bdc[b]->compute(true,true,false);    
+    }
+    
+    std::cout << "Initial Shape." << std::endl
+	      << "Energy = " << solver2.function() << std::endl;
+    
+    fname = modelName;
+    fname += ".initial";
+    model.print(fname);
+    actualFile = fname + "-bd1.vtk";
+    std::rename(actualFile.c_str(),fname.c_str());
+    
+    // relax initial shape;
+    solver2.solve(&model);
+    
+    std::cout << "Shape relaxed." << std::endl
+	      << "Energy = " << solver2.function() << std::endl;
+    
+    fname = modelName;
+    fname += ".relaxed";
+    model.print(fname);
+    actualFile = fname + "-bd1.vtk";
+    std::rename(actualFile.c_str(),fname.c_str());
 
-  std::cout << "Initial Shape." << std::endl
-	    << "Energy = " << solver2.function() << std::endl;
-  
-  fname = modelName;
-  fname += ".initial";
-  model.print(fname);
-  actualFile = fname + "-bd1.vtk";
-  std::rename(actualFile.c_str(),fname.c_str());
-
-  // relax initial shape;
-  solver2.solve(&model);
-
-  std::cout << "Shape relaxed." << std::endl
-	    << "Energy = " << solver2.function() << std::endl;
-  
-  fname = modelName;
-  fname += ".relaxed";
-  model.print(fname);
-  actualFile = fname + "-bd1.vtk";
-  std::rename(actualFile.c_str(),fname.c_str());
-
-  //Calculate centre of sphere as average of position vectors of all nodes.
-  tvmet::Vector<double,3> Xavg(0.0);
-  for ( int i = 0; i<defNodes.size(); i++){
-    Xavg += defNodes[i]->point();
-  }
-  Xavg /= defNodes.size();
-
-  //We will calculate radius using the quadrature points
-  LSB::FeElementContainer elements = bd->shells();
-  std::vector<double> qpRadius(elements.size(),0.0);
-
+    //Calculate centre of sphere as average of position vectors of all nodes.
+    tvmet::Vector<double,3> Xavg(0.0);
+    for ( int i = 0; i<defNodes.size(); i++){
+      Xavg += defNodes[i]->point();
+    }
+    Xavg /= defNodes.size();
+    
+    //We will calculate radius using the quadrature points
+    LSB::FeElementContainer elements = bd->shells();
+    std::vector<double> qpRadius(elements.size(),0.0);
+    
 #ifdef _OPENMP
 #pragma omp parallel for
 #endif
-  for(int e=0; e < elements.size();e++){
-
-    const LS::NodeContainer eleNodes = elements[e]->nodes();      
-    LS::QuadPointContainer quadPoints = elements[e]->quadraturePoints();
-
-    for(LS::ConstQuadPointIterator quadPoint = quadPoints.begin();
-	quadPoint != quadPoints.end(); ++quadPoint){
-
-      LoopShellShape s = (*quadPoint).shape;
-      const LoopShellShape::FunctionArray fn = s.functions();
-      tvmet::Vector<double,3> Xq(0.0);
-
-      for(int i=0;i<fn.size();i++){
-	Xq += tvmet::mul(eleNodes[i]->point(),fn(i));
+    for(int e=0; e < elements.size();e++){
+      
+      const LS::NodeContainer eleNodes = elements[e]->nodes();      
+      LS::QuadPointContainer quadPoints = elements[e]->quadraturePoints();
+      
+      for(LS::ConstQuadPointIterator quadPoint = quadPoints.begin();
+	  quadPoint != quadPoints.end(); ++quadPoint){
+	
+	LoopShellShape s = (*quadPoint).shape;
+	const LoopShellShape::FunctionArray fn = s.functions();
+	tvmet::Vector<double,3> Xq(0.0);
+	
+	for(int i=0;i<fn.size();i++){
+	  Xq += tvmet::mul(eleNodes[i]->point(),fn(i));
+	}
+	
+	double qpR = tvmet::norm2(Xq-Xavg);
+	qpRadius[e] = qpR;
       }
-
-      double qpR = tvmet::norm2(Xq-Xavg);
-      qpRadius[e] = qpR;
     }
-  }
     
-  Ravg = 0.0;
-  for ( int i = 0; i < qpRadius.size(); i++){
-    Ravg += qpRadius[i];
-  }
-  Ravg /= qpRadius.size();
-  std::cout<<"Radius of capsid after relaxation = "<< Ravg << endl;
+    Ravg = 0.0;
+    for ( int i = 0; i < qpRadius.size(); i++){
+      Ravg += qpRadius[i];
+    }
+    Ravg /= qpRadius.size();
+    std::cout<<"Radius of capsid after relaxation = "<< Ravg << endl;
   
-  double dRavg2 = 0.0;
-  for ( int i = 0; i<qpRadius.size(); i++){
-    double dR =  qpRadius[i]-Ravg; 
-    dRavg2 += dR*dR;
+    double dRavg2 = 0.0;
+    for ( int i = 0; i<qpRadius.size(); i++){
+      double dR =  qpRadius[i]-Ravg; 
+      dRavg2 += dR*dR;
+    }
+    dRavg2 /= qpRadius.size();
+    
+    double asphericity = dRavg2/(Ravg*Ravg);
+    double gammaCalc = Y*Ravg*Ravg/KC;
+
+    std::cout << "Effective 2D Young's modulus = " << Y << endl
+	      << "Effective FVK number = " << gammaCalc << endl
+	      << "Asphericity = " << asphericity << endl;
+    
+    // find top and bottom of capsid
+    Zmin=std::numeric_limits<double>::max();
+    Zmax=-std::numeric_limits<double>::max();
+    
+    for (int a=0; a<defNodes.size(); a++){
+      double Z = defNodes[a]->getPoint(2);
+      Zmin = std::min(Zmin, Z);
+      Zmax = std::max(Zmax, Z);
+    }
+    
+    std::cout<< "Zmax = " << Zmax << std::endl
+	     << "Zmin = " << Zmin;
+
+    xc = 0.0, 0.0, Zmax+afmR;
   }
-  dRavg2 /= qpRadius.size();
-
-  double asphericity = dRavg2/(Ravg*Ravg);
-  double gammaCalc = Y*Ravg*Ravg/KC;
-
-  std::cout << "Effective 2D Young's modulus = " << Y << endl
-	    << "Effective FVK number = " << gammaCalc << endl
-	    << "Asphericity = " << asphericity << endl;
-
-  std::cout << "Compressing capsid." << std::endl;
-
-  // find top and bottom of capsid
-  double Zmin=std::numeric_limits<double>::max();
-  double Zmax=-std::numeric_limits<double>::max();
-  double Zavg = 0.0;
-  for (int a=0; a<defNodes.size(); a++){
-    double Z = defNodes[a]->getPoint(2);
-    Zmin = std::min(Zmin, Z);
-    Zmax = std::max(Zmax, Z);
-    Zavg += Z;
-  }
-  Zavg /= defNodes.size();
-
-  // create indentor and plate
-  double afmR = 1.0*Ravg;
-  tvmet::Vector<double,3> xc; xc = 0.0, 0.0, Zmax+afmR;
- 
+  
   std::cout << "AFM Indenter radius =" << afmR << std::endl
 	    << "AFM Indenter center = (" << xc[0] << "," 
 	    << xc[1] << "," << xc[2] << ")" << std::endl;
+
+  std::cout << "Compressing capsid." << std::endl;
+
 
   double friction = friction_inp;
 
@@ -586,18 +639,24 @@ int main(int argc, char* argv[])
   std::cout << "Added afm to body." << std::endl;
 
   bool up=true;
-  RigidPlateAL* glass  = new RigidPlateAL(defNodes, k_AL, Zmin, up, friction);
+  
+  if(continueFromNum ==0 ) Z_glass = Zmin;
+
+  RigidPlateAL* glass  = new RigidPlateAL(defNodes, k_AL, Z_glass, up, friction);
   bd->pushBack( glass );
 
   const double originalHeight=Zmax-Zmin;
-  double Zbegin=Zmin;
+  double Zbegin=Z_glass;
   double Zend=Zmin+1.0*Ravg;
-  double dZ = (Zend-Zbegin)/100;
   if(indent_inp > 0.0) {
     Zend = Zbegin+indent_inp*Ravg;
   }
-  if(step_inp > 0.0) {
-    dZ = step_inp*Ravg;
+  
+  if(continueFromNum == 0){
+    dZ = (Zend-Zbegin)/100;  
+    if(step_inp > 0.0) {
+      dZ = step_inp*Ravg;
+    }
   }
 
   // add some viscosity for regularization
@@ -607,7 +666,7 @@ int main(int argc, char* argv[])
   bd->pushBack( &vr ); 
 
   // set viscosity parameters
-  double targetVelocity = dZ;
+  double targetVelocity = std::abs(dZ);
   double vrTol = 1.0e-10;
 
   double vrEnergy = vr.energy();
@@ -618,17 +677,37 @@ int main(int argc, char* argv[])
 
   double F_prev = -1.0;
   double Z_drop = Zbegin;
+
   blitz::Array<double,1> x_prev(model.dof());
   blitz::Array<double,1> u_prev(model.dof());
-  model.getField(solver2);
-  for(int i=0; i<model.dof(); i++ ) x_prev(i) = solver2.field(i);
-  u_prev = 0.0;
 
+  typedef std::vector<DeformationNode<3>* >::const_iterator ConstNodeIterator; 
+
+  if(continueFromNum == 0){
+    model.getField(solver2);
+    for(int i=0; i<model.dof(); i++ ) x_prev(i) = solver2.field(i);
+    u_prev = 0.0;
+  }
+  else{
+    for(ConstNodeIterator n=defNodes.begin(); n!=defNodes.end(); n++) {
+      double X_ref[3];
+      double disp[3];
+      mesh_prev->GetPoint((*n)->id(), X_ref);
+      displacements_prev->GetTuple((*n)->id(), disp);
+
+      const NodeBase::DofIndexMap & idx = (*n)->index();
+      for(int ni=0; ni<(*n)->dof(); ni++){
+	x_prev(idx[ni]) = X_ref[ni] + disp[ni];
+	u_prev(idx[ni]) = disp[ni];
+      }
+      
+    }
+  }
   // %%%%%%%%%%%%%%%%%%%%%%
   // Begin indentation loop
   // %%%%%%%%%%%%%%%%%%%%%%
 
-  int step=0;
+  int step=continueFromNum;
 
   // Following variables is for output from LoopShellBody::Remesh()
   uint elementsChanged = 0;
@@ -636,13 +715,13 @@ int main(int argc, char* argv[])
   for(double Z = Zbegin; ;Z+=dZ, step++) {
     
     // initial guess
-    if(step==1) {
+    if(step==0) {
       // shift capsid up by dZ/2 as an initial guess
       for(int a=0; a<defNodes.size(); a++ ) {
 	defNodes[a]->addPoint(2,0.5*dZ);
       }
       model.getField(solver2);
-    } else if( dZ > 0 ){ // 
+    } else if( std::abs(dZ) > 0 ){ // 
       // add scaled version of previous displacement as an initial
       // guess, but only in loading direction
       for(int i=0; i<model.dof(); i++ ) {
@@ -707,8 +786,8 @@ int main(int argc, char* argv[])
 		  << "    bottom active  = " << glass->active() << std::endl
 		  << "        top force  = " << afm->FZ() << std::endl 
 		  << "     bottom force  = " << glass->FZ() << std::endl
- 		  << "  top penetration  = " << afm->penetration() << std::endl
- 		  << "bottom penetration = " << glass->penetration() << std::endl;
+		  << "  top penetration  = " << afm->penetration() << std::endl
+		  << "bottom penetration = " << glass->penetration() << std::endl;
       }
 	
       if(verbose) {
@@ -808,7 +887,7 @@ int main(int argc, char* argv[])
 	 << std::endl;
    
     for(int b=0; b<bdc.size(); b++) {
-      char name[100]; 
+      char name[100];      
       sprintf(name,"%s-body%d-step%04d",modelName.c_str(),b,step);
       bdc[b]->printParaview(name);
       //We will append Caspsomer POINT_DATA to the vtk output file
