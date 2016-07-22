@@ -53,7 +53,7 @@ using namespace voom;
 
 // Function declarations
 void writeEdgeStrainVtk(std::vector<std::string> fileNames, \
-			double avgEdgeLen);
+			double avgEdgeLen, double percentStrain);
 void insertValenceInVtk(std::vector<std::string> fileNames);
 
 std::vector<double> calcEdgeLenAndStdDev
@@ -115,7 +115,7 @@ int main(int argc, char* argv[])
     	      >> temp >> dt
 	      >> temp >> viterMax
 	      >> temp >> rescale
-	      >> temp >> continueFromNum;
+	      >> temp >> continueFromNum
     	      >> temp >> serialFlag;
 
   miscInpFile.close();
@@ -624,7 +624,7 @@ int main(int argc, char* argv[])
   }
   
   insertValenceInVtk(allVTKFiles);
-  writeEdgeStrainVtk(allVTKFiles,Rshift);
+  writeEdgeStrainVtk(allVTKFiles,Rshift,percentStrain);
   t3=clock();
   diff = ((float)t3-(float)t2);
   std::cout<<"Post-processing execution time: "<<diff/CLOCKS_PER_SEC
@@ -643,15 +643,16 @@ int main(int argc, char* argv[])
 //MUST use the extension '.vtk' in 'fileName'.
 
 void writeEdgeStrainVtk(std::vector<std::string> fileNames, \
-			double avgEdgeLen){
+			double avgEdgeLen, double percentStrain){
 
 #ifdef _OPENMP
 #pragma omp parallel for
 #endif
   for(int i=0; i < fileNames.size() ; i++){
-
+  //for(std::vector<std::string>::iterator it=fileNames.begin();
+  //    it!= fileNames.end(); ++it){
+  //  std::string fileName = *it;
     std::string fileName = fileNames[i];
-
     //Check that the file exists
     assert(ifstream(fileName.c_str()));
 
@@ -693,7 +694,7 @@ void writeEdgeStrainVtk(std::vector<std::string> fileNames, \
     edgeStrain->SetNumberOfComponents(1);
     edgeStrain->SetNumberOfTuples(numLines);
     edgeStrain->SetName("EdgeStrains");
-    
+
     vtkIdType npts;
     vtkIdType *pts;
     lines->InitTraversal();
@@ -713,73 +714,111 @@ void writeEdgeStrainVtk(std::vector<std::string> fileNames, \
     }
     wireFrame->GetCellData()->SetScalars(edgeStrain);
 
-    //The following array will store approximate strain in each
-    //triangle
-    vtkSmartPointer<vtkDoubleArray> avgStrain = 
-      vtkSmartPointer<vtkDoubleArray>::New();
-    avgStrain->SetNumberOfComponents(1);
-    avgStrain->SetNumberOfTuples(mesh->GetNumberOfCells());
-    avgStrain->SetName("ApproxEleStrain");
-        
-    tvmet::Vector<double,3> x1, x2, x3; //vertex position vectors
-    double e31, e32, e12; //edge lengths
+    int numPoints = wireFrame->GetNumberOfPoints();
+
+    //The following vtkDoubleArray will be used to store the
+    //number of unstable bonds for each particle
+    vtkSmartPointer<vtkUnsignedIntArray> unstableBonds = 
+      vtkSmartPointer<vtkUnsignedIntArray>::New();
+    unstableBonds->SetNumberOfComponents(1);
+    unstableBonds->SetNumberOfTuples(numPoints);
+    unstableBonds->SetName("unstableBonds");
+
+    //cellIds will be used to temporarily hold the CELLS that use a
+    //point specified by a point id.
+    vtkSmartPointer<vtkIdList> cellIds = 
+      vtkSmartPointer<vtkIdList>::New();
+   
+    wireFrame->BuildLinks();
+
+    uint weakBonds;
+    double currEdgeStrain;
+    vtkIdType currEdge;
     
-    int ntri=mesh->GetNumberOfCells();
+    for(int p=0; p < numPoints; p++){
+	weakBonds = 0;
+	wireFrame->GetPointCells(p,cellIds);
+	for(int z=0; z < cellIds->GetNumberOfIds(); z++){
+	  currEdge = cellIds->GetId(z);
+	  currEdgeStrain = edgeStrain->GetTuple1(currEdge);	
+	  if(currEdgeStrain > percentStrain*0.01){
+	    weakBonds++;
+	  }
+	}
+	unstableBonds->SetValue(p,weakBonds);
+	cellIds->Reset();
+      }
+
+	  wireFrame->GetPointData()->AddArray(unstableBonds);
+
+	//The following array will store approximate strain in each
+	//triangle
+	vtkSmartPointer<vtkDoubleArray> avgStrain = 
+	  vtkSmartPointer<vtkDoubleArray>::New();
+	avgStrain->SetNumberOfComponents(1);
+	avgStrain->SetNumberOfTuples(mesh->GetNumberOfCells());
+	avgStrain->SetName("ApproxEleStrain");
+        
+	tvmet::Vector<double,3> x1, x2, x3; //vertex position vectors
+	double e31, e32, e12; //edge lengths
+    
+	int ntri=mesh->GetNumberOfCells();
 #ifdef _OPENMP
 #pragma omp parallel for private(x1,x2,x3,e31,e32,e12)
 #endif    
-    for (int j = 0; j < ntri; j++){
-      assert(mesh->GetCell(j)->GetNumberOfPoints() == 3);
-      mesh->GetPoint(mesh->GetCell(j)->GetPointId(0), &(x1[0]));     
-      mesh->GetPoint(mesh->GetCell(j)->GetPointId(1), &(x2[0]));
-      mesh->GetPoint(mesh->GetCell(j)->GetPointId(2), &(x3[0]));
-      e31 = tvmet::norm2(x3 - x1);
-      e32 = tvmet::norm2(x3 - x2);
-      e12 = tvmet::norm2(x1 - x2);
-      double temp = ( std::abs(e31-avgEdgeLen) + 
-		      std::abs(e32 - avgEdgeLen) +
-		      std::abs(e12 - avgEdgeLen))/(3.0*avgEdgeLen);
-      avgStrain->SetValue(j,temp);
-    }
+	for (int j = 0; j < ntri; j++){
+	  assert(mesh->GetCell(j)->GetNumberOfPoints() == 3);
+	  mesh->GetPoint(mesh->GetCell(j)->GetPointId(0), &(x1[0]));     
+	  mesh->GetPoint(mesh->GetCell(j)->GetPointId(1), &(x2[0]));
+	  mesh->GetPoint(mesh->GetCell(j)->GetPointId(2), &(x3[0]));
+	  e31 = tvmet::norm2(x3 - x1);
+	  e32 = tvmet::norm2(x3 - x2);
+	  e12 = tvmet::norm2(x1 - x2);
+	  double temp = ( std::abs(e31-avgEdgeLen) + 
+			  std::abs(e32 - avgEdgeLen) +
+			  std::abs(e12 - avgEdgeLen))/(3.0*avgEdgeLen);
+	  avgStrain->SetValue(j,temp);
+	}
     
-    mesh->GetCellData()->AddArray(avgStrain);
+	  mesh->GetCellData()->AddArray(avgStrain);
     
-    std::stringstream sstm;
-    std::string tempFile;
-    sstm << fileName <<"-bak.vtk";
-    tempFile = sstm.str();
-    writer->SetFileName(tempFile.c_str());
-    writer->SetInput(mesh);
-    writer->Write();
-    std::rename(tempFile.c_str(),fileName.c_str());
+	std::stringstream sstm;
+	std::string tempFile;
+	sstm << fileName <<"-bak.vtk";
+	tempFile = sstm.str();
+	writer->SetFileName(tempFile.c_str());
+	writer->SetInput(mesh);
+	writer->Write();
+	std::rename(tempFile.c_str(),fileName.c_str());
 
-    /*
-      The next few lines of code involve string manipulations to comeup
-      with good file-names that Paraview can recognize to be sequence of
-      the same simulation. A file name like "T7-relaxed-10.vtk" is
-      converted to "T7-EdgeStrain-10.vtk"
-    */
-    int pos = fileName.find(".vtk");
-    if(pos != -1){
-      fileName.erase(pos,string::npos);
-    }
-    pos = fileName.find("relaxed-");
-    if(pos != -1){
-      fileName.erase(pos,8);
-      pos = fileName.find("-");
-      string serialNum = fileName.substr(pos+1,string::npos);
-      fileName.erase(pos,string::npos);
-      fileName = "./" + fileName + "-EdgeStrain-" + serialNum + ".vtk";
-    }
-    else{
-      fileName = "./" + fileName + "-EdgeStrain.vtk";
-    }
+	/*
+	  The next few lines of code involve string manipulations to comeup
+	  with good file-names that Paraview can recognize to be sequence of
+	  the same simulation. A file name like "T7-relaxed-10.vtk" is
+	  converted to "T7-EdgeStrain-10.vtk"
+	*/
+	int pos = fileName.find(".vtk");
+	if(pos != -1){
+	  fileName.erase(pos,string::npos);
+	}
+	  pos = fileName.find("relaxed-");
+	if(pos != -1){
+	  fileName.erase(pos,8);
+	  pos = fileName.find("-");
+	  string serialNum = fileName.substr(pos+1,string::npos);
+	  fileName.erase(pos,string::npos);
+	  fileName = "./" + fileName + "-EdgeStrain-" + serialNum + ".vtk";
+	}
+	else{
+	  fileName = "./" + fileName + "-EdgeStrain.vtk";
+	}
   
-    writer->SetFileName(fileName.c_str());
-    writer->SetInput(wireFrame);
-    writer->Write();
+	  writer->SetFileName(fileName.c_str());
+	writer->SetInput(wireFrame);
+	writer->Write();
+	}
   }
-}
+
 
 ///////////////////////////////////////////////////////////////////////////
 //                                                                       //
