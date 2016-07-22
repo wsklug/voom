@@ -232,7 +232,6 @@ int main(int argc, char* argv[])
   int ntri=mesh->GetNumberOfCells();
   connectivities.reserve(ntri);
   std::cout << "Number of triangles: " <<ntri << endl;
-
   for (int i = 0; i<ntri; i++){
     assert(mesh->GetCell(i)->GetNumberOfPoints() == 3);
     for(int a=0; a<3; a++) c[a] = mesh->GetCell(i)->GetPointId(a);
@@ -322,12 +321,12 @@ int main(int argc, char* argv[])
   int m=5;
   
   //int maxIter = 1e6;
-  int maxIter1=100;
-  int maxIter2=1e5;
+  int maxIter2=100;
+  int maxIter1=1e5;
 
   double factr=1.0e+1;
   double pgtol=1e-7;
-  int iprint = 1;
+  int iprint = 100;
   Lbfgsb solver1(3*nodes.size(), m, factr, pgtol, iprint, maxIter1 );
   Lbfgsb solver2(3*nodes.size(), m, factr, pgtol, iprint, maxIter2 );
 
@@ -371,15 +370,11 @@ int main(int argc, char* argv[])
     //****** Relax the initial mesh using harmonic potential ****** //
 
     MaterialType bending(KC,KG,C0,0.0,0.0);
-    LSB * bd1 = new LSB(bending, connectivities, nodes, quadOrder, 
-			pressure, 0.0,0.0,1.0e4,1.0e6,1.0e4,
-			multiplier,noConstraint,noConstraint);
+    LSB * bd1 = new LSB(bending, connectivities, nodes, quadOrder);
     bd1->setOutput(paraview);
     SpringPotential SpringMat(springConstant, Rshift);
     PotentialBody * SpringBody = new 
       PotentialBody(&SpringMat, defNodes, PotentialSearchRF);
-
-    //Create Model
     Model::BodyContainer bdc1;
     bdc1.push_back(SpringBody);
     bdc1.push_back(bd1);    
@@ -413,6 +408,7 @@ int main(int argc, char* argv[])
     lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);  
     EdgeLength = lengthStat[0];
     Rshift = EdgeLength;
+    //Rshift = 0.75*EdgeLength;
     sigma  = (100/(Rshift*percentStrain))*log(2.0);
     springConstant = 2*sigma*sigma*epsilon;
     std::cout<<"After relaxing with harmonic potential: "<< endl
@@ -448,12 +444,14 @@ int main(int argc, char* argv[])
     
     //The Bodies
     MaterialType bending(KC,KG,C0,0.0,0.0);
-    LSB * bd = new LSB(bending, connectivities, nodes, quadOrder, pressure,
-		       0.0,0.0,1.0e4,1.0e6,1.0e4,multiplier,noConstraint,noConstraint);
+    LSB * bd = new LSB(bending, connectivities, nodes, quadOrder);
+    //LSB * bd = new LSB(bending, connectivities, nodes, quadOrder, 
+    //			pressure, 0.0,0.0,1.0e4,1.0e6,1.0e4,
+    //			multiplier,noConstraint,noConstraint);
     bd->setOutput(paraview);
 
     Morse Mat(epsilon,sigma,Rshift);
-    PotentialSearchRF = 1.5*Ravg;
+    PotentialSearchRF = 2.0*Rshift;
     PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);
 
     //Create Model
@@ -480,7 +478,18 @@ int main(int argc, char* argv[])
     for(int n=0; n<nodes.size(); n++) {
       for(int i=0; i<nodes[n]->dof(); i++) nodes[n]->setForce(i,0.0);
     }
-     
+    
+    model.print("remesh-01.vtk");
+
+    uint eleChanged;
+    double ARtol = 1.05;
+
+    eleChanged = bd->Remesh(ARtol,bending,quadOrder);
+    std::cout<< "Triangles changed in initial remesh = "
+	     << eleChanged <<std::endl;
+
+    model.print("remesh-02.vtk");
+
     //For debugging we have limited the number of solver iterations to
     //100 so that we can see the intermediate results before the
     //solver diverges
@@ -508,7 +517,7 @@ int main(int argc, char* argv[])
     
     // REMESHING
     bool remesh = true;
-    double ARtol = 1.5;
+    ARtol = 1.05;
     uint elementsChanged = 0;
 
     if(remesh) {     
@@ -728,7 +737,7 @@ void writeEdgeStrainVtk(std::vector<std::string> fileNames, \
       vtkSmartPointer<vtkDoubleArray>::New();
     edgeStrain->SetNumberOfComponents(1);
     edgeStrain->SetNumberOfTuples(numLines);
-    edgeStrain->SetName("EdgeStrains");   
+    edgeStrain->SetName("EdgeStrains");
     
     vtkIdType npts;
     vtkIdType *pts;
@@ -932,6 +941,28 @@ void insertValenceInVtk(std::vector<std::string> fileNames){
     //point specified by a point id.
     vtkSmartPointer<vtkIdList> cellIds = 
       vtkSmartPointer<vtkIdList>::New();
+  
+    /*
+    if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
+      vtkSmartPointer<vtkUnstructuredGrid> usg 
+	= vtkUnstructuredGrid::SafeDownCast(ds);
+      usg->BuildLinks();
+      for(int p=0; p<ds->GetNumberOfPoints(); p++){
+	usg->GetPointCells(p,cellIds);
+	countPointCells->SetValue(p,cellIds->GetNumberOfIds());
+	cellIds->Reset();
+      }      
+    }                  
+    else if(ds->GetDataObjectType() == VTK_POLY_DATA){
+      vtkSmartPointer<vtkPolyData> pd = vtkPolyData::SafeDownCast(ds);
+      pd->BuildLinks();
+      for(int p=0; p<ds->GetNumberOfPoints(); p++){
+	pd->GetPointCells(p,cellIds);
+	countPointCells->SetValue(p,cellIds->GetNumberOfIds());
+	cellIds->Reset();
+      }	
+    }
+    */
 
     pd->BuildLinks();
     for(int p=0; p<pd->GetNumberOfPoints(); p++){

@@ -20,6 +20,7 @@
 #include <blitz/array.h>
 #include <vector>
 #include <random/normal.h>
+#include <random/discrete-uniform.h>
 #include "Node.h"
 #include "Element.h"
 
@@ -45,13 +46,16 @@ namespace voom
     BrownianKick( const NodeContainer &nodes, double Cd, double D, double dt);
 
     //! Destructor
-    ~BrownianKick() {}
+    ~BrownianKick();
     
     //! Do mechanics on element; compute energy, forces, and/or stiffness.
     void compute(bool f0, bool f1, bool f2);
 
     //! Set the Brownian random displacements
-    void updateKick();
+    void updateParallelKick();
+
+    //! Set the Brownian random displacements
+    void updateSerialKick();
 
     //! Access the container of nodes
     const NodeContainer& nodes() const { return _nodes; }    
@@ -66,8 +70,9 @@ namespace voom
     int _nodeCount;
 
     ranlib::NormalUnit<double> _rng;
+    ranlib::DiscreteUniform<int>* _dis;
   };
-	
+
 } // namespace voom
 
 #endif // __BrownianKick_h__

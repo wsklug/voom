@@ -86,9 +86,9 @@ int main(int argc, char* argv[])
   double pressureFactor;
 
   //Numerical viscosity input parameter
-  double temperature;
-  double viscosity_inp;
-  double dt; //time step
+  //double temperature;
+  //double viscosity_inp;
+  double dt = 9.76e-4; //time step
   int viterMax;
 
   double Rshift;
@@ -96,7 +96,7 @@ int main(int argc, char* argv[])
   int continueFromNum = 1;
   int nameSuffix = 0;
   int firstFileNum;
-  int interimIter = 10;
+  bool serialFlag;
 
   //Read epsilon and percentStrain from input file. percentStrain is
   //calculated so as to set the inflection point of Morse potential
@@ -110,13 +110,13 @@ int main(int argc, char* argv[])
 	      >> temp >> Rshift
 	      >> temp >> percentStrain
 	      >> temp >> pressureFactor
-	      >> temp >> temperature
-	      >> temp >> viscosity_inp
-	      >> temp >> dt
+    //	      >> temp >> temperature
+    //>> temp >> viscosity_inp
+    	      >> temp >> dt
 	      >> temp >> viterMax
 	      >> temp >> rescale
-	      >> temp >> continueFromNum
-	      >> temp >> interimIter;
+	      >> temp >> continueFromNum;
+    	      >> temp >> serialFlag;
 
   miscInpFile.close();
 
@@ -288,12 +288,12 @@ int main(int argc, char* argv[])
   //Parameters for the l-BFGS solver
   int m=5;
 
-  int maxIter1 = 1e2;
-  int maxIter2=1e5;
+  int maxIter2 = 1e5;
+  int maxIter1=1e5;
 
   double factr=1.0e+1;
   double pgtol=1e-7;
-  int iprint = 1;
+  int iprint = 100;
   Lbfgsb solver1(3*nodes.size(), m, factr, pgtol, iprint, maxIter1 );
   Lbfgsb solver2(3*nodes.size(), m, factr, pgtol, iprint, maxIter2 );
 
@@ -304,7 +304,8 @@ int main(int argc, char* argv[])
   //****************  Protein body parameters ****************//
 
   double sigma  = (100/(Rshift*percentStrain))*log(2.0);
-  double PotentialSearchRF=1.2*Ravg; 
+  //double PotentialSearchRF = 1.5*Ravg;
+  double PotentialSearchRF=2*Rshift; 
   double springConstant = 2*sigma*sigma*epsilon;
   double pressure = 12*sigma*epsilon
     *(exp(-2*sigma*Rshift)- exp(-sigma*Rshift)
@@ -322,8 +323,13 @@ int main(int argc, char* argv[])
   std::cout<<"Pressure in use = "<< pressure << endl;
 
   //Numerical Viscosity
-  double Cd = 18.85*viscosity_inp*(Rshift);//6*pi*eta*r
-  double diffusionCoeff = 0.1*epsilon/Cd; //kB*T/Cd;
+  //double Cd = 18.85*viscosity_inp*(Rshift);//6*pi*eta*r
+  //double diffusionCoeff = diffCoeffFactor/Cd; //kB*T/Cd;
+
+  double diffusionCoeff = 4.0*Rshift*Rshift;
+  double Cd = 1.0/diffusionCoeff;
+  //double dt = 9.76e-4;
+  double viscosity = Cd/dt;
 
   std::cout << "Viscosity Input Parameters:" << std::endl
 	    << " Cd = " << Cd << std::endl
@@ -345,14 +351,16 @@ int main(int argc, char* argv[])
 
   //The Bodies
   MaterialType bending(KC,KG,C0,0.0,0.0);
-  LSB * bd = new LSB(bending, connectivities, nodes, quadOrder, pressure,
-		     0.0,0.0,1.0e4,1.0e6,1.0e4,multiplier,noConstraint,noConstraint);
+  //LSB * bd = new LSB(bending, connectivities, nodes, quadOrder, pressure,
+  //		     0.0,0.0,1.0e4,1.0e6,1.0e4,multiplier,noConstraint,noConstraint);
+  
+  std::cout<< "********** PRESSURE IS NOT BEING USED **********"<<std::endl;
+  LSB * bd = new LSB(bending, connectivities, nodes, quadOrder);
   bd->setOutput(paraview);
 
   Morse Mat(epsilon,sigma,Rshift);
-  PotentialSearchRF = 1.5*Ravg;
   PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);
-  ViscousRegularizer vr(bd->nodes(), viscosity_inp);
+  ViscousRegularizer vr(bd->nodes(), viscosity);
   bd->pushBack(&vr);
   BrownianKick bk(defNodes,Cd,diffusionCoeff,dt);
   bd->pushBack(&bk);
@@ -373,7 +381,7 @@ int main(int argc, char* argv[])
   bool checkConsistency = false;
   if(checkConsistency){
     std::cout<< "Checking consistency......"<<std::endl;
-    bk.updateKick();
+    serialFlag? bk.updateSerialKick(): bk.updateParallelKick();
     bd->checkConsistency(true);
     PrBody->checkConsistency(true);
   }
@@ -389,11 +397,12 @@ int main(int argc, char* argv[])
 	      << std::endl
 	      << std::endl;
       
-    bk.updateKick();
+    serialFlag? bk.updateSerialKick():bk.updateParallelKick();
 
     //For debugging we have limited the number of solver iterations to
     //100 so that we can see the intermediate results before the
     //solver diverges
+    /*
     for(int z=0; z<interimIter; z++){
 	
       solver1.solve( &model );
@@ -413,7 +422,24 @@ int main(int argc, char* argv[])
       sstm.str("");
       sstm.clear(); // Clear state flags
     }
-      
+    */
+
+    //********** Print configuration before relaxation************//
+    sstm << fname <<"-initial-" << nameSuffix;
+    rName = sstm.str();
+    model.print(rName);
+    sstm <<"-bd1.vtk";
+    actualFile = sstm.str();
+    sstm.str("");
+    sstm.clear();
+    sstm << fname <<"-initial-" << nameSuffix <<".vtk";
+    rName = sstm.str();
+    std::rename(actualFile.c_str(),rName.c_str());
+    sstm.str("");
+    sstm.clear();
+
+    solver1.solve( &model );
+
     vrEnergy = vr.energy();
     bdEnergy = bd->energy();
     PrEnergy = PrBody->energy();
@@ -432,7 +458,7 @@ int main(int argc, char* argv[])
 
     //*******************  REMESHING **************************//
     bool remesh = true;
-    double ARtol = 1.5;
+    double ARtol = 1.2;
     uint elementsChanged = 0;
     
     if(remesh) {     
@@ -452,6 +478,9 @@ int main(int argc, char* argv[])
 	
 	//Relax again after remeshing
 	solver2.solve( &model );
+	vrEnergy = vr.energy();
+	bdEnergy = bd->energy();
+	PrEnergy = PrBody->energy();
 	energy = solver2.function();
       }
     }
@@ -556,8 +585,16 @@ int main(int argc, char* argv[])
 
     myfile<< nameSuffix++<<"\t\t"<< Ravg <<"\t\t"<< Y <<"\t\t"<< asphericity
 	  <<"\t\t"<< gamma <<"\t\t"<< gammaCalc
-	  <<"\t\t" << energy 
+	  <<"\t\t" << bdEnergy+PrEnergy
 	  << endl;
+
+    //Uncomment the lines below to print total energy to the data file instead of just
+    // bending and stretching energies
+
+    // myfile<< nameSuffix++<<"\t\t"<< Ravg <<"\t\t"<< Y <<"\t\t"<< asphericity
+    // 	  <<"\t\t"<< gamma <<"\t\t"<< gammaCalc
+    // 	  <<"\t\t" << energy
+    // 	  << endl;
    
     // step forward in "time", relaxing viscous energy & forces 
     vr.step();

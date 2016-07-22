@@ -25,14 +25,46 @@ namespace voom
   BrownianKick::BrownianKick(const NodeContainer &defNodes, 
 			     double Cd, double D, double dt )
     : _nodes(defNodes), _Cd(Cd), _D(D), _dt(dt) {
+
     // seed random number generator
     _rng.seed((unsigned int)time(0));
+
     // set the number of nodes
     _nodeCount = _nodes.size();
     _delta_xB.resize(_nodeCount);
+    
+    //seed the nodal random number generator
+    ranlib::DiscreteUniform<int> dis( _nodeCount);
+    _dis = &dis;
+    _dis->seed((unsigned int)time(0));
+
+  }
+  
+  //Destructor
+  BrownianKick::~BrownianKick(){
+    delete _dis;
   }
 
-  void BrownianKick::updateKick(){
+  void BrownianKick::updateSerialKick(){
+    unsigned int randomNode = _dis->random();
+    for(int i=0; i < _nodeCount; i++){
+      if(i == randomNode){
+      Vector3D xi(_rng.random(),
+				     _rng.random(),_rng.random());
+      _delta_xB[i] = xi*sqrt(_D*_dt);
+      //Add the Brownian-kick to current coordinates of the nodes
+      for(int j=0; j < 3; j++){
+	_nodes[i]->addPoint(j,_delta_xB[i][j]);
+      }
+      }
+      else{
+	_delta_xB[i] = 0.0,0.0,0.0;
+      }
+    }
+  }
+
+ void BrownianKick::updateParallelKick(){
+
     for(int i=0; i < _nodeCount; i++){
       Vector3D xi(_rng.random(),
 				     _rng.random(),_rng.random());

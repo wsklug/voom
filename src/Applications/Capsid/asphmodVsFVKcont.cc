@@ -38,6 +38,10 @@ using namespace tvmet;
 using namespace std;
 using namespace voom;
 
+std::vector<double> calcEdgeLenAndStdDev
+(std::vector< DeformationNode<3>* > a, 
+ vector< tvmet::Vector<int,3> > b);
+
 int main(int argc, char* argv[])
 {
   clock_t t1,t2;
@@ -105,7 +109,7 @@ int main(int argc, char* argv[])
 
 
   // create vector of nodes
-  double Rcapsid = 1.0;
+ 
   int dof=0;
   std::vector< NodeBase* > nodes;
   std::vector< DeformationNode<3>* > defNodes;
@@ -126,7 +130,7 @@ int main(int argc, char* argv[])
   assert(nodes.size()!=0);
   Ravg /= nodes.size();
   cout << "Number of nodes: " <<nodes.size() << endl
-       << "Ravg = " << Ravg << endl;
+       << "Initial radius = " << Ravg << endl;
 
   // read in triangle connectivities
   vector< tvmet::Vector<int,3> > connectivities;
@@ -141,33 +145,42 @@ int main(int argc, char* argv[])
     connectivities.push_back(c);
   }
 
-  double C0 = 0.0;
+  // Calculate side lengths average and std dev of the 
+  //equilateral triangles
+  std::vector<double> lengthStat = 
+    calcEdgeLenAndStdDev(defNodes,connectivities);  
+  double EdgeLength = lengthStat[0];
+  double stdDevEdgeLen = lengthStat[1];
+  std::cout<<"Before any relaxation :" << endl
+	   <<"   Average triangle edge length = "<< std::setprecision(10)
+	   << EdgeLength << endl
+	   <<"   Standard deviation = " << std::setprecision(10)
+	   << stdDevEdgeLen << endl;
+  std::cout.precision(6);
 
-  // rescale size 
-  if( prestressFlag == "spherical" ) {
-    // make capsid spherical 
-
-    C0 = - 2.0/Rcapsid; // WSK: use minus sign here consistent with
-			// outward pointing surface normals.
-
-    for(int i=0; i<defNodes.size(); i++) {
-      DeformationNode<3>::Point x;
-      x = defNodes[i]->point();
-      double R = norm2(x);
-      x *= Rcapsid/R;
-      defNodes[i]->setPoint(x);
-      defNodes[i]->setPosition(x);
-    }
+  // Rescale size of the capsid by the average equilateral edge length
+  for(int i=0; i<defNodes.size(); i++) {
+    DeformationNode<3>::Point X;
+    X = defNodes[i]->position();
+    X *= 1.0/EdgeLength;
+    defNodes[i]->setPoint(X);
+    defNodes[i]->setPosition(X);
   }
-  else {
-    for(int i=0; i<defNodes.size(); i++) {
-      DeformationNode<3>::Point x;
-      x = defNodes[i]->point();
-      x *= Rcapsid/Ravg;
-      defNodes[i]->setPoint(x);
-      defNodes[i]->setPosition(x);
-    }
+    
+  //Recalculate edge lengths and capsid radius
+  lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);  
+  EdgeLength = lengthStat[0];
+
+  Ravg = 0.0;
+  for(int i=0; i < defNodes.size(); i++) {
+    DeformationNode<3>::Point x;
+    x = defNodes[i]->point();
+    double tempRadius = tvmet::norm2(x);
+    Ravg += tempRadius;
   }
+  Ravg /= defNodes.size();
+    
+  std::cout<<"Radius of capsid after rescaling = "<< Ravg << endl;
   
   // We want variable number of FVK increments in different ranges. So
   // we will read FVK values from a file instead of generating it by
@@ -201,7 +214,9 @@ int main(int argc, char* argv[])
   double KC;
   double nu = 1.0/3.0;
   double KG;
-  
+
+  double C0 = 0.0;  
+
   //Order of quadrature
   int quadOrder = 2;
 
@@ -229,7 +244,7 @@ int main(int argc, char* argv[])
   myfile.open ("asphVsFVKcont.dat");
   myfile << setw(9) << "#Ravg" << "\t"<< setw(8) << "Y" << "\t"
 	 << "asphericity" << "\t" <<setw(8) << "FVK" <<"\t"
-	 << setw(12) <<"AvgStrain"<< "Energy" << endl;
+	 << setw(12) << "Energy" << endl;
   myfile << showpoint;
 
   //Read pressure value from input file
@@ -264,7 +279,7 @@ int main(int argc, char* argv[])
 
     // Set the Young's modulus and other material properties based on
     // current FVK number
-    Y = sqrt(gamma);
+    Y = sqrt(gamma)/Ravg;
     KC = 1.0/Y;
     KG = -2.0*(1.0-nu)*KC;
 
@@ -275,8 +290,10 @@ int main(int argc, char* argv[])
       delete bd;
     }
     MaterialType bending( KC, KG, C0, Y, nu );
-    bd = new LSB(bending, connectivities, nodes, quadOrder,pressure,
-		 0.0,0.0,1.0e4,1.0e6,1.0e4,multiplier,noConstraint,noConstraint);    
+    // bd = new LSB(bending, connectivities, nodes, quadOrder,pressure,
+    //		 0.0,0.0,1.0e4,1.0e6,1.0e4,multiplier,noConstraint,noConstraint);
+    bd = new LSB(bending, connectivities, nodes, quadOrder);
+    
     bd->setOutput(paraview);
     bdc.push_back(bd);
     Model model(bdc,nodes);
@@ -313,7 +330,7 @@ int main(int argc, char* argv[])
 
     // relax initial shape
     solver.solve(&model);
-    bd->calcMaxPrincipalStrains();
+    //bd->calcMaxPrincipalStrains();
 
     std::cout << "Shape relaxed." << std::endl
 	      << "Energy = " << solver.function() << std::endl;
@@ -371,16 +388,16 @@ int main(int argc, char* argv[])
     asphericity = dRavg2/(Ravg*Ravg);
     double gammaCalc = Y*Ravg*Ravg/KC;
 
-    //Calculate Average Principal Strain
-    std::vector<double> maxStrain =  bd->getMaxPrincipalStrains();
-    double avgStrain = 0.0;
-    for(int e=0; e < maxStrain.size(); e++){
-      avgStrain += maxStrain[e];
-    }
-    avgStrain /= maxStrain.size();
+    // //Calculate Average Principal Strain
+    // std::vector<double> maxStrain =  bd->getMaxPrincipalStrains();
+    // double avgStrain = 0.0;
+    // for(int e=0; e < maxStrain.size(); e++){
+    //   avgStrain += maxStrain[e];
+    // }
+    // avgStrain /= maxStrain.size();
 
     myfile <<Ravg<<"\t"<<Y<<"\t"<<asphericity<<"\t"<<gammaCalc
-	   <<"\t"<<avgStrain<<solver.function()<<endl;
+	   <<"\t"<<solver.function()<<endl;
 
   }
   myfile.close();
@@ -388,4 +405,72 @@ int main(int argc, char* argv[])
   float diff ((float)t2-(float)t1);
   std::cout<<"Total execution time: "<<diff/CLOCKS_PER_SEC
 	   <<" seconds"<<std::endl;
+}
+
+///////////////////////////////////////////////////////////////////////////
+//                                                                       //
+//                    CALCEDGELENANDSTDDEV BEGINS                        //
+//                                                                       //
+///////////////////////////////////////////////////////////////////////////
+/*
+  Calculates average edge lengths of triangles in the mesh and the
+  standard deviation in the edge lengths.
+*/
+
+std::vector<double> calcEdgeLenAndStdDev
+(std::vector< DeformationNode<3>* > defNodes, 
+ vector< tvmet::Vector<int,3> > connectivities){
+
+  double EdgeLength = 0.0;
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
+  for(int i=0; i<connectivities.size(); i++) {
+    std::vector<int> cm(3);
+    for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
+    // Edge vectors in current config.
+    tvmet::Vector<double,3> 
+      e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
+      e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
+      e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
+      eCent(defNodes[cm[2]]->point());
+    // Compute average edge length for each triangle
+    double temp = 
+      (tvmet::norm2(e31) + tvmet::norm2(e32) + tvmet::norm2(e12))/3.0;
+
+#pragma omp atomic
+    EdgeLength += temp;
+  }
+  EdgeLength /= connectivities.size();  
+
+  // Calculate the standard deviation of side lengths of the
+  // equilateral triangles
+  double stdDevEdgeLen = 0.0;
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
+  for(int i=0; i<connectivities.size(); i++) {
+    std::vector<int> cm(3);
+    for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
+    // Edge vectors in current config.
+    tvmet::Vector<double,3> 
+      e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
+      e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
+      e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
+      eCent(defNodes[cm[2]]->point());
+    double temp = std::pow(tvmet::norm2(e31) - EdgeLength,2.0) +
+      std::pow(tvmet::norm2(e32) - EdgeLength,2.0) +
+      std::pow(tvmet::norm2(e12) - EdgeLength,2.0);
+    
+#pragma omp atomic
+    stdDevEdgeLen += temp;
+  }
+
+  stdDevEdgeLen /= connectivities.size();
+  stdDevEdgeLen = sqrt(stdDevEdgeLen);
+
+  std::vector<double> result;
+  result.push_back(EdgeLength);
+  result.push_back(stdDevEdgeLen);
+  return result;
 }
