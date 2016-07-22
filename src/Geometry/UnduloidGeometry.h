@@ -32,11 +32,14 @@ namespace voom
   private:
     double _a;
     double _c;
+    double _m;
+    double _n;
+    double _k;
   public:
     UnduloidGeometry(double, double);
     Vector3D getCartesianCoords(Vector2D);
     Vector2D getCurvilinearCoords(Vector3D);
-    tvmet::Vector<Vector3D,2> getCovariantBaseVectors();    
-  }
+    tvmet::Vector<Vector3D,2> getCovariantBaseVectors(double u, double phi);    
+  };
 }; //namespace voom
 #endif //_UnduloidGeometry_h__
