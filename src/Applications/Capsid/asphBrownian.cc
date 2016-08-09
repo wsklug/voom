@@ -110,8 +110,6 @@ int main(int argc, char* argv[])
 	      >> temp >> Rshift
 	      >> temp >> percentStrain
 	      >> temp >> pressureFactor
-    //	      >> temp >> temperature
-    //>> temp >> viscosity_inp
     	      >> temp >> dt
 	      >> temp >> viterMax
 	      >> temp >> rescale
@@ -264,6 +262,10 @@ int main(int argc, char* argv[])
     std::cout<<"Radius of capsid after rescaling = "<< Ravg << endl;
   }
 
+  if(continueFromNum == 1){
+    Rshift = EdgeLength;
+  }
+
   string fname = inputFileName.substr(0,inputFileName.find("."));
   string iName;
   string rName;
@@ -275,10 +277,16 @@ int main(int argc, char* argv[])
   //If the file already exists then open it in append mode
   if(!ifstream(dataOutputFile.c_str())){
     myfile.open(dataOutputFile.c_str());
-    myfile << setw(5) << "#Step"<<"\t" << setw(9) << "Ravg" << "\t"
-	   << setw(8) << "Y" << "\t" << "asphericity" << "\t" 
-	   << setw(8) << "FVKin" <<"\t" << setw(8) << "FVKout" << "\t"
-	   << setw(8) <<"Energy" <<  endl;
+    myfile << setw(5) << "#Step"<<"\t" 
+	   << setw(9) << "Ravg" <<"\t"
+	   << setw(8) << "asphericity" <<"\t" 
+	   << setw(8) << "FVK" <<"\t"
+	   << setw(8) << "BendEnergy" <<"\t"
+	   << setw(8) << "StretchEnergy" <<"\t" 
+	   << setw(8) << "BrownEnergy" <<"\t"
+	   << setw(8) << "ViscousEnergy" <<"\t"
+	   << setw(8) << "Total Functional" <<"\t"
+	   << endl;
     myfile<< showpoint;
   }
   else{
@@ -307,28 +315,28 @@ int main(int argc, char* argv[])
   //double PotentialSearchRF = 1.5*Ravg;
   double PotentialSearchRF=2*Rshift; 
   double springConstant = 2*sigma*sigma*epsilon;
-  double pressure = 12*sigma*epsilon
-    *(exp(-2*sigma*Rshift)- exp(-sigma*Rshift)
-      + exp(-1.46410*sigma*Rshift) - exp(-0.7321*sigma*Rshift))
-    /(3*Ravg*Ravg);
+  double pressure = 0.0; 
 
-  if(pressure < 0.0){
-    pressure = pressure*(-1);
+  bool pressureOn = false;
+  if(pressureOn){
+    pressure = 12*sigma*epsilon
+      *(exp(-2*sigma*Rshift)- exp(-sigma*Rshift)
+	+ exp(-1.46410*sigma*Rshift) - exp(-0.7321*sigma*Rshift))
+      /(3*Ravg*Ravg);
+
+    if(pressure < 0.0){
+      pressure = pressure*(-1);
+    }
+
+    double fracturePressure = (3.82)*sigma*epsilon/(Rshift*Rshift);
+    std::cout<<"Fracture Pressure = "<< fracturePressure << endl
+	     <<"Minimum Pressure = "<< pressure << endl;
+    pressure *= pressureFactor;
+    std::cout<<"Pressure in use = "<< pressure << endl;
   }
-
-  double fracturePressure = (3.82)*sigma*epsilon/(Rshift*Rshift);
-  std::cout<<"Fracture Pressure = "<< fracturePressure << endl
-	   <<"Minimum Pressure = "<< pressure << endl;
-  pressure *= pressureFactor;
-  std::cout<<"Pressure in use = "<< pressure << endl;
-
-  //Numerical Viscosity
-  //double Cd = 18.85*viscosity_inp*(Rshift);//6*pi*eta*r
-  //double diffusionCoeff = diffCoeffFactor/Cd; //kB*T/Cd;
 
   double diffusionCoeff = 4.0*Rshift*Rshift;
   double Cd = 1.0/diffusionCoeff;
-  //double dt = 9.76e-4;
   double viscosity = Cd/dt;
 
   std::cout << "Viscosity Input Parameters:" << std::endl
@@ -345,6 +353,7 @@ int main(int argc, char* argv[])
   int quadOrder = 2;
 
   double vrEnergy;
+  double bkEnergy;
   double bdEnergy;
   double PrEnergy;
   double energy = 0.0;
@@ -353,9 +362,20 @@ int main(int argc, char* argv[])
   MaterialType bending(KC,KG,C0,0.0,0.0);
   //LSB * bd = new LSB(bending, connectivities, nodes, quadOrder, pressure,
   //		     0.0,0.0,1.0e4,1.0e6,1.0e4,multiplier,noConstraint,noConstraint);
-  
-  std::cout<< "********** PRESSURE IS NOT BEING USED **********"<<std::endl;
-  LSB * bd = new LSB(bending, connectivities, nodes, quadOrder);
+
+  LSB * bd;
+
+  bool areaConstraintOn = true;
+  if(areaConstraintOn){
+    bd = new LSB(bending, connectivities, nodes, quadOrder, pressure,
+		       0.0,0.0,1.0e4,1.0e6,1.0e4,multiplier,penalty,noConstraint);
+    std::cout << "Prescribed Area = "<< bd->prescribedArea()  << std::endl;
+  }
+  else{
+    std::cout<< "********** CONSTRAINTS NOT BEING USED **********"<<std::endl;
+    bd = new LSB(bending, connectivities, nodes, quadOrder);
+  }
+
   bd->setOutput(paraview);
 
   Morse Mat(epsilon,sigma,Rshift);
@@ -441,12 +461,14 @@ int main(int argc, char* argv[])
     solver1.solve( &model );
 
     vrEnergy = vr.energy();
-    bdEnergy = bd->energy();
+    bkEnergy = bk.energy();
+    bdEnergy = bd->energy() - vrEnergy - bkEnergy;
     PrEnergy = PrBody->energy();
     energy = solver1.function();
     
     std::cout << "ENERGY:" << std::endl
 	      << "viscous energy = " << vrEnergy << std::endl
+	      << "Brownian energy = " << bkEnergy << std::endl
 	      << "protein energy = " << PrEnergy << std::endl
 	      << "bending energy = " << bdEnergy << std::endl
 	      << "  total energy = " << energy   << std::endl
@@ -479,7 +501,8 @@ int main(int argc, char* argv[])
 	//Relax again after remeshing
 	solver2.solve( &model );
 	vrEnergy = vr.energy();
-	bdEnergy = bd->energy();
+	bkEnergy = bk.energy();
+	bdEnergy = bd->energy() - vrEnergy - bkEnergy;
 	PrEnergy = PrBody->energy();
 	energy = solver2.function();
       }
@@ -569,32 +592,11 @@ int main(int argc, char* argv[])
 
     double asphericity = dRavg2/(Ravg*Ravg);
     double gammaCalc = Y*Ravg*Ravg/KC;
-    
-    // //Calculate Average Principal Strain
-    // std::vector<double> maxStrain =  bd->getMaxPrincipalStrains();
-    // double avgStrain = 0.0;
-    // for(int e=0; e < maxStrain.size(); e++){
-    //   avgStrain += maxStrain[e];
-    // }
-    // avgStrain /= maxStrain.size();
 
-    // myfile<< Ravg <<"\t\t"<< Y <<"\t\t"<< asphericity
-    // 	  <<"\t\t"<< gamma <<"\t\t"<< gammaCalc
-    // 	  <<"\t\t"<< avgStrain << "\t\t" << solver1.function() 
-    // 	  << endl;
-
-    myfile<< nameSuffix++<<"\t\t"<< Ravg <<"\t\t"<< Y <<"\t\t"<< asphericity
-	  <<"\t\t"<< gamma <<"\t\t"<< gammaCalc
-	  <<"\t\t" << bdEnergy+PrEnergy
-	  << endl;
-
-    //Uncomment the lines below to print total energy to the data file instead of just
-    // bending and stretching energies
-
-    // myfile<< nameSuffix++<<"\t\t"<< Ravg <<"\t\t"<< Y <<"\t\t"<< asphericity
-    // 	  <<"\t\t"<< gamma <<"\t\t"<< gammaCalc
-    // 	  <<"\t\t" << energy
-    // 	  << endl;
+    myfile<< nameSuffix++<<"\t\t"<< Ravg <<"\t\t"<< asphericity
+	  <<"\t\t"<< gamma <<"\t\t" << bdEnergy <<"\t\t"<< PrEnergy
+	  <<"\t\t"<< bkEnergy <<"\t\t" << vrEnergy <<"\t\t"
+	  << solver1.function()<< endl;
    
     // step forward in "time", relaxing viscous energy & forces 
     vr.step();

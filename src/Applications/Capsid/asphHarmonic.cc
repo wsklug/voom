@@ -85,7 +85,7 @@ int main(int argc, char* argv[])
   int nameSuffix = 0;
   int firstFileNum = 0;
   int interimIter = 5;
-  bool projectOnSphere = 0; 
+  bool startFromLowFVK;
 
   //Read epsilon and percentStrain from input file. percentStrain is
   //calculated so as to set the inflection point of Morse potential
@@ -101,7 +101,7 @@ int main(int argc, char* argv[])
 	      >> temp >> continueFromNum
 	      >> temp >> Rshift
 	      >> temp >> interimIter
-	      >> temp >> projectOnSphere;
+	      >> temp >> startFromLowFVK;
   
   miscInpFile.close();
 
@@ -277,7 +277,7 @@ int main(int argc, char* argv[])
     }
     Ravg /= defNodes.size();
 
-    if(projectOnSphere){
+    if(startFromLowFVK){
 
       //Project point to surface of a sphere of radius Ravg
       for(int i=0; i<defNodes.size(); i++) {
@@ -302,7 +302,7 @@ int main(int argc, char* argv[])
       Ravg /= defNodes.size();
       
     }
-
+    
     std::cout<<"Radius of capsid after rescaling = "<< Ravg << endl;
     
   }
@@ -350,12 +350,12 @@ int main(int argc, char* argv[])
   int m=5;
   
   //int maxIter = 1e6;
-  int maxIter1=1e5;
+  int maxIter1=100;
   int maxIter2=1e5;
 
   double factr=1.0e+1;
   double pgtol=1e-7;
-  int iprint = 50;
+  int iprint = 1;
   Lbfgsb solver1(3*nodes.size(), m, factr, pgtol, iprint, maxIter1 );
   Lbfgsb solver2(3*nodes.size(), m, factr, pgtol, iprint, maxIter2 );
 
@@ -480,9 +480,16 @@ int main(int argc, char* argv[])
 		       0.0,0.0,1.0e4,1.0e6,1.0e4,multiplier,noConstraint,noConstraint);
     bd->setOutput(paraview);
 
-    Morse Mat(epsilon,sigma,Rshift);
-    PotentialSearchRF = 1.5*Ravg;
-    PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);
+    /*Replace Morse potential by harmonic potential*/
+    SpringPotential SpringMat(springConstant, Rshift);
+    PotentialSearchRF = 1.2*Rshift;
+    PotentialBody * PrBody = new 
+      PotentialBody(&SpringMat, defNodes, PotentialSearchRF);
+
+
+    //Morse Mat(epsilon,sigma,Rshift);
+    //PotentialSearchRF = 1.5*Ravg;
+    //PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);
 
     //Create Model
     Model::BodyContainer bdc;
@@ -492,9 +499,9 @@ int main(int argc, char* argv[])
     
     double energy = 0;
      
-    std::cout<< "Morse potential parameters:" << endl
-	     << "sigma = " << sigma <<" epsilon = " << epsilon
-	     << " Rshift = "<< Rshift <<endl;
+    std::cout<< "Spring potential parameters:" << endl
+	     << "Spring constant = " << springConstant
+	     << "Resting length = "<< Rshift << endl;
 
     std::cout << "Pressure = " << pressure << endl
 	      << "Capsid radius = "<< Ravg << endl;
@@ -712,9 +719,9 @@ void writeEdgeStrainVtk(std::vector<std::string> fileNames, \
 #pragma omp parallel for
 #endif
   for(int i=0; i < fileNames.size() ; i++){
-    //for(std::vector<std::string>::iterator it=fileNames.begin();
-    //    it!= fileNames.end(); ++it){
-    //  std::string fileName = *it;
+  //for(std::vector<std::string>::iterator it=fileNames.begin();
+  //    it!= fileNames.end(); ++it){
+  //  std::string fileName = *it;
     std::string fileName = fileNames[i];
     //Check that the file exists
     assert(ifstream(fileName.c_str()));
@@ -799,88 +806,88 @@ void writeEdgeStrainVtk(std::vector<std::string> fileNames, \
     vtkIdType currEdge;
     
     for(int p=0; p < numPoints; p++){
-      weakBonds = 0;
-      wireFrame->GetPointCells(p,cellIds);
-      for(int z=0; z < cellIds->GetNumberOfIds(); z++){
-	currEdge = cellIds->GetId(z);
-	currEdgeStrain = edgeStrain->GetTuple1(currEdge);	
-	if(currEdgeStrain > percentStrain*0.01){
-	  weakBonds++;
+	weakBonds = 0;
+	wireFrame->GetPointCells(p,cellIds);
+	for(int z=0; z < cellIds->GetNumberOfIds(); z++){
+	  currEdge = cellIds->GetId(z);
+	  currEdgeStrain = edgeStrain->GetTuple1(currEdge);	
+	  if(currEdgeStrain > percentStrain*0.01){
+	    weakBonds++;
+	  }
 	}
+	unstableBonds->SetValue(p,weakBonds);
+	cellIds->Reset();
       }
-      unstableBonds->SetValue(p,weakBonds);
-      cellIds->Reset();
-    }
 
-    wireFrame->GetPointData()->AddArray(unstableBonds);
+	  wireFrame->GetPointData()->AddArray(unstableBonds);
 
-    //The following array will store approximate strain in each
-    //triangle
-    vtkSmartPointer<vtkDoubleArray> avgStrain = 
-      vtkSmartPointer<vtkDoubleArray>::New();
-    avgStrain->SetNumberOfComponents(1);
-    avgStrain->SetNumberOfTuples(mesh->GetNumberOfCells());
-    avgStrain->SetName("ApproxEleStrain");
+	//The following array will store approximate strain in each
+	//triangle
+	vtkSmartPointer<vtkDoubleArray> avgStrain = 
+	  vtkSmartPointer<vtkDoubleArray>::New();
+	avgStrain->SetNumberOfComponents(1);
+	avgStrain->SetNumberOfTuples(mesh->GetNumberOfCells());
+	avgStrain->SetName("ApproxEleStrain");
         
-    tvmet::Vector<double,3> x1, x2, x3; //vertex position vectors
-    double e31, e32, e12; //edge lengths
+	tvmet::Vector<double,3> x1, x2, x3; //vertex position vectors
+	double e31, e32, e12; //edge lengths
     
-    int ntri=mesh->GetNumberOfCells();
+	int ntri=mesh->GetNumberOfCells();
 #ifdef _OPENMP
 #pragma omp parallel for private(x1,x2,x3,e31,e32,e12)
 #endif    
-    for (int j = 0; j < ntri; j++){
-      assert(mesh->GetCell(j)->GetNumberOfPoints() == 3);
-      mesh->GetPoint(mesh->GetCell(j)->GetPointId(0), &(x1[0]));     
-      mesh->GetPoint(mesh->GetCell(j)->GetPointId(1), &(x2[0]));
-      mesh->GetPoint(mesh->GetCell(j)->GetPointId(2), &(x3[0]));
-      e31 = tvmet::norm2(x3 - x1);
-      e32 = tvmet::norm2(x3 - x2);
-      e12 = tvmet::norm2(x1 - x2);
-      double temp = ( std::abs(e31-avgEdgeLen) + 
-		      std::abs(e32 - avgEdgeLen) +
-		      std::abs(e12 - avgEdgeLen))/(3.0*avgEdgeLen);
-      avgStrain->SetValue(j,temp);
-    }
+	for (int j = 0; j < ntri; j++){
+	  assert(mesh->GetCell(j)->GetNumberOfPoints() == 3);
+	  mesh->GetPoint(mesh->GetCell(j)->GetPointId(0), &(x1[0]));     
+	  mesh->GetPoint(mesh->GetCell(j)->GetPointId(1), &(x2[0]));
+	  mesh->GetPoint(mesh->GetCell(j)->GetPointId(2), &(x3[0]));
+	  e31 = tvmet::norm2(x3 - x1);
+	  e32 = tvmet::norm2(x3 - x2);
+	  e12 = tvmet::norm2(x1 - x2);
+	  double temp = ( std::abs(e31-avgEdgeLen) + 
+			  std::abs(e32 - avgEdgeLen) +
+			  std::abs(e12 - avgEdgeLen))/(3.0*avgEdgeLen);
+	  avgStrain->SetValue(j,temp);
+	}
     
-    mesh->GetCellData()->AddArray(avgStrain);
+	  mesh->GetCellData()->AddArray(avgStrain);
     
-    std::stringstream sstm;
-    std::string tempFile;
-    sstm << fileName <<"-bak.vtk";
-    tempFile = sstm.str();
-    writer->SetFileName(tempFile.c_str());
-    writer->SetInput(mesh);
-    writer->Write();
-    std::rename(tempFile.c_str(),fileName.c_str());
+	std::stringstream sstm;
+	std::string tempFile;
+	sstm << fileName <<"-bak.vtk";
+	tempFile = sstm.str();
+	writer->SetFileName(tempFile.c_str());
+	writer->SetInput(mesh);
+	writer->Write();
+	std::rename(tempFile.c_str(),fileName.c_str());
 
-    /*
-      The next few lines of code involve string manipulations to comeup
-      with good file-names that Paraview can recognize to be sequence of
-      the same simulation. A file name like "T7-relaxed-10.vtk" is
-      converted to "T7-EdgeStrain-10.vtk"
-    */
-    int pos = fileName.find(".vtk");
-    if(pos != -1){
-      fileName.erase(pos,string::npos);
-    }
-    pos = fileName.find("relaxed-");
-    if(pos != -1){
-      fileName.erase(pos,8);
-      pos = fileName.find("-");
-      string serialNum = fileName.substr(pos+1,string::npos);
-      fileName.erase(pos,string::npos);
-      fileName = "./" + fileName + "-EdgeStrain-" + serialNum + ".vtk";
-    }
-    else{
-      fileName = "./" + fileName + "-EdgeStrain.vtk";
-    }
+	/*
+	  The next few lines of code involve string manipulations to comeup
+	  with good file-names that Paraview can recognize to be sequence of
+	  the same simulation. A file name like "T7-relaxed-10.vtk" is
+	  converted to "T7-EdgeStrain-10.vtk"
+	*/
+	int pos = fileName.find(".vtk");
+	if(pos != -1){
+	  fileName.erase(pos,string::npos);
+	}
+	  pos = fileName.find("relaxed-");
+	if(pos != -1){
+	  fileName.erase(pos,8);
+	  pos = fileName.find("-");
+	  string serialNum = fileName.substr(pos+1,string::npos);
+	  fileName.erase(pos,string::npos);
+	  fileName = "./" + fileName + "-EdgeStrain-" + serialNum + ".vtk";
+	}
+	else{
+	  fileName = "./" + fileName + "-EdgeStrain.vtk";
+	}
   
-    writer->SetFileName(fileName.c_str());
-    writer->SetInput(wireFrame);
-    writer->Write();
+	  writer->SetFileName(fileName.c_str());
+	writer->SetInput(wireFrame);
+	writer->Write();
+	}
   }
-}
 
 ///////////////////////////////////////////////////////////////////////////
 //                                                                       //

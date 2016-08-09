@@ -41,9 +41,7 @@ namespace voom
   }
   
   //Destructor
-  BrownianKick::~BrownianKick(){
-    delete _dis;
-  }
+  BrownianKick::~BrownianKick(){}
 
   void BrownianKick::updateSerialKick(){
     unsigned int randomNode = _dis->random();

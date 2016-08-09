@@ -13,4 +13,4 @@ libElements_a_SOURCES= \
 	C0MembraneGL.cc S2.cc MembraneGLImplicitMass.cc AffinityElement.cc \
 	SpringShell.cc RigidHemisphereAL.cc RigidPlateAL.cc BrickElement.cc \
 	Element3D.cc C0MembraneShear.cc C0MembraneStretch.cc PotentialElement.cc \
-	BrownianKick.cc
+	BrownianKick.cc RadialSpring.cc
