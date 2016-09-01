@@ -51,7 +51,7 @@ int main(int argc, char* argv[])
   // Model names
   string modelName;
   string outlineName;
-  unsigned int NPout = 0; // Nodes needed to build the outline
+  int NPout = 0; // Nodes needed to build the outline
 
   // Input output
   string parameterFileName = argv[1];
@@ -166,9 +166,12 @@ int main(int argc, char* argv[])
   // Bending material object, to be copied when body generates new elements
   typedef EvansElastic ArchaeaMaterial;
 
-  double DeltaY = (Ymax - Ymin)/(double(Ysteps)-1.0);
+  // double DeltaY = (Ymax - Ymin)/(double(Ysteps)-1.0);
+  double DeltaStep = log(Ymax - Ymin)/double(Ysteps), step = log(Ymax);
   for (int s = 0; s < Ysteps; s++) {
-    double Y = Ymax - double(s)*DeltaY;
+    // double Y = Ymax - double(s)*DeltaY;
+    double Y = exp(step);
+    step -= DeltaStep;
     // Stretching
     double mu = Y/(2.0*(1.0 + nu));
     double kS = Y/(2.0*(1.0 - nu));
@@ -204,6 +207,17 @@ int main(int argc, char* argv[])
     // FvK = Y*Ravg*Ravg/KC;
     // cout << "FvK number before solving = " << FvK << endl;
 
+    // Remeshing before solver if necessary
+    // double ARtol = 1.5;
+    // uint ElementsChanged = ArchaeaBody->Remesh(ARtol, aMaterial, quadOrder);
+    // if (ElementsChanged > 0) {
+    //   // // Print remeshed - Force is measured before remeshing
+    //   // PrintVirus.printMaster(++PrintCount);
+    //   // sprintf(vtkname,"Capsid-%04d",PrintCount);
+    //   // shellBody->printParaview(vtkname);
+    //   cout << endl << endl << endl << "     ElementsChanged = " << ElementsChanged << endl << endl << endl;
+    // }
+
     // Set solver and solve
     int iprint = 0;
     double factr = 1.0e1;
@@ -231,13 +245,21 @@ int main(int argc, char* argv[])
 
     //---------------//
     // Print results //
-    cout << "W final = " << ArchaeaBody->energy()                << endl;
-    cout << "Area    = " << ArchaeaBody->area()                  << endl;
-    cout << "Volume  = " << ArchaeaBody->volume()                << endl;
-    cout << "FvKnew  = " << Y*ArchaeaBody->area()/KC             << endl;
-    cout << "TotCurv = " << ArchaeaBody->totalCurvature()        << endl;
-    cout << "EqAsph  = " << ArchaeaBody->equivalentAsphericity() << endl;
-
+    vector<double > eqAsph = ArchaeaBody->equivalentAsphericity();
+    cout << "s       = " << s                                       << endl;
+    cout << "Y       = " << Y                                       << endl;
+    cout << "W final = " << ArchaeaBody->energy()                   << endl;
+    cout << "Area    = " << ArchaeaBody->area()                     << endl;
+    cout << "Volume  = " << ArchaeaBody->volume()                   << endl;
+    cout << "FvKnew  = " << Y*ArchaeaBody->area()/KC                << endl;
+    cout << "TotCurv = " << ArchaeaBody->totalCurvature()           << endl;
+    
+    cout << "meanCurvAsph  = " << eqAsph[0] << endl;
+    cout << "gaussCurvAsph = " << eqAsph[1] << endl;
+    cout << "DeltaX        = " << eqAsph[2] << endl;
+    cout << "DeltaY        = " << eqAsph[3] << endl;
+    cout << "DeltaZ        = " << eqAsph[4] << endl << endl;
+ 
     // Clean up
     delete ArchaeaBody;
 
@@ -260,6 +282,8 @@ int main(int argc, char* argv[])
   return (0);
   
 }
+
+
 
 
 
@@ -334,11 +358,3 @@ void printOutlineParaview(const std::string OutlineName,
   ofs.close();
 
 }
-
-
-
-
-
-    
-    
-   
