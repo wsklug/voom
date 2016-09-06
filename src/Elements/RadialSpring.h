@@ -55,10 +55,10 @@ namespace voom
     double getRadius(){ return _R; }
 
     //! Update the spring constant
-    void updateSpringConstant(double k){ _k = k;}
+    void setSpringConstant(double k){ _k = k;}
 
     //! Update the radius of the shell
-    void updateRadius(double R){ _R = R;}
+    void setRadius(double R){ _R = R;}
 
     //! Access the container of nodes
     const NodeContainer& nodes() const { return _nodes; }    

@@ -57,6 +57,15 @@ namespace voom
     //! Set the Brownian random displacements
     void updateSerialKick();
 
+    //! Set the diffusion coefficient
+    void setDiffusionCoeff( double D ){ _D = D; }
+
+    //! Set drag Coefficient
+    void setDragCoefficient( double Cd ){ _Cd = Cd; }
+
+    //! Set time-step
+    void setTimeStep( double dt ){ _dt = dt; }
+
     //! Access the container of nodes
     const NodeContainer& nodes() const { return _nodes; }    
     

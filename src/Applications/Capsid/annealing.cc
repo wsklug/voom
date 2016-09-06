@@ -82,17 +82,17 @@ int main(int argc, char* argv[])
 
   //For Morse material 
   double epsilon;
-  //double FVKnum;
   double percentStrain;
   double pressureFactor;
 
   //Numerical viscosity input parameter
   int viterMax;
 
-  double Rshift, radialSpringFactor;
+  double Rshift;
   bool rescale;
   bool areaConstraintOn = false;
   bool pressureConstraintOn = false;
+  double dt = 9.76e-4;
   int nameSuffix = 0;
 
   //Read epsilon and percentStrain from input file. percentStrain is
@@ -105,7 +105,7 @@ int main(int argc, char* argv[])
   miscInpFile >> temp >> epsilon
 	      >> temp >> percentStrain
 	      >> temp >> pressureFactor
-	      >> temp >> radialSpringFactor
+	      >> temp >> dt
 	      >> temp >> pressureConstraintOn
 	      >> temp >> areaConstraintOn
 	      >> temp >> rescale;
@@ -233,15 +233,15 @@ int main(int argc, char* argv[])
   std::ifstream coolFile("cooling.dat");
   assert(coolFile);
   std::vector<vector<double> > coolVec;
-  double curr_dt,currFVK, currViterMax, currPrintStep,currRadialSpring;
+  double curr_D,currFVK, currViterMax, currPrintStep,currRadialSpring;
   
   std::string headerline;
   std::getline(coolFile,headerline);
 
-  while(coolFile >> curr_dt >> currViterMax >> currFVK >> 
+  while(coolFile >> curr_D >> currViterMax >> currFVK >> 
 	currPrintStep >> currRadialSpring){
     std::vector<double> currLine;
-    currLine.push_back(curr_dt);
+    currLine.push_back(curr_D);
     currLine.push_back(currViterMax);
     currLine.push_back(currFVK);
     currLine.push_back(currPrintStep);
@@ -259,7 +259,8 @@ int main(int argc, char* argv[])
   std::string dataOutputFile = "BrownianRelax.dat";
 
   myfile.open(dataOutputFile.c_str());
-  myfile << "#Step" << "\t" << "Delta t" << "\t" << "Ravg" 
+  myfile << "#Step" <<"ParaviewStep" << "\t" << "DiffusionCoeff" 
+	 << "\t" << "Ravg" 
 	 << "\t" << "asphericity" << "\t" << "FVK" << "\t" 
 	 << "BendEnergy" << "\t" << "StretchEnergy" << "\t" 
 	 << "SpringEnergy" <<"\t" << "BrownEnergy" << "\t" 
@@ -268,15 +269,12 @@ int main(int argc, char* argv[])
   
   //Parameters for the l-BFGS solver
   int m=5;
-
-  int maxIter2 = 1e5;
-  int maxIter1=1e5;
+  int maxIter=1e5;
 
   double factr=1.0e+1;
   double pgtol=1e-7;
   int iprint = 100;
-  Lbfgsb solver1(3*nodes.size(), m, factr, pgtol, iprint, maxIter1 );
-  Lbfgsb solver2(3*nodes.size(), m, factr, pgtol, iprint, maxIter2 );
+  Lbfgsb solver(3*nodes.size(), m, factr, pgtol, iprint, maxIter );
 
   typedef FVK MaterialType;
   typedef LoopShellBody<MaterialType> LSB;
@@ -312,11 +310,12 @@ int main(int argc, char* argv[])
   //guidelines. Read BrownianParameters.pdf to know more
 
   double gamma;
-  double diffusionCoeff = 4.0*Rshift*Rshift;
-  double Cd = 1.0/diffusionCoeff;
-  double dt;
-  double viscosity;
-  double Y, nu, KC, KG, C0;
+  double diffusionCoeff = 0;;
+  double Cd = 0;
+  double viscosity = 0;
+  double Y, nu = 1.0/3.0;
+  double KC=0, KG=0, C0=0;
+  double radialSpringConstant = 0.0;
   int quadOrder = 2;
 
   double rsEnergy;
@@ -326,19 +325,20 @@ int main(int argc, char* argv[])
   double PrEnergy;
   double energy = 0.0;
   int printStep, stepCount = 0;
-  bool radialSpringOn = true;
+  int paraviewStep = -1;
 
   std::vector<std::string> allVTKFiles;
-
+    
   //***************** MAIN LOOP ****************************//
-
+    
   for(int q = 0 ; q < coolVec.size(); q++){ 
-  
-    dt = coolVec[q][0];
+      
+    diffusionCoeff = coolVec[q][0];
+    Cd = 1.0/diffusionCoeff;
     viterMax = coolVec[q][1];
     gamma = coolVec[q][2];
     printStep = (int)coolVec[q][3];
-    radialSpringOn = (bool)coolVec[q][4];
+    radialSpringConstant = coolVec[q][4];
 
     viscosity = Cd/dt;
 
@@ -383,24 +383,14 @@ int main(int argc, char* argv[])
     bd->pushBack(&vr);
     BrownianKick bk(defNodes,Cd,diffusionCoeff,dt);
     bd->pushBack(&bk);
-    RadialSpring *rs;
-    if(radialSpringOn){
-      rs = new RadialSpring(defNodes,radialSpringFactor*springConstant,Ravg);
-      bd->pushBack(&(*rs));
-    }
-
+    RadialSpring rs(defNodes,radialSpringConstant,Ravg);
+    bd->pushBack(&rs);
+    
     //Create Model
     Model::BodyContainer bdc;
     bdc.push_back(PrBody);
     bdc.push_back(bd);    
     Model model(bdc,nodes);
-     
-    std::cout<< "Morse potential parameters:" << endl
-	     << "sigma = " << sigma <<" epsilon = " << epsilon
-	     << " Rshift = "<< Rshift <<endl;
-
-    std::cout << "Pressure = " << pressure << endl
-	      << "Capsid radius = "<< Ravg << endl;
 
     bool checkConsistency = false;
     if(checkConsistency){
@@ -408,7 +398,14 @@ int main(int argc, char* argv[])
       bk.updateParallelKick();
       bd->checkConsistency(true);
       PrBody->checkConsistency(true);
-    }
+    }    
+
+    std::cout<< "Morse potential parameters:" << endl
+	     << "sigma = " << sigma <<" epsilon = " << epsilon
+	     << " Rshift = "<< Rshift <<endl;
+
+    std::cout << "Pressure = " << pressure << endl
+	      << "Capsid radius = "<< Ravg << endl;
 
 
     //***************************  INNER SOLUTION LOOP ***************************//  
@@ -423,14 +420,14 @@ int main(int argc, char* argv[])
       
       bk.updateParallelKick();
 
-      solver1.solve( &model );
+      solver.solve( &model );
 
-      rsEnergy = radialSpringOn? rs->energy() : 0.0;
+      rsEnergy = rs.energy();
       bkEnergy = bk.energy();
       vrEnergy = vr.energy();
       bdEnergy = bd->energy() - rsEnergy - vrEnergy - bkEnergy;
       PrEnergy = PrBody->energy();
-      energy = solver1.function();
+      energy = solver.function();
     
       std::cout << "ENERGY:" << std::endl
 		<< "viscous energy  = " << vrEnergy << std::endl
@@ -466,13 +463,13 @@ int main(int argc, char* argv[])
 	  PrBody->recomputeNeighbors(PotentialSearchRF);
 	
 	  //Relax again after remeshing
-	  solver2.solve( &model );
-	  rsEnergy = radialSpringOn? rs->energy() : 0.0;
+	  solver.solve( &model );
+	  rsEnergy = rs.energy();
 	  bkEnergy = bk.energy();
 	  vrEnergy = vr.energy();
 	  bdEnergy = bd->energy() - rsEnergy - vrEnergy - bkEnergy;
 	  PrEnergy = PrBody->energy();
-	  energy = solver2.function();
+	  energy = solver.function();
 	}
       }
       //*********************************************************//
@@ -485,6 +482,7 @@ int main(int argc, char* argv[])
       
       //We will print only after every currPrintStep iterations
       if(viter % printStep == 0){
+	paraviewStep++;
 	sstm << fname <<"-relaxed-" << nameSuffix;
 	rName = sstm.str();
 	model.print(rName);
@@ -567,11 +565,15 @@ int main(int argc, char* argv[])
       double asphericity = dRavg2/(Ravg*Ravg);
       double gammaCalc = Y*Ravg*Ravg/KC;
 
-      myfile<< nameSuffix++ <<"\t\t"<< dt <<"\t\t"<< Ravg <<"\t\t"
-	    << asphericity <<"\t\t" << gamma <<"\t\t"
+      int paraviewStepPrint;
+      paraviewStepPrint = (viter % printStep == 0)? paraviewStep: -1;
+
+      myfile<< nameSuffix++ <<"\t\t"<< paraviewStepPrint <<"\t\t"
+	    << diffusionCoeff <<"\t\t"
+	    << Ravg <<"\t\t"<< asphericity <<"\t\t" << gamma <<"\t\t"
 	    << bdEnergy <<"\t\t"<< PrEnergy <<"\t\t"
 	    << rsEnergy <<"\t\t" << bkEnergy <<"\t\t"
-	    << vrEnergy <<"\t\t" << solver1.function()
+	    << vrEnergy <<"\t\t" << energy
 	    << endl;
    
       // step forward in "time", relaxing viscous energy & forces 
@@ -580,11 +582,11 @@ int main(int argc, char* argv[])
 
     stepCount += viterMax;
     //Release the dynamically allocated memory
-    delete rs;
     delete bd;
     delete PrBody;
+    
   }  
-
+  
   myfile.close();
   t2=clock();
   float diff ((float)t2-(float)t1);

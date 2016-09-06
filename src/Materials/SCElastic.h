@@ -64,6 +64,9 @@ namespace voom
     double bendingModulus() const { return _kC; }
     double gaussianModulus() const { return _kG; }
 
+    void setBendingModulus( double kC ) { _kC = kC; };
+    void setGaussianModulus( double kG ) { _kG = kG; };
+
     virtual double bendingEnergy() const {return _W;}
     virtual double stretchingEnergy() const {return 0;}
   };
