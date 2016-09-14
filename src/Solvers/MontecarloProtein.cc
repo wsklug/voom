@@ -31,7 +31,7 @@ namespace voom {
     if ( _Tsched == STEPWISE )
     {	
       ofsE.open(OutputFileName.c_str());
-      if (!ofsE) { std::cout << "Cannot open output file " << OutputFileStream << std::endl;
+      if (!ofsE) { std::cout << "Cannot open output file " << OutputFileStream.str() << std::endl;
 	exit(0); }
     }
 
@@ -205,7 +205,7 @@ namespace voom {
 	  OutputFileName = OutputFileStream.str();
 	  ofsE.open(OutputFileName.c_str());
 	  if (!ofsE) { 
-	    std::cout << "Cannot open output file " << OutputFileStream << std::endl;
+	    std::cout << "Cannot open output file " << OutputFileStream.str() << std::endl;
 	    exit(0); 
 	  }
 

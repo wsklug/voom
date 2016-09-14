@@ -1,0 +1,43 @@
+/* src/config.h.in.  Generated from configure.in by autoheader.  */
+#ifndef _CONFIG_H_
+#define _CONFIG_H_
+
+/* Define if you have a Blitz installation */
+//#undef HAVE_BLITZ
+#cmakedefine HAVE_BLITZ
+
+/* Define if you have a tvmet installation */
+//#undef HAVE_TVMET
+#cmakedefine HAVE_TVMET
+
+/*Define VTK version */
+#cmakedefine VTK_MAJOR_VERSION @VTK_MAJOR_VERSION@
+
+/*Check for uint typedef */
+#cmakedefine USE_UINT_TYPEDEF
+
+/* Name of package */
+#undef PACKAGE
+
+/* Define to the address where bug reports for this package should be sent. */
+#undef PACKAGE_BUGREPORT
+
+/* Define to the full name of this package. */
+#undef PACKAGE_NAME
+
+/* Define to the full name and version of this package. */
+#undef PACKAGE_STRING
+
+/* Define to the one symbol short name of this package. */
+#undef PACKAGE_TARNAME
+
+/* Define to the home page for this package. */
+#undef PACKAGE_URL
+
+/* Define to the version of this package. */
+#undef PACKAGE_VERSION
+
+/* Version number of package */
+#undef VERSION
+
+#endif // _CONFIG_H_

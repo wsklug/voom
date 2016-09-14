@@ -28,7 +28,13 @@
 #include <tvmet/Vector.h>
 #include <tvmet/Matrix.h>
 
+#include "config.h"
+
 namespace voom {
+	
+#ifdef USE_UINT_TYPEDEF
+	typedef unsigned int uint;
+#endif
 
   typedef blitz::Array<double,1>          Array1D;
   typedef blitz::Array<double,2>          Array2D;

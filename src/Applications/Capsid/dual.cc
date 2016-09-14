@@ -67,19 +67,17 @@ int main(int argc, char* argv[])
   //If our input vtk file has vtkUnstructuredGridData instead of vtkPolyData
   //then we need to convert it using vtkGeometryFilter
   vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();
-  ds->Update();
-  if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
-    vtkSmartPointer<vtkUnstructuredGrid> unstructuredGrid = 
-      reader->GetUnstructuredGridOutput();    
-    vtkSmartPointer<vtkGeometryFilter> geometryFilter = 
+  reader->Update();
+  
+  vtkSmartPointer<vtkGeometryFilter> geometryFilter = 
       vtkSmartPointer<vtkGeometryFilter>::New();
-    geometryFilter->SetInput(unstructuredGrid);
-    geometryFilter->Update(); 
-    vtkSmartPointer<vtkPolyData> polydata = geometryFilter->GetOutput();
-    normals->SetInput( polydata);
+	  
+  if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
+    geometryFilter->SetInputConnection(reader->GetOutputPort());
+    normals->SetInputConnection( geometryFilter->GetOutputPort());
   }
   else{
-    normals->SetInput(reader->GetOutput());
+    normals->SetInputConnection(reader->GetOutputPort());
   }
 
   // send through normals filter to ensure that triangle orientations
@@ -89,7 +87,7 @@ int main(int argc, char* argv[])
   normals->AutoOrientNormalsOn();
 //   normals->Update();
   vtkPolyData * vtkMeshOld = normals->GetOutput();
-  vtkMeshOld->Update();
+  normals->Update();
   int npts = vtkMeshOld->GetNumberOfPoints(); 
   std::cout << "npts = " 
 	    << npts

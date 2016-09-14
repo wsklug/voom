@@ -51,7 +51,7 @@ namespace voom
     _bdc(BDC), _stretchNodes(StretchNodes), _directionNodes(DirectionNodes),
     _capsomersNum(CapsomersNum), _vectorAngleShift(VectorAngleShift), _vectorReferenceAngle(VectorReferenceAngle),
       _hexonShift(HexonShift),  _epsilon(epsilon), _avgEdgeLength(AvgEdgeLength), _refinement(refinement),
-      _finalConfiguration(FinalConfiguration), _T9ThreeFold(T9ThreeFold), _MT(MT) {}
+      _finalConfiguration(FinalConfiguration), _T9ThreeFold(T9ThreeFold), _MTW(MT) {}
     
     // Destructor
     virtual ~ PrintingStretches () {}
@@ -386,7 +386,7 @@ namespace voom
 
 
 
-  if (_MT == 1) {
+  if (_MTW == 1) {
     // Stretch direction
     ofs1 << "SCALARS    StretchDirection    double    1" << endl;
     ofs1 << "LOOKUP_TABLE default" << endl;
@@ -1431,7 +1431,7 @@ void printStretchEigenvector(const std::string OutFileNameD)
     const string _fileNameC;
     const string _fileNameD;
     const unsigned int _type;
-    const unsigned int _MT;
+    const unsigned int _MTW;
 
     const Model::BodyContainer & _bdc;
     const vector<ScalarFieldNode<3>* > & _stretchNodes;

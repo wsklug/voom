@@ -18,26 +18,19 @@
 #include "RigidHemisphereAL.h"
 #include "RigidPlateAL.h"
 
-#include <vtkDataSet.h>
-#include <vtkPointData.h>
 #include <vtkPolyData.h>
 #include <vtkDataSetReader.h>
-#include <vtkPolyDataWriter.h>
 #include <vtkPolyDataNormals.h>
 #include <vtkSmartPointer.h>
 #include <vtkUnstructuredGrid.h>
 #include <vtkGeometryFilter.h>
 #include <vtkSetGet.h>
-#include <vtkExtractEdges.h>
-#include <vtkCellArray.h>
-#include <vtkIdList.h>
-#include <vtkUnsignedIntArray.h>
-#include <vtkCell.h>
 
 #include "Morse.h"
 #include "SpringPotential.h"
 #include "PotentialBody.h"
 
+#include "HelperFunctions.h"
 
 #if defined(_OPENMP)
 #include <omp.h>
@@ -46,13 +39,6 @@
 using namespace tvmet;
 using namespace std;
 using namespace voom;
-
-void insertValenceInVtk(const std::string fileName,\
-			vtkSmartPointer<vtkPolyData> mesh);
-
-std::vector<double> calcEdgeLenAndStdDev
-(std::vector< DeformationNode<3>* > a, 
- vector< tvmet::Vector<int,3> > b);
 
 int main(int argc, char* argv[])
 {
@@ -208,7 +194,7 @@ int main(int argc, char* argv[])
     inputFileName = string(name);
     reader->SetFileName( inputFileName.c_str() );
     mesh = reader->GetPolyDataOutput();
-    mesh->Update();
+    reader->Update();
     displacements = mesh->GetPointData()->GetVectors("displacements");
 
     //Also read the second to last VTK file
@@ -216,7 +202,7 @@ int main(int argc, char* argv[])
     inputFileName = string(name);
     reader->SetFileName( inputFileName.c_str() );
     mesh_prev = reader->GetPolyDataOutput();
-    mesh_prev->Update();
+    reader->Update();
     displacements_prev = mesh->GetPointData()->GetVectors("displacements");
     
 
@@ -231,19 +217,18 @@ int main(int argc, char* argv[])
     //If our input vtk file has vtkUnstructuredGridData instead of vtkPolyData
     //then we need to convert it using vtkGeometryFilter
     vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();
-    ds->Update();
-    if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
-      vtkSmartPointer<vtkUnstructuredGrid> unstructuredGrid = 
-	reader->GetUnstructuredGridOutput();    
-      vtkSmartPointer<vtkGeometryFilter> geometryFilter = 
+    reader->Update();
+	
+vtkSmartPointer<vtkGeometryFilter> geometryFilter = 
 	vtkSmartPointer<vtkGeometryFilter>::New();
-      geometryFilter->SetInput(unstructuredGrid);
-      geometryFilter->Update(); 
-      vtkSmartPointer<vtkPolyData> polydata = geometryFilter->GetOutput();
-      normals->SetInput( polydata);
+	
+    if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
+      
+      geometryFilter->SetInputConnection(reader->GetOutputPort());
+      normals->SetInputConnection( geometryFilter->GetOutputPort());
     }
     else{
-      normals->SetInput(reader->GetOutput());
+      normals->SetInputConnection(reader->GetOutputPort());
     }
   
     // send through normals filter to ensure that triangle orientations
@@ -253,21 +238,9 @@ int main(int argc, char* argv[])
     normals->AutoOrientNormalsOn();
     
     mesh = normals->GetOutput();
-    mesh->Update();
+    normals->Update();
     std::cout << "mesh->GetNumberOfPoints() = " << mesh->GetNumberOfPoints()
 	      << std::endl;
-
-    //Following few lines of code are meant to obtain number of edges
-    //from the mesh
-    vtkSmartPointer<vtkExtractEdges> extractedEdges = 
-      vtkSmartPointer<vtkExtractEdges>::New();
-    extractedEdges->SetInput(mesh);
-    extractedEdges->Update();
-  
-    //Number of Cells in vtkExtractEdges = number of edges : Amit
-    std::cout << "Number of edges in the mesh= " 
-	      << extractedEdges->GetOutput()->GetNumberOfCells()
-	      <<std::endl;
   }   
 
 
@@ -893,8 +866,10 @@ int main(int argc, char* argv[])
       //We will append Caspsomer POINT_DATA to the vtk output file
       //printed by printParaview(), if such a file exists
       sprintf(name,"%s-body%d-step%04d.vtk",modelName.c_str(),b,step);
-      if (ifstream(name)){      
-	insertValenceInVtk(name,mesh);
+      if (ifstream(name)){
+	    std::vector<string> fakeVec;
+		fakeVec.push_back(name);
+		insertValenceInVtk(fakeVec);		  
       }
     }
     //************* END PRINTING OUTPUT FILES **************//
@@ -921,135 +896,3 @@ int main(int argc, char* argv[])
 
 ///////////////////////// END OF MAIN FUNCTION //////////////////////////////////
 /////////////////////////                     //////////////////////////////////
-
-///////////////////////// INSERTVALENCEINVTK BEGINS ///////////////////////////
-/////////////////////////                           //////////////////////////
-
-//The method insertValenceInVtk() inserts valence information in a vtk file
-//The calling method must ensure that 'fileName' exists and is a valid vtk file.
-//MUST use the extension '.vtk' in 'fileName'.
-//'mesh' is a pointer to a vtkPolyData
-
-void insertValenceInVtk(const std::string fileName, vtkSmartPointer<vtkPolyData> mesh){
-  ofstream * appendTo;
-
-  //Check that the file exists
-  assert(ifstream(fileName.c_str()));
-
-  vtkDataSetReader * reader = vtkDataSetReader::New();
-  reader->SetFileName(fileName.c_str());
-  
-  vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();  
-  ds->Update();
-  
-  //The following vtkUnsignedIntArray will be used to store the
-  //number of CELLS in the mesh that share the POINT denoted by the
-  //index of the vector
-  vtkSmartPointer<vtkUnsignedIntArray> countPointCells = 
-    vtkSmartPointer<vtkUnsignedIntArray>::New();
-  countPointCells->SetNumberOfValues(mesh->GetNumberOfPoints());
-  countPointCells->SetName("Valence");
-  
-  //cellIds will be used to temporarily hold the CELLS that use a
-  //point specified by a point id.
-  vtkSmartPointer<vtkIdList> cellIds = 
-    vtkSmartPointer<vtkIdList>::New();
-  
-  //We will use a vtkPolyDataWriter to write our modified output
-  //files that will have Capsomer information as well
-  vtkSmartPointer<vtkDataWriter> writer = 
-    vtkSmartPointer<vtkDataWriter>::New();
-  
-  if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
-    vtkSmartPointer<vtkUnstructuredGrid> usg 
-      = vtkUnstructuredGrid::SafeDownCast(ds);
-    usg->BuildLinks();
-    for(int p=0; p<ds->GetNumberOfPoints(); p++){
-      usg->GetPointCells(p,cellIds);
-      countPointCells->SetValue(p,cellIds->GetNumberOfIds());
-      cellIds->Reset();
-    }      
-  }                  
-  else if(ds->GetDataObjectType() == VTK_POLY_DATA){
-    vtkSmartPointer<vtkPolyData> pd = vtkPolyData::SafeDownCast(ds);
-    pd->BuildLinks();
-    for(int p=0; p<ds->GetNumberOfPoints(); p++){
-      pd->GetPointCells(p,cellIds);
-      countPointCells->SetValue(p,cellIds->GetNumberOfIds());
-      cellIds->Reset();
-    }	
-  }
-  ds->GetFieldData()->AddArray(countPointCells);
-  appendTo = new ofstream(fileName.c_str(),ofstream::app);
-  writer->WriteFieldData(appendTo,ds->GetFieldData());
-  appendTo->close();
-}
-
-///////////////////////////////////////////////////////////////////////////
-//                                                                       //
-//                    CALCEDGELENANDSTDDEV BEGINS                        //
-//                                                                       //
-///////////////////////////////////////////////////////////////////////////
-/*
-  Calculates average edge lengths of triangles in the mesh and the
-  standard deviation in the edge lengths.
-*/
-
-std::vector<double> calcEdgeLenAndStdDev
-(std::vector< DeformationNode<3>* > defNodes, 
- vector< tvmet::Vector<int,3> > connectivities){
-
-  double EdgeLength = 0.0;
-#ifdef _OPENMP
-#pragma omp parallel for
-#endif
-  for(int i=0; i<connectivities.size(); i++) {
-    std::vector<int> cm(3);
-    for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
-    // Edge vectors in current config.
-    tvmet::Vector<double,3> 
-      e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
-      e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
-      e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
-      eCent(defNodes[cm[2]]->point());
-    // Compute average edge length for each triangle
-    double temp = 
-      (tvmet::norm2(e31) + tvmet::norm2(e32) + tvmet::norm2(e12))/3.0;
-
-#pragma omp atomic
-    EdgeLength += temp;
-  }
-  EdgeLength /= connectivities.size();  
-
-  // Calculate the standard deviation of side lengths of the
-  // equilateral triangles
-  double stdDevEdgeLen = 0.0;
-#ifdef _OPENMP
-#pragma omp parallel for
-#endif
-  for(int i=0; i<connectivities.size(); i++) {
-    std::vector<int> cm(3);
-    for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
-    // Edge vectors in current config.
-    tvmet::Vector<double,3> 
-      e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
-      e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
-      e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
-      eCent(defNodes[cm[2]]->point());
-    double temp = std::pow(tvmet::norm2(e31) - EdgeLength,2.0) +
-      std::pow(tvmet::norm2(e32) - EdgeLength,2.0) +
-      std::pow(tvmet::norm2(e12) - EdgeLength,2.0);
-    
-#pragma omp atomic
-    stdDevEdgeLen += temp;
-  }
-
-  stdDevEdgeLen /= connectivities.size();
-  stdDevEdgeLen = sqrt(stdDevEdgeLen);
-
-  std::vector<double> result;
-  result.push_back(EdgeLength);
-  result.push_back(stdDevEdgeLen);
-  return result;
-}
-

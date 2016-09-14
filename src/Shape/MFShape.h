@@ -1,6 +1,12 @@
 #if !defined(__MFShape__)
 #define __MFShape__
 
+#if (__GNUC__)
+#define GCC_VERSION (__GNUC__ * 10000 \
+                               + __GNUC_MINOR__ * 100 \
+                               + __GNUC_PATCHLEVEL__)
+#endif
+
 #include <vector>
 #include "voom.h"
 #include<tvmet/Vector.h>
@@ -116,8 +122,16 @@ namespace voom
     NodeNContainer _nodes;
 
     // smoothing radius factor
+/* Test for GCC < 4.6.0 */
+#if (__GNUC__)
+#if GCC_VERSION < 40600
     const static double _smooth=0.6;
-    
+#else
+	static constexpr double _smooth=0.6;
+#endif
+#else
+	static constexpr double _smooth=0.6;
+#endif
     //! derivatives of shape functions 
     //DerivativeContainer _derivatives;
   };

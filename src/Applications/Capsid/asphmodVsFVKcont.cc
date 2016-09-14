@@ -11,25 +11,18 @@
 #include "Model.h"
 #include "Lbfgsb.h"
 
-#include <vtkDataSet.h>
-#include <vtkPointData.h>
 #include <vtkPolyData.h>
 #include <vtkDataSetReader.h>
-#include <vtkPolyDataWriter.h>
 #include <vtkPolyDataNormals.h>
 #include <vtkSmartPointer.h>
 #include <vtkUnstructuredGrid.h>
 #include <vtkGeometryFilter.h>
 #include <vtkSetGet.h>
-#include <vtkExtractEdges.h>
-#include <vtkCellArray.h>
-#include <vtkIdList.h>
-#include <vtkUnsignedIntArray.h>
-#include <vtkCell.h>
 
 #include "LennardJones.h"
 #include "PotentialBody.h"
 
+#include "HelperFunctions.h"
 #if defined(_OPENMP)
 #include <omp.h>
 #endif
@@ -37,10 +30,6 @@
 using namespace tvmet;
 using namespace std;
 using namespace voom;
-
-std::vector<double> calcEdgeLenAndStdDev
-(std::vector< DeformationNode<3>* > a, 
- vector< tvmet::Vector<int,3> > b);
 
 int main(int argc, char* argv[])
 {
@@ -67,19 +56,18 @@ int main(int argc, char* argv[])
   //our input vtk file has vtkUnstructuredGridData instead of
   //vtkPolyData then we need to convert it using vtkGeometryFilter
   vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();
-  ds->Update();
-  if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
-    vtkSmartPointer<vtkUnstructuredGrid> unstructuredGrid = 
-      reader->GetUnstructuredGridOutput();    
-    vtkSmartPointer<vtkGeometryFilter> geometryFilter = 
+  reader->Update();
+  
+  vtkSmartPointer<vtkGeometryFilter> geometryFilter = 
       vtkSmartPointer<vtkGeometryFilter>::New();
-    geometryFilter->SetInput(unstructuredGrid);
-    geometryFilter->Update(); 
-    vtkSmartPointer<vtkPolyData> polydata = geometryFilter->GetOutput();
-    normals->SetInput( polydata);
+  
+  if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){   
+    
+    geometryFilter->SetInputConnection(reader->GetOutputPort());
+    normals->SetInputConnection(geometryFilter->GetOutputPort());
   }
   else{
-    normals->SetInput(reader->GetOutput());
+    normals->SetInputConnection(reader->GetOutputPort());
   }
   
   // send through normals filter to ensure that triangle orientations
@@ -88,25 +76,9 @@ int main(int argc, char* argv[])
   normals->SplittingOff();
   normals->AutoOrientNormalsOn();
   vtkSmartPointer<vtkPolyData> mesh = normals->GetOutput();
-  mesh->Update();
+  normals->Update();
   std::cout << "mesh->GetNumberOfPoints() = " << mesh->GetNumberOfPoints()
 	    << std::endl;
-
-  //Following few lines of code are meant to obtain number of edges
-  //from the mesh
-  vtkSmartPointer<vtkExtractEdges> extractedEdges = 
-    vtkSmartPointer<vtkExtractEdges>::New();
-  extractedEdges->SetInput(mesh);
-  extractedEdges->Update();
-  //Uncommenting the next line fetches the line entities, if you want 
-  //them : Amit
-  //vtkCellArray * lines = extractedEdges()->GetOutput()->GetLines();
-
-  //Number of Cells in vtkExtractEdges = number of edges : Amit
-  std::cout << "Number of edges in the mesh= " 
-	    << extractedEdges->GetOutput()->GetNumberOfCells()
-	    <<std::endl; 
-
 
   // create vector of nodes
  
@@ -405,72 +377,4 @@ int main(int argc, char* argv[])
   float diff ((float)t2-(float)t1);
   std::cout<<"Total execution time: "<<diff/CLOCKS_PER_SEC
 	   <<" seconds"<<std::endl;
-}
-
-///////////////////////////////////////////////////////////////////////////
-//                                                                       //
-//                    CALCEDGELENANDSTDDEV BEGINS                        //
-//                                                                       //
-///////////////////////////////////////////////////////////////////////////
-/*
-  Calculates average edge lengths of triangles in the mesh and the
-  standard deviation in the edge lengths.
-*/
-
-std::vector<double> calcEdgeLenAndStdDev
-(std::vector< DeformationNode<3>* > defNodes, 
- vector< tvmet::Vector<int,3> > connectivities){
-
-  double EdgeLength = 0.0;
-#ifdef _OPENMP
-#pragma omp parallel for
-#endif
-  for(int i=0; i<connectivities.size(); i++) {
-    std::vector<int> cm(3);
-    for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
-    // Edge vectors in current config.
-    tvmet::Vector<double,3> 
-      e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
-      e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
-      e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
-      eCent(defNodes[cm[2]]->point());
-    // Compute average edge length for each triangle
-    double temp = 
-      (tvmet::norm2(e31) + tvmet::norm2(e32) + tvmet::norm2(e12))/3.0;
-
-#pragma omp atomic
-    EdgeLength += temp;
-  }
-  EdgeLength /= connectivities.size();  
-
-  // Calculate the standard deviation of side lengths of the
-  // equilateral triangles
-  double stdDevEdgeLen = 0.0;
-#ifdef _OPENMP
-#pragma omp parallel for
-#endif
-  for(int i=0; i<connectivities.size(); i++) {
-    std::vector<int> cm(3);
-    for(int j=0; j<3; j++) cm[j]=connectivities[i](j);
-    // Edge vectors in current config.
-    tvmet::Vector<double,3> 
-      e31(defNodes[cm[0]]->point()-defNodes[cm[2]]->point()), 
-      e32(defNodes[cm[1]]->point()-defNodes[cm[2]]->point()),
-      e12(defNodes[cm[1]]->point()-defNodes[cm[0]]->point()),
-      eCent(defNodes[cm[2]]->point());
-    double temp = std::pow(tvmet::norm2(e31) - EdgeLength,2.0) +
-      std::pow(tvmet::norm2(e32) - EdgeLength,2.0) +
-      std::pow(tvmet::norm2(e12) - EdgeLength,2.0);
-    
-#pragma omp atomic
-    stdDevEdgeLen += temp;
-  }
-
-  stdDevEdgeLen /= connectivities.size();
-  stdDevEdgeLen = sqrt(stdDevEdgeLen);
-
-  std::vector<double> result;
-  result.push_back(EdgeLength);
-  result.push_back(stdDevEdgeLen);
-  return result;
 }
