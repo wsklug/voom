@@ -115,7 +115,7 @@ int main(int argc, char* argv[]){
   vtkSmartPointer<vtkPolyData> mesh;
   
   if(ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID){
-	geometryFilter->SetInputConnection(reader->GetOutputPort());
+    geometryFilter->SetInputConnection(reader->GetOutputPort());
     normals->SetInputConnection(geometryFilter->GetOutputPort());
   }
   else{
@@ -399,6 +399,24 @@ int main(int argc, char* argv[]){
       
       bk.updateParallelKick();
 
+      bool printBeforeSolve = true;
+      if( printBeforeSolve ){
+	//We will print only after every currPrintStep iterations
+	if(viter % printStep == 0){
+	  sstm << fname <<"-initial-" << nameSuffix;
+	  rName = sstm.str();
+	  model.print(rName);
+	  sstm <<"-bd1.vtk";
+	  actualFile = sstm.str();
+	  sstm.str("");
+	  sstm.clear();
+	  sstm << fname <<"-initial-" << nameSuffix <<".vtk";
+	  rName = sstm.str();
+	  std::rename(actualFile.c_str(),rName.c_str());
+	  sstm.str("");
+	  sstm.clear();
+	}
+      }
       solver.solve( &model );
 
       rsEnergy = rs.energy();

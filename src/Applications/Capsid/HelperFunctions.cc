@@ -158,6 +158,7 @@ namespace voom
       writer->SetFileName(tempFile.c_str());
       writer->SetInputData(mesh);
       writer->Update();
+      //writer->SetFileTypeToBinary();
       writer->Write();
       if( std::remove( fileName.c_str() ) != 0 ){
 	perror( "Error deleting file:" );
@@ -191,6 +192,7 @@ namespace voom
       writer->SetFileName(fileName.c_str());
       writer->SetInputData(wireFrame);
       writer->Update();
+      //writer->SetFileTypeToBinary();
       writer->Write();
     }
   }
@@ -326,6 +328,7 @@ namespace voom
       tempFileName = sstm.str();
       writer->SetFileName(tempFileName.c_str());
       writer->SetInputData(pd);
+      //writer->SetFileTypeToBinary();
       writer->Write();
       if( std::remove( fileNames[i].c_str() ) != 0 ){
 	perror( "Error deleting file:" );

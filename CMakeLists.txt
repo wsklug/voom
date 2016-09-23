@@ -13,10 +13,15 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 
 set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose build type, options are: Debug|Release|MinSizeRel|RelWithDebInfo" FORCE)
 
-set(VTK_DIR "C:/Software/VTK-7.0/lib/cmake/vtk-7.0" CACHE PATH "Directory containing VTKConfig.cmake" FORCE)
-set(tvmet_DIR "C:/Software/tvmet" CACHE PATH "Directory containing include/tvmet/tvmet.h" FORCE)
-set(blitz_DIR "C:/Software/blitz" CACHE PATH "Directory containing include/blitz/blitz.h" FORCE)
-set(GSL_ROOT_DIR "C:/Software/mingw-w64/mingw64/x86_64-w64-mingw32" CACHE PATH "Directory containing lib/libgsl.a" FORCE)
+# set(VTK_DIR "C:/Software/gcc/VTK-7.0/lib/cmake/vtk-7.0" CACHE PATH "Directory containing VTKConfig.cmake" FORCE)
+# set(tvmet_DIR "C:/Software/tvmet" CACHE PATH "Directory containing include/tvmet/tvmet.h" FORCE)
+# set(blitz_DIR "C:/Software/gcc/blitz" CACHE PATH "Directory containing include/blitz/blitz.h" FORCE)
+# set(GSL_ROOT_DIR "C:/Software/mingw-w64/mingw64/x86_64-w64-mingw32" CACHE PATH "Directory containing lib/libgsl.a" FORCE)
+
+set(VTK_DIR "/usr/lib/cmake/vtk-7.0" CACHE PATH "Directory containing VTKConfig.cmake" FORCE)
+set(tvmet_DIR "/usr/local" CACHE PATH "Directory containing include/tvmet/tvmet.h" FORCE)
+set(blitz_DIR "/usr/local" CACHE PATH "Directory containing include/blitz/blitz.h" FORCE)
+set(GSL_ROOT_DIR "/usr" CACHE PATH "Directory containing lib/libgsl.a" FORCE)
 
 enable_language(Fortran)
 
