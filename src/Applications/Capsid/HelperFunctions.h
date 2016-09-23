@@ -40,9 +40,11 @@ namespace voom
 // Function declarations
 void writeEdgeStrainVtk(std::vector<std::string> fileNames, \
 			double avgEdgeLen, double percentStrain);
+void writeEdgeStrainVtk(std::vector<std::string> fileNames, \
+			double avgEdgeLen, std::vector<double> percentStrain);
 void insertValenceInVtk(std::vector<std::string> fileNames);
 
- std::vector<double> calcEdgeLenAndStdDev(std::vector<DeformationNode<3>*> a,std::vector< tvmet::Vector<int,3> > b);
+std::vector<double> calcEdgeLenAndStdDev(std::vector<DeformationNode<3>*> a,std::vector< tvmet::Vector<int,3> > b);
  
 }
 #endif

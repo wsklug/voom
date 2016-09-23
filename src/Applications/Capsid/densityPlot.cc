@@ -270,7 +270,7 @@ void densityPlotter( std::vector<std::string> fileNames,
                 << xyz[2] << std::endl;
             }
             
-            //Convert to spherican not be used from wrapped langcan not be used from wrapped langcan not be used from wrapped langcan not be used from wrapped langcan not be used from wrapped langcan not be used from wrapped langcal coordinates (phi,theta)
+            //Convert to spherical coordinates (phi,theta)
             double phi = ( 180/M_PI )*atan2( xyz[1], xyz[0] );
             double theta = ( 180/M_PI )*acos( xyz[2] );
             

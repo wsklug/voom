@@ -196,6 +196,24 @@ namespace voom
       writer->Write();
     }
   }
+  
+  //////////////////////////////////////////////////////////////////////////
+  //                                                                      //
+  //                        OVERLOADED VERSION                            //
+  //                                                                      //
+  //////////////////////////////////////////////////////////////////////////
+  
+   void writeEdgeStrainVtk(std::vector<std::string> fileNames, \
+			  double avgEdgeLen, std::vector<double> percentStrain){
+       
+       assert( fileNames.size() == percentStrain.size() );
+       for (int i=0; i < fileNames.size(); i++){
+            std::vector<std::string> fakeVector;
+            fakeVector.push_back( fileNames[ i ] );
+            
+            writeEdgeStrainVtk(fakeVector, avgEdgeLen, percentStrain[i] );
+       }
+   }
 
   ///////////////////////////////////////////////////////////////////////////
   //                                                                       //
