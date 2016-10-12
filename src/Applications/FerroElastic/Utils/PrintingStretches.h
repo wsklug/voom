@@ -8,6 +8,7 @@
 #if !defined(__PrintingStretches_h__)
 #define __PrintingStretches_h__
 
+#include "voom.h"
 #include <string>
 #include <iostream>
 #include <vector>

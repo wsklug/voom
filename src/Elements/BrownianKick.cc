@@ -20,85 +20,143 @@
 
 namespace voom
 {
-
-  // Constructor
-  BrownianKick::BrownianKick(const NodeContainer &defNodes, 
-			     double Cd, double D, double dt )
+    
+    // Constructor
+    BrownianKick::BrownianKick(const NodeContainer &defNodes, 
+                               double Cd, double D, double dt )
     : _nodes(defNodes), _Cd(Cd), _D(D), _dt(dt) {
-
-    // seed random number generator
-    _rng.seed((unsigned int)time(0));
-
-    // set the number of nodes
-    _nodeCount = _nodes.size();
-    _delta_xB.resize(_nodeCount);
-    
-    //seed the nodal random number generator
-    ranlib::DiscreteUniform<int> dis( _nodeCount);
-    _dis = &dis;
-    _dis->seed((unsigned int)time(0));
-
-  }
-  
-  //Destructor
-  BrownianKick::~BrownianKick(){}
-
-  void BrownianKick::updateSerialKick(){
-    unsigned int randomNode = _dis->random();
-    for(int i=0; i < _nodeCount; i++){
-      if(i == randomNode){
-      Vector3D xi(_rng.random(),
-				     _rng.random(),_rng.random());
-      _delta_xB[i] = xi*sqrt(_D*_dt);
-      //Add the Brownian-kick to current coordinates of the nodes
-      for(int j=0; j < 3; j++){
-	_nodes[i]->addPoint(j,_delta_xB[i][j]);
-      }
-      }
-      else{
-	_delta_xB[i] = 0.0,0.0,0.0;
-      }
-    }
-  }
-
- void BrownianKick::updateParallelKick(){
-
-    for(int i=0; i < _nodeCount; i++){
-      Vector3D xi(_rng.random(),
-				     _rng.random(),_rng.random());
-      _delta_xB[i] = xi*sqrt(_D*_dt);
-
-      //Add the Brownian-kick to current coordinates of the nodes
-      for(int j=0; j < 3; j++){
-	_nodes[i]->addPoint(j,_delta_xB[i][j]);
-      }
-    }
-  }
-
-  // Do mechanics on element; compute energy, forces, and/or stiffness.
-  void BrownianKick::compute(bool f0, bool f1, bool f2) {
-    
-    if( f0 ) {
-      _energy = 0;
-      for(int i=0; i < _nodeCount; i++){
-	//double tempSum = 0;
-	for(int j=0; j < 3; j++){
-	  _energy += -_Cd*_delta_xB[i][j]*_nodes[i]->getPoint(j);
-	}
-	//_energy += -_Cd*tempSum;
-      }
+        
+        // seed random number generator
+        _rng.seed((unsigned int)time(0));
+        
+        // set the number of nodes
+        _nodeCount = _nodes.size();
+        _delta_xB.resize(_nodeCount);
+        
+        //seed the nodal random number generator
+        ranlib::DiscreteUniform<int> dis( _nodeCount);
+        _dis = &dis;
+        _dis->seed((unsigned int)time(0));
+        
     }
     
-    if( f1 ) {
-      Vector3D f;
-      for(int i=0; i < _nodeCount; i++){
-      f = -_Cd * _delta_xB[i];
-      _nodes[i]->updateForce(f);
-      }
+    //Destructor
+    BrownianKick::~BrownianKick(){}
+    
+    void BrownianKick::updateSerialKick(){
+        unsigned int randomNode = _dis->random();
+        for(int i=0; i < _nodeCount; i++){
+            if(i == randomNode){
+                Vector3D xi(_rng.random(),
+                            _rng.random(),_rng.random());
+                _delta_xB[i] = xi*sqrt(_D*_dt);
+                //Add the Brownian-kick to current coordinates of the nodes
+                for(int j=0; j < 3; j++){
+                    _nodes[i]->addPoint(j,_delta_xB[i][j]);
+                }
+            }
+            else{
+                _delta_xB[i] = 0.0,0.0,0.0;
+            }
+        }
     }
-
-    return;
-
-  }
+    
+    void BrownianKick::updateParallelKick(){
+        
+        for(int i=0; i < _nodeCount; i++){
+            Vector3D xi(_rng.random(),
+                        _rng.random(),_rng.random());
+            _delta_xB[i] = xi*sqrt(_D*_dt);
+            
+            //Add the Brownian-kick to current coordinates of the nodes
+            for(int j=0; j < 3; j++){
+                _nodes[i]->addPoint(j,_delta_xB[i][j]);
+            }
+        }
+    }
+    
+    void BrownianKick::updateProjectedKick(){
+        
+        for(int i=0; i < _nodeCount; i++){
+            Vector3D xi(_rng.random(),
+                        _rng.random(),_rng.random());
+        
+            Vector3D currPoint = _nodes[i]->point();
+            
+            Vector3D tempVec( 0, 0, 0);
+            
+            tempVec = currPoint + xi;
+            xi = tempVec;
+            
+            tempVec = ( xi / tvmet::norm2( xi ) )*tvmet::norm2( currPoint );
+            
+            xi = tempVec - currPoint;
+            
+            _delta_xB[i] = xi*sqrt(_D*_dt);
+            
+            //Add the Brownian-kick to current coordinates of the nodes
+            for(int j=0; j < 3; j++){
+                _nodes[i]->addPoint(j,_delta_xB[i][j]);
+            }
+        }
+    }
+    
+    //Rigid rotations as kicks
+    void BrownianKick::updateRotationKick(){
+        
+        //Vector3D tempAxis(_rng.random(), _rng.random(),_rng.random());
+        Vector3D tempAxis( 2.15162, 0.331493, 0.409748);
+        Vector3D axis;
+        axis = tvmet::normalize( tempAxis );
+        //double angle = std::abs( _rng.random() )*M_PI;
+        double angle = M_PI_2;
+        
+        
+        double cos_t = cos( angle );
+        double sin_t = sin( angle );
+        
+        for( int i=0; i < _nodeCount; i++ ){
+            Vector3D v = _nodes[i]->point();
+            Vector3D v_rot, kick;
+            v_rot = v*cos_t + tvmet::cross(axis,v)*sin_t +
+                tvmet::dot(axis,v)*(1-cos_t)*axis;
+            
+            kick = v_rot - v;
+            
+            _delta_xB[i] = kick;//*sqrt( _D*_dt );
+            
+            //Add the Brownian-kick to current coordinates of the nodes
+            for(int j=0; j < 3; j++){
+                _nodes[i]->addPoint(j,_delta_xB[i][j]);
+            }
+        }
+        
+    }
+    
+    // Do mechanics on element; compute energy, forces, and/or stiffness.
+    void BrownianKick::compute(bool f0, bool f1, bool f2) {
+        
+        if( f0 ) {
+            _energy = 0;
+            for(int i=0; i < _nodeCount; i++){
+                //double tempSum = 0;
+                for(int j=0; j < 3; j++){
+                    _energy += -_Cd*_delta_xB[i][j]*_nodes[i]->getPoint(j);
+                }
+                //_energy += -_Cd*tempSum;
+            }
+        }
+        
+        if( f1 ) {
+            Vector3D f;
+            for(int i=0; i < _nodeCount; i++){
+                f = -_Cd * _delta_xB[i];
+                _nodes[i]->updateForce(f);
+            }
+        }
+        
+        return;
+        
+    }
     
 } // namespace voom

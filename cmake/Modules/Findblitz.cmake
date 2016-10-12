@@ -6,9 +6,9 @@
 #  blitz_LIBRARY_DIRS  - Link directories for blitz libraries
 #
 # The following cache entries must be set by the user to locate blitz:
-#  blitz_DIR  - This is the directory that contains sub-folder include 
-#				which should contain another subfolder called blitz which
-#               contains the headers
+#  blitz_ROOT  - The expected directory structure is
+#				 ${blitz_ROOT}/include/blitz/blitz.h
+#				 ${blitz_ROOT}/lib/blitz.lib
 #=============================================================================
 # Copyright 2001-2009 Kitware, Inc.
 #
@@ -28,22 +28,23 @@ SET(blitz_FOUND 0)
 # Construct consitent error messages for use below.
 SET(blitz_DIR_DESCRIPTION "directory that contains sub-folder include which should contain another subfolder called blitz which contains the headers")
 
-SET(blitz_DIR_MESSAGE "blitz not found.  Set the blitz_DIR cmake cache entry to the ${blitz_DIR_DESCRIPTION}")
+SET(blitz_DIR_MESSAGE "blitz not found.  Set the blitz_ROOT cmake cache entry to the ${blitz_DIR_DESCRIPTION}")
 
-# Look for Useblitz.cmake in build trees or under <prefix>/include/blitz.
-FIND_PATH(blitz_DIR
+FIND_PATH(blitz_INCLUDE_DIRS
    NAMES blitz.h
+   PATHS ${blitz_ROOT}
    PATH_SUFFIXES "include/blitz/"
-   HINTS $ENV{LIB}
+   HINTS $ENV{LD_LIBRARY_PATH}
    DOC "The ${blitz_DIR_DESCRIPTION}"
    )
+STRING( REGEX REPLACE "/blitz$" "" blitz_INCLUDE_DIRS ${blitz_INCLUDE_DIRS})
+STRING( REGEX REPLACE "/include$" "" blitz_DIR ${blitz_INCLUDE_DIRS})
+MESSAGE(STATUS "blitz_DIR found : ${blitz_DIR}")
+MESSAGE(STATUS "blitz_INCLUDE_DIRS found : ${blitz_INCLUDE_DIRS}")
 
    IF(blitz_DIR)
-   
-	MESSAGE(STATUS "blitz headers located under ${blitz_DIR}")
 	set(blitz_FOUND 1)
 	set(blitz_INCLUDE_DIRS "${blitz_DIR}/include")
-	set(blitz_LIBRARY_DIRS "${blitz_DIR}/lib")
 	
 	FIND_LIBRARY(blitz_LIBRARIES 
 	NAMES blitz
@@ -51,12 +52,14 @@ FIND_PATH(blitz_DIR
 	
 	IF(blitz_LIBRARIES)
 		MESSAGE(STATUS "blitz libraries found ${blitz_LIBRARIES}")
-	ELSEIF(blitz_LIBRARIES)
-		MESSAGE(FATAL_ERROR "blitz libraries could not found.")
-	ENDIF(blitz_LIBRARIES)
+		set(blitz_LIBRARY_DIRS "${blitz_DIR}/lib")
+	ELSEIF(NOT blitz_LIBRARIES)
+		MESSAGE(FATAL_ERROR "blitz libraries not found.")
+	ENDIF()
 	
    ENDIF(blitz_DIR)
    
+mark_as_advanced (blitz_DIR)
    
 #-----------------------------------------------------------------------------
 IF(blitz_FOUND)

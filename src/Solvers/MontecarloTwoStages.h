@@ -23,6 +23,7 @@
 #if !defined(__MontecarloTwoStages_h__)
 #define __MontecarloTwoStages_h__
 
+#include "voom.h"
 #include <iostream>
 #include <iomanip>
 #include <cstring>

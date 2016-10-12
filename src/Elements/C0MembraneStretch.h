@@ -19,6 +19,7 @@
 #if !defined(__C0MembraneStretch_h__)
 #define __C0MembraneStretch_h__
 
+#include "voom.h"
 #include <cstdio>
 #include <ctime>
 

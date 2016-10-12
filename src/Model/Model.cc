@@ -16,10 +16,10 @@
 // New interface with data storage pushed to solver.
 //
 //----------------------------------------------------------------------
+#include "Model.h"
 #include<time.h>
 #include <fstream>
 #include<blitz/array-impl.h>
-#include "Model.h"
 #include "Solver.h"
 
 // LAPACK FORTRAN subroutine for computing eigenvalues and eigenvectors

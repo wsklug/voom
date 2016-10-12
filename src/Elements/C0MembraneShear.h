@@ -19,6 +19,7 @@
 #if !defined(__C0MembraneShear_h__)
 #define __C0MembraneShear_h__
 
+#include "voom.h"
 #include <cstdio>
 #include <ctime>
 

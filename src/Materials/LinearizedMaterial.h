@@ -24,9 +24,9 @@
 #if !defined(__LinearizedMaterial_h__)
 #define __LinearizedMaterial_h__
 
-#include <iostream> 
- 
+
 #include "voom.h"
+#include <iostream> 
 
 namespace voom
 {

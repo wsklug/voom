@@ -1,12 +1,11 @@
-project(Solvers)
+project(Solvers C CXX Fortran)
 
-enable_language(Fortran)
+#enable_language(Fortran)
 
 set(SRCS DirectLinearSolver.cc 	
 	ConjugateGradientWSK.cc 
 	ViscousRelaxation.cc 	
-	Lbfgsb.cc		
-	lbfgsb-routines.f	
+	Lbfgsb.cc
 	CGfast.cc 		
 	SimulatedAnnealing.cc	
 	MontecarloTwoStages.cc	
@@ -24,6 +23,18 @@ target_include_directories(Solvers PUBLIC ${PROJECT_SOURCE_DIR} )
 target_include_directories(Solvers PUBLIC ${PROJECT_SOURCE_DIR}/.. )
 target_include_directories(Solvers PUBLIC ${PROJECT_BINARY_DIR}/..)
 
+include(CMakeAddFortranSubdirectory)
+		
+cmake_add_fortran_subdirectory( lbfgsb 		
+		PROJECT lbfgsb
+		ARCHIVE_DIR ../
+		RUNTIME_DIR ../
+		LIBRARIES lbfgsb
+		LINK_LIBRARIES
+		NO_EXTERNAL_INSTALL
+		)
+
+target_link_libraries(Solvers lbfgsb)
 
 foreach(CURRD IN LISTS INCDIRS)
 	target_include_directories(Solvers PUBLIC ${PROJECT_SOURCE_DIR}/../${CURRD} )

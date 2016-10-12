@@ -34,9 +34,9 @@
 #if !defined(__Model_h__)
 #define __Model_h__
 
+#include "voom.h"
 #include<blitz/array.h>
 #include<vector>
-#include "voom.h"
 #include "NodeBase.h"
 #include "Body.h"
 #include "Element.h"

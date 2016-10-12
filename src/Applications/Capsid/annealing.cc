@@ -132,7 +132,7 @@ int main(int argc, char* argv[]){
     normals->AutoOrientNormalsOn();
     mesh = normals->GetOutput();
     normals->Update();
-    std::cout << "mesh->GetNumberOfPoints() = " << mesh->GetNumberOfPoints()
+    std::cout << "Mesh->GetNumberOfPoints() = " << mesh->GetNumberOfPoints()
     << std::endl;
     
     // create vector of nodes
@@ -142,11 +142,33 @@ int main(int argc, char* argv[]){
     std::vector< DeformationNode<3>* > defNodes;
     double Ravg = 0.0;
     
+    vtkSmartPointer<vtkDataArray> displacements 
+    = mesh->GetPointData()->GetVectors("displacements");
+    
+    bool displacementsExist = false;
+    
+    if ( displacements.GetPointer() ){
+        displacementsExist = true;
+    }
+    
     // read in points
     for(int a=0; a<mesh->GetNumberOfPoints(); a++) {
         int id=a;
         DeformationNode<3>::Point x;
         mesh->GetPoint(a, &(x[0]));
+        
+        
+        if( displacementsExist ){
+            
+            tvmet::Vector< double, 3 > disp( 0, 0, 0 );
+            tvmet::Vector< double, 3 > tempSum( 0, 0, 0 );
+            displacements->GetTuple( a, &( disp[0] ) );
+            
+            tempSum = x + disp;
+            x = tempSum;
+            
+        }
+        
         Ravg += tvmet::norm2(x);
         NodeBase::DofIndexMap idx(3);
         for(int j=0; j<3; j++) idx[j]=dof++;
@@ -247,7 +269,8 @@ int main(int argc, char* argv[]){
         << "\t" << "asphericity" << "\t" << "FVK" << "\t" 
         << "BendEnergy" << "\t" << "StretchEnergy" << "\t" 
         << "SpringEnergy" <<"\t" << "BrownEnergy" << "\t" 
-        << "ViscousEnergy" << "\t" << "Total Functional" 
+        << "ViscousEnergy" << "\t" << "Total Functional" << "\t" 
+        << "MeanSquareDisp"
         <<endl;
         
         //Parameters for the l-BFGS solver
@@ -434,7 +457,7 @@ int main(int argc, char* argv[]){
             viscosity = Cd/dt;
             
             sigma  = (100/(Rshift*percentStrain))*log(2.0);
-            PotentialSearchRF=2*Rshift; 
+            PotentialSearchRF=1.1*Rshift; 
             springConstant = 2*sigma*sigma*epsilon;
             
             if(pressureConstraintOn){
@@ -530,7 +553,10 @@ int main(int argc, char* argv[]){
                 << std::endl
                 << std::endl;
                 
-                bk.updateParallelKick();
+                //bk.updateParallelKick();
+                bk.updateProjectedKick();
+                //bk.updateRotationKick();
+                PrBody->recomputeNeighbors(PotentialSearchRF);
                 
                 bool printBeforeSolve = true;
                 if( printBeforeSolve ){
@@ -587,7 +613,7 @@ int main(int argc, char* argv[]){
                         
                         //If some elements have changed then we need to reset the
                         //reference configuration with average side lengths
-                        bd->SetRefConfiguration(EdgeLength);
+                        //bd->SetRefConfiguration(EdgeLength);
                         
                         //We also need to recompute the neighbors for PotentialBody
                         PrBody->recomputeNeighbors(PotentialSearchRF);
@@ -696,6 +722,15 @@ int main(int argc, char* argv[]){
                 double asphericity = dRavg2/(Ravg*Ravg);
                 //double gammaCalc = Y*Ravg*Ravg/KC;
                 
+                double msd = 0; //Mean Squared Displacement
+                for ( int i = 0; i < defNodes.size(); i++ ){
+                    Vector3D tempDisp;
+                    tempDisp = (defNodes[i]->point() - defNodes[i]->position());
+                    msd += tvmet::dot( tempDisp, tempDisp );                    
+                }
+                
+                msd /= ( Rshift*Rshift*defNodes.size() ); 
+                
                 int paraviewStepPrint;
                 paraviewStepPrint = (viter % printStep == 0)? paraviewStep: -1;
                 
@@ -704,7 +739,7 @@ int main(int argc, char* argv[]){
                 << Ravg <<"\t\t"<< asphericity <<"\t\t" << gamma <<"\t\t"
                 << bdEnergy <<"\t\t"<< PrEnergy <<"\t\t"
                 << rsEnergy <<"\t\t" << bkEnergy <<"\t\t"
-                << vrEnergy <<"\t\t" << energy
+                << vrEnergy <<"\t\t" << energy << "\t\t" << msd
                 << endl;
                 
                 //********** Find bins for each particle ************//

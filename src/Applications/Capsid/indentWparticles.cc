@@ -82,7 +82,7 @@ int main(int argc, char* argv[])
   int option;
 
   optind=2; // start at argv[2] looking for command-line options
-  while( (option=getopt(argc,argv,"e:f:g:i:m:p:s:v:u:")) != -1 ) {
+  while( (option=getopt( argc, argv, "e:f:g:i:m:p:s:v:u:" )) != -1 ) {
     std::cout << "option = " << char(option) << std::endl;
     switch (option) {
     case 'g':

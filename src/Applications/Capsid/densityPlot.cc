@@ -1,3 +1,7 @@
+#if defined(_MSC_VER) || defined(__INTEL_COMPILER)
+#define _USE_MATH_DEFINES
+#include <cmath>
+#endif
 #include <string>
 #include <math.h>
 #include <iostream>
@@ -32,8 +36,8 @@ void densityPlotter( std::vector<std::string> fileNames,
 
 int main(int argc, char* argv[]){
     
-    if( argc < 6 ) {
-        cout << "Usage: densityPlot <base-name> <num of files>"
+    if( argc < 7 ) {
+        cout << "Usage: densityPlot <base-name> <num of files> <interval>" 
         <<" <outputFile> <lat_res> <long_res>" << endl;
         return(0);
     }
@@ -42,18 +46,19 @@ int main(int argc, char* argv[]){
     t1=clock();
     
     string baseFileName = argv[1];
-    int numFiles = std::atoi(argv[2]);
-    string outputFile = argv[3];
-    int lat_res = std::atoi(argv[4]);
-    int long_res = std::atoi(argv[5]);
+    int lastFileNum = std::atoi(argv[2]);
+    int interval = std::atoi(argv[3]);
+    string outputFile = argv[4];
+    int lat_res = std::atoi(argv[5]);
+    int long_res = std::atoi(argv[6]);
     
     std::stringstream sstm;
     
     std::vector<std::string> allVTKFiles;
-    allVTKFiles.reserve(numFiles);
+    allVTKFiles.reserve(lastFileNum/interval);
     
-    for(int fileNum=0 ; fileNum < numFiles; fileNum++){    
-        sstm << baseFileName <<"-"<< (fileNum*10) <<".vtk";
+    for(int fileNum=0 ; fileNum < lastFileNum; fileNum++){    
+        sstm << baseFileName <<"-"<< (fileNum*interval) <<".vtk";
         std::string tempString = sstm.str();
         allVTKFiles.push_back(tempString);
         sstm.str("");
@@ -301,7 +306,6 @@ void densityPlotter( std::vector<std::string> fileNames,
                 break;
                 
                     }
-                    
             }
             
         }

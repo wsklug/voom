@@ -53,7 +53,13 @@ namespace voom
 
     //! Set the Brownian random displacements
     void updateParallelKick();
-
+    
+    //!Set the Brownian random displacements projected to surface of a sphere
+    void updateProjectedKick();
+    
+    //!Set rigid rotation kicks
+    void updateRotationKick();
+    
     //! Set the Brownian random displacements
     void updateSerialKick();
 

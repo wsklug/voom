@@ -27,13 +27,16 @@ SET(tvmet_FOUND 0)
 # Construct consitent error messages for use below.
 SET(tvmet_DIR_DESCRIPTION "directory that contains sub-folder include which should contain another subfolder called tvmet which contains the headers")
 
-SET(tvmet_DIR_MESSAGE "tvmet not found.  Set the tvmet_DIR cmake cache entry to the ${tvmet_DIR_DESCRIPTION}")
+SET(tvmet_DIR_MESSAGE "tvmet not found.  Set the tvmet_ROOT cmake cache entry to the ${tvmet_DIR_DESCRIPTION}")
+
+mark_as_advanced (tvmet_DIR)
 
 # Look for Usetvmet.cmake in build trees or under <prefix>/include/tvmet.
 FIND_PATH(tvmet_DIR
    NAMES tvmet.h
+   PATHS ${tvmet_ROOT}
    PATH_SUFFIXES "include/tvmet/"
-   HINTS $ENV{LIB}
+   HINTS $ENV{LIB} $ENV{LD_LIBRARY_PATH}
    DOC "The ${tvmet_DIR_DESCRIPTION}"
    )
 

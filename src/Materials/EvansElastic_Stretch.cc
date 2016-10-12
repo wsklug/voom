@@ -28,8 +28,8 @@
   \brief Material class for modeling conformational change - stretch and stretch direction are dof
 
 */
-#include <iostream>
 #include "EvansElastic_Stretch.h"
+#include <iostream>
 
 namespace voom 
 {

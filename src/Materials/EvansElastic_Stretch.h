@@ -20,11 +20,9 @@
 #if !defined(__EvansElastic_Stretch_h__)
 #define __EvansElastic_Stretch_h__
 
-#include<blitz/array.h>
- 
- 
-#include<vector>
 #include "voom.h"
+#include<blitz/array.h>
+#include<vector>
 #include "../Node/Node.h"
 #include "SCElastic.h"
 #include "VoomMath.h"

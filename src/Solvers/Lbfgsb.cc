@@ -23,6 +23,12 @@
 
 #include "Lbfgsb.h"
 
+#if defined(_WIN32)
+#if defined(_MSC_VER) || defined(__INTEL_COMPILER)
+#define setulb_ SETULB
+#endif
+#endif
+
 extern "C" void setulb_(int * n, int *m, 
 			double * x, double * l, double * u, 
 			int * nbd, 

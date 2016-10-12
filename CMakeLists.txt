@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0.2)
 
-project(voom)
+project(voom C CXX Fortran)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 
@@ -11,24 +11,29 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 #VTK_DIR e.g. VTK_DIR = "/usr/local/VTK-7.0"
 #GSL_ROOT_DIR e.g. GSL_ROOT_DIR =  "/usr/local"
 
-set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose build type, options are: Debug|Release|MinSizeRel|RelWithDebInfo")
+# set(VTK_DIR "/usr/lib/cmake/vtk-7.0" CACHE PATH "Directory containing VTKConfig.cmake" FORCE)
+# set(tvmet_DIR "/usr/local" CACHE PATH "Directory containing include/tvmet/tvmet.h" FORCE)
+# set(blitz_DIR "/usr/local" CACHE PATH "Directory containing include/blitz/blitz.h" FORCE)
+# set(GSL_ROOT_DIR "/usr" CACHE PATH "Directory containing lib/libgsl.a" FORCE)
 
-# set(VTK_DIR "C:/Software/gcc/VTK-7.0/lib/cmake/vtk-7.0" CACHE PATH "Directory containing VTKConfig.cmake" FORCE)
-# set(tvmet_DIR "C:/Software/tvmet" CACHE PATH "Directory containing include/tvmet/tvmet.h" FORCE)
-# set(blitz_DIR "C:/Software/gcc/blitz" CACHE PATH "Directory containing include/blitz/blitz.h" FORCE)
-# set(GSL_ROOT_DIR "C:/Software/mingw-w64/mingw64/x86_64-w64-mingw32" CACHE PATH "Directory containing lib/libgsl.a" FORCE)
-
-set(VTK_DIR "/usr/lib/cmake/vtk-7.0" CACHE PATH "Directory containing VTKConfig.cmake" FORCE)
-set(tvmet_DIR "/usr/local" CACHE PATH "Directory containing include/tvmet/tvmet.h" FORCE)
-set(blitz_DIR "/usr/local" CACHE PATH "Directory containing include/blitz/blitz.h" FORCE)
-set(GSL_ROOT_DIR "/usr" CACHE PATH "Directory containing lib/libgsl.a" FORCE)
-
-enable_language(Fortran)
+#enable_language(Fortran)
 
 find_package(tvmet REQUIRED)
 find_package(blitz REQUIRED)
 find_package(VTK REQUIRED)
 find_package(GSL REQUIRED)
+
+set( VOOM_USE_OPENMP FALSE CACHE BOOL "Flag to turn on/off use of OpenMP" )
+mark_as_advanced (VOOM_USE_OPENMP)
+
+#If you want to use OpenMP then add "-D VOOM_USE_OPENMP=ON" to the cmake command argument list
+if (VOOM_USE_OPENMP)
+	find_package(OpenMP)
+	if (OPENMP_FOUND)
+		set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+		set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+	endif()
+endif()
 
 include(${VTK_USE_FILE})
 

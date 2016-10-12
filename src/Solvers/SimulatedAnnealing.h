@@ -22,6 +22,7 @@
 #if !defined(__SimulatedAnnealing_h__)
 #define __SimulatedAnnealing_h__
 
+#include "voom.h"
 #include<iostream>
 #include<iomanip>
 #include<cstring>
@@ -29,6 +30,12 @@
 #include<blitz/array.h>
 #include<vector>
 #include "Solver.h"
+
+#if defined (_WIN32)
+#if defined (_MSC_VER) || defined(__INTEL_COMPILER)
+#define finite _finite
+#endif
+#endif
 
 namespace voom
 {

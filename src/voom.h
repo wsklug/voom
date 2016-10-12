@@ -18,6 +18,13 @@
 
 /* using namespace std; */
 
+#ifdef _WIN32
+#if defined(_MSC_VER) || defined(__INTEL_COMPILER)
+#define _USE_MATH_DEFINES
+#include <cmath>
+#endif
+#endif
+
 #include <iostream>
 #include <iomanip>
 

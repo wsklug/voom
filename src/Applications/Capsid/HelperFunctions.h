@@ -30,6 +30,10 @@
 
 #include "Node.h"
 
+#if defined(_OPENMP)
+#include <omp.h>
+#endif
+
 #if VTK_MAJOR_VERSION < 6
 #define SetInputData SetInput
 #endif
