@@ -130,9 +130,21 @@ namespace voom
                 _nodes[i]->addPoint(j,_delta_xB[i][j]);
             }
         }
-        
     }
     
+	void BrownianKick::update2DKick() {
+		for (int i = 0; i < _nodeCount; i++) {
+			Vector3D xi(_rng.random(),
+				_rng.random(), 0.0);
+			_delta_xB[i] = xi*sqrt(_D*_dt);
+
+			//Add the Brownian-kick to current coordinates of the nodes
+			for (int j = 0; j < 3; j++) {
+				_nodes[i]->addPoint(j, _delta_xB[i][j]);
+			}
+		}
+	}
+
     // Do mechanics on element; compute energy, forces, and/or stiffness.
     void BrownianKick::compute(bool f0, bool f1, bool f2) {
         

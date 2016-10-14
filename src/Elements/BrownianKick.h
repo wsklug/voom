@@ -59,6 +59,9 @@ namespace voom
     
     //!Set rigid rotation kicks
     void updateRotationKick();
+
+	//!Set 2D kicks
+	void update2DKick();
     
     //! Set the Brownian random displacements
     void updateSerialKick();
