@@ -38,8 +38,8 @@ typedef blitz::Array<int, 1> IntArray;
 int main(int argc, char* argv[]) {
 	clock_t t1, t2;
 	t1 = clock();
-	if (argc != 2) {
-		cout << "usage: " << argv[0] << " <filename>\n";
+	if (argc != 4) {
+		cout << "usage: " << argv[0] << " <filename> <dataOutputFile> <vtkFileStartNum>\n";
 		return -1;
 	}
 
@@ -49,13 +49,14 @@ int main(int argc, char* argv[]) {
 #endif
 
 	string inputFileName = argv[1];
+	string dataOutputFile = argv[2];
+	int vtkFileNum = std::atoi(argv[3]);
 
 	//Numerical viscosity input parameter
 	int viterMax;
 	bool rescale = true;
 
 	double dt = 9.76e-4;
-	int nameSuffix = 0;
 
 	vtkSmartPointer<vtkPolyDataReader> reader =
 		vtkSmartPointer<vtkPolyDataReader>::New();
@@ -182,11 +183,10 @@ int main(int argc, char* argv[]) {
 	string rName;
 	string actualFile;
 
-	ofstream myfile;
-	std::string dataOutputFile = "BrownianRelax.dat";
+	ofstream dataFile;
 
-	myfile.open(dataOutputFile.c_str());
-	myfile << "#Step" << " ParaviewStep" << "\t" << "DiffusionCoeff"
+	dataFile.open(dataOutputFile.c_str());
+	dataFile << "#Step" << " ParaviewStep" << "\t" << "DiffusionCoeff"
 		<< "\t" << "Epsilon" << "\t" << "Delta" << "\t"
 		<< "SpringEnergy" << "\t" << "BrownEnergy" << "\t"
 		<< "ViscousEnergy" << "\t" << "Total Functional" << "\t"
@@ -308,14 +308,14 @@ int main(int argc, char* argv[]) {
 			//We will print only after every currPrintStep iterations
 			if (viter % printStep == 0) {
 				paraviewStep++;
-				sstm << fname << "-relaxed-" << nameSuffix;
+				sstm << fname << "-relaxed-" << vtkFileNum;
 				rName = sstm.str();
 				model.print(rName);
 				sstm << "-bd1.vtk";
 				actualFile = sstm.str();
 				sstm.str("");
 				sstm.clear();
-				sstm << fname << "-relaxed-" << nameSuffix << ".vtk";
+				sstm << fname << "-relaxed-" << vtkFileNum << ".vtk";
 				rName = sstm.str();
 				std::rename(actualFile.c_str(), rName.c_str());
 				sstm.str("");
@@ -335,7 +335,7 @@ int main(int argc, char* argv[]) {
 			int paraviewStepPrint;
 			paraviewStepPrint = (viter % printStep == 0) ? paraviewStep : -1;
 
-			myfile << nameSuffix++ << "\t\t" << paraviewStepPrint << "\t\t"
+			dataFile << vtkFileNum++ << "\t\t" << paraviewStepPrint << "\t\t"
 				<< diffusionCoeff << "\t\t"
 				<< epsilon << "\t\t"
 				<< delta << "\t\t"
@@ -352,7 +352,7 @@ int main(int argc, char* argv[]) {
 		}
 		delete MorseBody;
 	}
-	myfile.close();
+	dataFile.close();
 	t2 = clock();
 	float diff((float)t2 - (float)t1);
 	std::cout << "Solution loop execution time: " << diff / CLOCKS_PER_SEC

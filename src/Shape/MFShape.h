@@ -122,9 +122,9 @@ namespace voom
     NodeNContainer _nodes;
 
     // smoothing radius factor
-/* Test for GCC < 4.6.0 */
+/* Test for GCC < 6.0.0 */
 #if (__GNUC__)
-#if GCC_VERSION < 40600
+#if GCC_VERSION < 60000
     const static double _smooth=0.6;
 #else
 	static constexpr double _smooth=0.6;
