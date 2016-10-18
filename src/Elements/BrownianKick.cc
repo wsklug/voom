@@ -50,10 +50,6 @@ namespace voom
                 Vector3D xi(_rng.random(),
                             _rng.random(),_rng.random());
                 _delta_xB[i] = xi*sqrt(_D*_dt);
-                //Add the Brownian-kick to current coordinates of the nodes
-                for(int j=0; j < 3; j++){
-                    _nodes[i]->addPoint(j,_delta_xB[i][j]);
-                }
             }
             else{
                 _delta_xB[i] = 0.0,0.0,0.0;
@@ -67,11 +63,6 @@ namespace voom
             Vector3D xi(_rng.random(),
                         _rng.random(),_rng.random());
             _delta_xB[i] = xi*sqrt(_D*_dt);
-            
-            //Add the Brownian-kick to current coordinates of the nodes
-            for(int j=0; j < 3; j++){
-                _nodes[i]->addPoint(j,_delta_xB[i][j]);
-            }
         }
     }
     
@@ -93,25 +84,15 @@ namespace voom
             xi = tempVec - currPoint;
             
             _delta_xB[i] = xi*sqrt(_D*_dt);
-            
-            //Add the Brownian-kick to current coordinates of the nodes
-            for(int j=0; j < 3; j++){
-                _nodes[i]->addPoint(j,_delta_xB[i][j]);
-            }
         }
     }
     
     //Rigid rotations as kicks
     void BrownianKick::updateRotationKick(){
-        
-        //Vector3D tempAxis(_rng.random(), _rng.random(),_rng.random());
-        Vector3D tempAxis( 2.15162, 0.331493, 0.409748);
+        Vector3D tempAxis(_rng.random(), _rng.random(),_rng.random());
         Vector3D axis;
         axis = tvmet::normalize( tempAxis );
-        //double angle = std::abs( _rng.random() )*M_PI;
-        double angle = M_PI_2;
-        
-        
+        double angle = M_PI_2;        
         double cos_t = cos( angle );
         double sin_t = sin( angle );
         
@@ -119,16 +100,9 @@ namespace voom
             Vector3D v = _nodes[i]->point();
             Vector3D v_rot, kick;
             v_rot = v*cos_t + tvmet::cross(axis,v)*sin_t +
-                tvmet::dot(axis,v)*(1-cos_t)*axis;
-            
-            kick = v_rot - v;
-            
+                tvmet::dot(axis,v)*(1-cos_t)*axis;            
+            kick = v_rot - v;            
             _delta_xB[i] = kick;//*sqrt( _D*_dt );
-            
-            //Add the Brownian-kick to current coordinates of the nodes
-            for(int j=0; j < 3; j++){
-                _nodes[i]->addPoint(j,_delta_xB[i][j]);
-            }
         }
     }
     
@@ -137,11 +111,6 @@ namespace voom
 			Vector3D xi(_rng.random(),
 				_rng.random(), 0.0);
 			_delta_xB[i] = xi*sqrt(_D*_dt);
-
-			//Add the Brownian-kick to current coordinates of the nodes
-			for (int j = 0; j < 3; j++) {
-				_nodes[i]->addPoint(j, _delta_xB[i][j]);
-			}
 		}
 	}
 
@@ -151,18 +120,17 @@ namespace voom
         if( f0 ) {
             _energy = 0;
             for(int i=0; i < _nodeCount; i++){
-                //double tempSum = 0;
                 for(int j=0; j < 3; j++){
-                    _energy += -_Cd*_delta_xB[i][j]*_nodes[i]->getPoint(j);
+                    _energy += -_D*_delta_xB[i][j]*_nodes[i]->getPoint(j);
                 }
-                //_energy += -_Cd*tempSum;
             }
         }
         
         if( f1 ) {
             Vector3D f;
             for(int i=0; i < _nodeCount; i++){
-                f = -_Cd * _delta_xB[i];
+                //f = -_Cd * _delta_xB[i];
+				f = -_D * _delta_xB[i];
                 _nodes[i]->updateForce(f);
             }
         }

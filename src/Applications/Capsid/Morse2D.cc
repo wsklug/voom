@@ -16,7 +16,7 @@
 #include <vtkPolyDataReader.h>
 #include <vtkSmartPointer.h>
 
-#include "SpringPotential.h"
+#include "Morse.h"
 #include "PotentialBody.h"
 #include "BrownianKick.h"
 #include "ViscousRegularizer.h"
@@ -159,18 +159,20 @@ int main(int argc, char* argv[]) {
 	std::ifstream coolFile("cooling.dat");
 	assert(coolFile);
 	std::vector<vector<double> > coolVec;
-	double curr_D, currViterMax, currPrintStep, currSpringConstant;
+	double curr_D, currViterMax, currPrintStep,
+		currEpsilon, currDelta;
 
 	std::string headerline;
 	std::getline(coolFile, headerline);
 
 	while (coolFile >> curr_D >> currViterMax >> currPrintStep
-		>> currSpringConstant) {
+		>> currEpsilon >> currDelta) {
 		std::vector<double> currLine;
 		currLine.push_back(curr_D);
 		currLine.push_back(currViterMax);
 		currLine.push_back(currPrintStep);
-		currLine.push_back(currSpringConstant);
+		currLine.push_back(currEpsilon);
+		currLine.push_back(currDelta);
 		coolVec.push_back(currLine);
 	}
 	coolFile.close();
@@ -185,7 +187,8 @@ int main(int argc, char* argv[]) {
 
 	myfile.open(dataOutputFile.c_str());
 	myfile << "#Step" << " ParaviewStep" << "\t" << "DiffusionCoeff"
-		<< "\t" << "SpringEnergy" << "\t" << "BrownEnergy" << "\t"
+		<< "\t" << "Epsilon" << "\t" << "Delta" << "\t"
+		<< "SpringEnergy" << "\t" << "BrownEnergy" << "\t"
 		<< "ViscousEnergy" << "\t" << "Total Functional" << "\t"
 		<< "MeanSquareDisp"
 		<< endl;
@@ -199,13 +202,14 @@ int main(int argc, char* argv[]) {
 	Lbfgsb solver(3 * nodes.size(), m, factr, pgtol, iprint, maxIter);
 
 	double PotentialSearchRF = 1.2*R_e;
-	double springConstant = 1.0;
+	double epsilon = 1.0;
+	double delta = 0.1;
 	double diffusionCoeff = 0;;
 	double Cd = 0;
 	double viscosity = 0;
 	double bkEnergy;
 	double vrEnergy;
-	double springEnergy;
+	double morseEnergy;
 	double energy;
 	int printStep, stepCount = 0;
 	int paraviewStep = -1;
@@ -232,7 +236,8 @@ int main(int argc, char* argv[]) {
 		Cd = 1.0 / diffusionCoeff;
 		viterMax = coolVec[q][1];
 		printStep = (int)coolVec[q][2];
-		springConstant = coolVec[q][3];
+		epsilon = coolVec[q][3];
+		delta = coolVec[q][4];
 		viscosity = Cd / dt;
 		PotentialSearchRF = 1.2*R_e;
 
@@ -240,24 +245,24 @@ int main(int argc, char* argv[]) {
 			<< " Cd = " << Cd << std::endl
 			<< "  D = " << diffusionCoeff << std::endl
 			<< " dt = " << dt << std::endl;
-		SpringPotential SpringMat(springConstant, R_e);
-		PotentialBody * SpringBody = new
-			PotentialBody(&SpringMat, defNodes, PotentialSearchRF);
-		ViscousRegularizer vr(SpringBody->nodes(), viscosity);
-		SpringBody->pushBack(&vr);
+		Morse Mat(epsilon, std::log(2)/(R_e*delta), R_e);
+		PotentialBody * MorseBody = new
+			PotentialBody(&Mat, defNodes, PotentialSearchRF);
+		ViscousRegularizer vr(MorseBody->nodes(), viscosity);
+		MorseBody->pushBack(&vr);
 		BrownianKick bk(defNodes, Cd, diffusionCoeff, dt);
-		SpringBody->pushBack(&bk);
+		MorseBody->pushBack(&bk);
 
 		//Create Model
 		Model::BodyContainer bdc;
-		bdc.push_back(SpringBody);
+		bdc.push_back(MorseBody);
 		Model model(bdc, nodes);
 
 		bool checkConsistency = false;
 		if (checkConsistency) {
 			std::cout << "Checking consistency......" << std::endl;
 			bk.update2DKick();
-			SpringBody->checkConsistency(true);
+			MorseBody->checkConsistency(true);
 		}
 
 		//***************************  INNER SOLUTION LOOP ***************************//  
@@ -272,36 +277,18 @@ int main(int argc, char* argv[]) {
 
 			// Impose the Brownian perturbation
 			bk.update2DKick();
-			SpringBody->recomputeNeighbors(PotentialSearchRF);
+			//MorseBody->recomputeNeighbors(PotentialSearchRF);
 
-			bool printBeforeSolve = true;
-			if (printBeforeSolve) {
-				//We will print only after every currPrintStep iterations
-				if (viter % printStep == 0) {
-					sstm << fname << "-initial-" << nameSuffix;
-					rName = sstm.str();
-					model.print(rName);
-					sstm << "-bd1.vtk";
-					actualFile = sstm.str();
-					sstm.str("");
-					sstm.clear();
-					sstm << fname << "-initial-" << nameSuffix << ".vtk";
-					rName = sstm.str();
-					std::rename(actualFile.c_str(), rName.c_str());
-					sstm.str("");
-					sstm.clear();
-				}
-			}
 			solver.solve(&model);
 			bkEnergy = bk.energy();
 			vrEnergy = vr.energy();
-			springEnergy = SpringBody->energy() - bkEnergy - vrEnergy;
+			morseEnergy = MorseBody->energy() - bkEnergy - vrEnergy;
 			energy = solver.function();
 
 			std::cout << "ENERGY:" << std::endl
 				<< "viscous energy  = " << vrEnergy << std::endl
 				<< "Brownian energy = " << bkEnergy << std::endl
-				<< "Spring energy   = " << springEnergy << std::endl
+				<< "Spring energy   = " << morseEnergy << std::endl
 				<< "  total energy  = " << energy << std::endl
 				<< std::endl;
 			std::cout << "VISCOSITY: " << std::endl
@@ -350,15 +337,20 @@ int main(int argc, char* argv[]) {
 
 			myfile << nameSuffix++ << "\t\t" << paraviewStepPrint << "\t\t"
 				<< diffusionCoeff << "\t\t"
-				<< springEnergy << "\t\t"
+				<< epsilon << "\t\t"
+				<< delta << "\t\t"
+				<< morseEnergy << "\t\t"
 				<< bkEnergy << "\t\t"
 				<< vrEnergy << "\t\t" << energy << "\t\t" << msd
 				<< endl;
 
+			//Re-compute neighbors
+			MorseBody->recomputeNeighbors(PotentialSearchRF);
+
 			// step forward in "time", relaxing viscous energy & forces 
 			vr.step();
 		}
-		delete SpringBody;
+		delete MorseBody;
 	}
 	myfile.close();
 	t2 = clock();

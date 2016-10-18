@@ -17,6 +17,9 @@
 #include <vtkPolyDataWriter.h>
 #include <vtkDoubleArray.h>
 #include <vtkPointData.h>
+#include <vtkWarpVector.h>
+#include <vtkSphereSource.h>
+#include <vtkGlyph3D.h>
 
 #if defined(_OPENMP)
 #include <omp.h>
@@ -24,6 +27,10 @@
 
 #ifdef WITH_MPI
 #include <mpi.h>
+#endif
+
+#if VTK_MAJOR_VERSION < 6
+#define SetInputData SetInput
 #endif
 
 namespace voom
@@ -144,6 +151,7 @@ namespace voom
 		}
 		pd->SetPoints(points);
 		pd->GetPointData()->AddArray(displacements);
+		
 		writer->SetInputData(pd);
 		writer->SetFileName(fileName.c_str());
 		writer->Write();
