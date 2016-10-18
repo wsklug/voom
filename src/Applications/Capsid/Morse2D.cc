@@ -38,8 +38,9 @@ typedef blitz::Array<int, 1> IntArray;
 int main(int argc, char* argv[]) {
 	clock_t t1, t2;
 	t1 = clock();
-	if (argc != 4) {
-		cout << "usage: " << argv[0] << " <filename> <dataOutputFile> <vtkFileStartNum>\n";
+	if (argc != 5) {
+		cout << "usage: " << argv[0] << " <filename> "
+			<< "<dataInputFileName> <dataOutputFile> <vtkFileStartNum>\n";
 		return -1;
 	}
 
@@ -49,8 +50,9 @@ int main(int argc, char* argv[]) {
 #endif
 
 	string inputFileName = argv[1];
-	string dataOutputFile = argv[2];
-	int vtkFileNum = std::atoi(argv[3]);
+	string dataInputFile = argv[2];
+	string dataOutputFile = argv[3];
+	int vtkFileNum = std::atoi(argv[4]);
 
 	//Numerical viscosity input parameter
 	int viterMax;
@@ -157,7 +159,7 @@ int main(int argc, char* argv[]) {
 
 	//******************* READ COOLING SCHEDULE from File *******
 
-	std::ifstream coolFile("cooling.dat");
+	std::ifstream coolFile(dataInputFile.c_str());
 	assert(coolFile);
 	std::vector<vector<double> > coolVec;
 	double curr_D, currViterMax, currPrintStep,

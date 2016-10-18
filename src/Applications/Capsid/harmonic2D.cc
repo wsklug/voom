@@ -49,8 +49,9 @@ int main(int argc, char* argv[]) {
 #endif
 
 	string inputFileName = argv[1];
-	string dataOutputFile = argv[2];
-	int vtkFileNum = std::atoi(argv[3]);
+	string dataInputFile = argv[2];
+	string dataOutputFile = argv[3];
+	int vtkFileNum = std::atoi(argv[4]);
 
 	//Numerical viscosity input parameter
 	int viterMax;
@@ -157,7 +158,7 @@ int main(int argc, char* argv[]) {
 
 	//******************* READ COOLING SCHEDULE from File *******
 
-	std::ifstream coolFile("cooling.dat");
+	std::ifstream coolFile(dataInputFile.c_str());
 	assert(coolFile);
 	std::vector<vector<double> > coolVec;
 	double curr_D, currViterMax, currPrintStep, currSpringConstant;
