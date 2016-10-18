@@ -38,8 +38,9 @@ typedef blitz::Array<int, 1> IntArray;
 int main(int argc, char* argv[]) {
 	clock_t t1, t2;
 	t1 = clock();
-	if (argc != 4) {
-		cout << "usage: " << argv[0] << " <filename> <dataOutputFile> <vtkFileStartNum>\n";
+	if (argc != 5) {
+		cout << "usage: " << argv[0] << " <filename>"
+			<<"<dataInputFile> <dataOutputFile> <vtkFileStartNum>\n";
 		return -1;
 	}
 
