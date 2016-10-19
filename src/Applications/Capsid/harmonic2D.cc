@@ -188,7 +188,7 @@ int main(int argc, char* argv[]) {
 	dataFile.open(dataOutputFile.c_str());
 	dataFile << "#Step" << " ParaviewStep" << "\t" << "DiffusionCoeff"
 		<< "\t" << "SpringEnergy" << "\t" << "BrownEnergy" << "\t"
-		<< "ViscousEnergy" << "\t" << "Total Functional" << "\t"
+		<< "ViscousEnergy" << "\t" << "TotalFunctional" << "\t"
 		<< "MeanSquareDisp"
 		<< endl;
 
@@ -210,7 +210,7 @@ int main(int argc, char* argv[]) {
 	double springEnergy;
 	double energy;
 	int printStep, stepCount = 0;
-	int paraviewStep = -1;
+	int paraviewStep = vtkFileNum-1;
 
 	//Setting bounds for z-axis degree of freedom for all nodes
 	IntArray nbd(3 * defNodes.size());
@@ -223,6 +223,38 @@ int main(int argc, char* argv[]) {
 			nbd(nbd_idx) = 2;
 		}
 	}
+
+	//Identify the corner nodes and fix their x-y dofs.
+	//Assuming all corners are equidistant from the origin
+	double tempDist, farthestDist = 0;
+	for (int nodeIndex = 0; nodeIndex < defNodes.size(); nodeIndex++) {
+		Vector3D tempPosition = defNodes[nodeIndex]->position();
+		tempDist = tvmet::norm2( tempPosition );
+		farthestDist = (tempDist > farthestDist) ? tempDist : farthestDist;
+	}
+	std::cout << "Farthest Node located " << farthestDist
+		<< " units from origin.\n" << std::endl;
+	std::vector<int> cornerNodes;
+	for (int nodeIndex = 0; nodeIndex < defNodes.size(); nodeIndex++) {
+		Vector3D tempPosition = defNodes[nodeIndex]->position();
+		tempDist = tvmet::norm2(tempPosition);
+		if (std::abs(tempDist - farthestDist) < 1e-6) {
+			cornerNodes.push_back(nodeIndex);
+		}
+	}
+	std::cout << "Number of corner nodes = " << cornerNodes.size() << std::endl;
+	for (int cornerIdx = 0; cornerIdx < cornerNodes.size(); cornerIdx++) {
+		int currId = cornerNodes[cornerIdx];
+		Vector3D coords = defNodes[currId]->position();
+		std::vector<int> index = defNodes[currId]->index();
+		for (int i = 0; i < index.size(); i++) {
+			int currDof = index[i];
+			nbd(currDof) = 2;
+			l(currDof) = coords(i);
+			u(currDof) = coords(i);
+		}
+	}
+
 	// Set bounds for the solver;
 	solver.setBounds(nbd, l, u);
 
