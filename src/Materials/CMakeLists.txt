@@ -7,7 +7,7 @@ set(SRCS SCElastic.cc EvansElastic.cc TwoPhaseElastic.cc
 	EvansElastic_SkewedMin.cc	EvansElastic_Stretch.cc 
     HomogMP.cc	Potential.cc 	LennardJones.cc		
 	LennardJonesFT.cc  SpringPotential.cc	SpringPotentialSQ.cc    
-    Morse.cc	ProteinMorse.cc ProteinLennardJones.cc)
+    Morse.cc MorsePeriodic.cc	ProteinMorse.cc ProteinLennardJones.cc)
 	
 set(INCDIRS Geometry Node VoomMath)
 

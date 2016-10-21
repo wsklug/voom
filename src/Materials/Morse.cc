@@ -18,15 +18,11 @@ namespace voom {
     double r = tvmet::norm2( nodeA->point() - nodeB->point() );
     if (fl0) {
       // Morse energy
-      // _W = _epsilon*pow(1.0 - exp(-_sigma*(r - _Rshift)),2.0);
       _W = _epsilon*(exp(-2*_sigma*(r-_Rshift))-2*exp(-_sigma*(r-_Rshift)));
     }
     
     if (fl1) {
       // Morse forces
-      //double factor = 2.0*_epsilon*_sigma*(1.0 - exp(-_sigma*(r - _Rshift)))*
-      //exp(-_sigma*(r - _Rshift))/r;
-
       double factor = ((2.0*_sigma*exp(-(r-_Rshift)*_sigma)-2.0*_sigma*exp(-2.0*(r-_Rshift)*_sigma))
 		       *_epsilon)/r;	
       Vector3D ForceIncrement(0.0);
@@ -38,7 +34,7 @@ namespace voom {
 
     if (fl2) {
       // Not implemented 
-      cout << "Stiffness calculations in LennardJonesFT potential not implemented " << endl;
+      cout << "Stiffness calculations in Morse potential not implemented " << endl;
       // exit(1);
     }
 

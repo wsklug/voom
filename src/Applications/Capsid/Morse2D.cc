@@ -227,27 +227,23 @@ int main(int argc, char* argv[]) {
 			nbd(nbd_idx) = 2;
 		}
 	}
-	//Identify the corner nodes and fix their x-y dofs.
-	//Assuming all corners are equidistant from the origin
-	double tempDist, farthestDist = 0;
+	//Identify the central nodes and fix their x-y dofs.
+	double tempDist;
+	std::vector<int> innerMostNodes;
 	for (int nodeIndex = 0; nodeIndex < defNodes.size(); nodeIndex++) {
 		Vector3D tempPosition = defNodes[nodeIndex]->position();
 		tempDist = tvmet::norm2(tempPosition);
-		farthestDist = (tempDist > farthestDist) ? tempDist : farthestDist;
-	}
-	std::cout << "Farthest Node located " << farthestDist
-		<< " units from origin.\n" << std::endl;
-	std::vector<int> cornerNodes;
-	for (int nodeIndex = 0; nodeIndex < defNodes.size(); nodeIndex++) {
-		Vector3D tempPosition = defNodes[nodeIndex]->position();
-		tempDist = tvmet::norm2(tempPosition);
-		if (std::abs(tempDist - farthestDist) < 1e-6) {
-			cornerNodes.push_back(nodeIndex);
+		if (std::abs(tempDist - 1.0) < 1e-6) {
+			innerMostNodes.push_back(nodeIndex);
+		}
+		if (std::abs(tempDist) < 1e-6) {
+			innerMostNodes.push_back(nodeIndex);
 		}
 	}
-	std::cout << "Number of corner nodes = " << cornerNodes.size() << std::endl;
-	for (int cornerIdx = 0; cornerIdx < cornerNodes.size(); cornerIdx++) {
-		int currId = cornerNodes[cornerIdx];
+	std::cout << "Number of inner most nodes constrained = " 
+		<< innerMostNodes.size() << std::endl;
+	for (int innerIdx = 0; innerIdx < innerMostNodes.size(); innerIdx++) {
+		int currId = innerMostNodes[innerIdx];
 		Vector3D coords = defNodes[currId]->position();
 		std::vector<int> index = defNodes[currId]->index();
 		for (int i = 0; i < index.size(); i++) {

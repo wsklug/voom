@@ -9,12 +9,13 @@
 //
 
 #include <iostream>
-#include "LennardJones.h"
+#include "Potential.h"
 
+using namespace std;
 namespace voom {
         
   void Potential::ConsistencyTest(DeformationNode<3> *nodeA, DeformationNode<3> *nodeB, double eps, double tol) {
-    cout << endl << "Checking forces consistency in a potential class " << endl;
+    std::cout << std::endl << "Checking forces consistency in a potential class " << std::endl;
     // Clean nodal forces before consistency check	
     for (uint i = 0; i<3; i++) {
       	nodeA->setForce(i, 0.0);

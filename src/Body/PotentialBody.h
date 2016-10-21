@@ -26,9 +26,28 @@
 #include "PotentialElement.h"
 #include "voom.h"
 #include "Node.h"
+#include <blitz/array-impl.h>
+#include "VoomMath.h"
+
+#include <vtkSmartPointer.h>
+#include <vtkPolyData.h>
+#include <vtkPolyDataWriter.h>
+#include <vtkDoubleArray.h>
+#include <vtkPointData.h>
+#include <vtkWarpVector.h>
+#include <vtkSphereSource.h>
+#include <vtkGlyph3D.h>
 
 #ifdef WITH_MPI
 #include <mpi.h>
+#endif
+
+#if defined(_OPENMP)
+#include <omp.h>
+#endif
+
+#if VTK_MAJOR_VERSION < 6
+#define SetInputData SetInput
 #endif
 
 using namespace std;
@@ -61,6 +80,15 @@ namespace voom
 
 		void recomputeNeighbors(double searchR);
 
+		//! Recompute neighbors for Periodic Boundary conditions
+		// as per the minimum image convention
+		void recomputePeriodicBoundaryNeighbors(double searchR, 
+			std::vector<double> bounds);
+
+		//! Re-enter any particle that moves out of the box.
+		vector<vector<int> > updatePositionsForPeriodicBoundary
+		(std::vector<double> box);
+
 		//! Return the energy of the body
 		double totalStrainEnergy() const { return _energy; };
 
@@ -77,7 +105,7 @@ namespace voom
 
 
 
-	private:
+	protected:
 		// Potential material
 		Potential * _mat;
 

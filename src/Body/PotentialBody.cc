@@ -6,32 +6,8 @@
 //                  (C) 2010 All Rights Reserved
 //
 //----------------------------------------------------------------------
-#include <string>
-#include <fstream>
-#include <blitz/array-impl.h>
-#include "VoomMath.h"
+
 #include "PotentialBody.h"
-
-#include <vtkSmartPointer.h>
-#include <vtkPolyData.h>
-#include <vtkPolyDataWriter.h>
-#include <vtkDoubleArray.h>
-#include <vtkPointData.h>
-#include <vtkWarpVector.h>
-#include <vtkSphereSource.h>
-#include <vtkGlyph3D.h>
-
-#if defined(_OPENMP)
-#include <omp.h>
-#endif
-
-#ifdef WITH_MPI
-#include <mpi.h>
-#endif
-
-#if VTK_MAJOR_VERSION < 6
-#define SetInputData SetInput
-#endif
 
 namespace voom
 {
@@ -72,8 +48,6 @@ namespace voom
 
 	}; // PotentialBody constructor
 
-
-
 	void PotentialBody::recomputeNeighbors(const double searchR) {
 		_searchR = searchR;
 
@@ -84,7 +58,8 @@ namespace voom
 			// Find neighbors of CenterNode
 			for (uint j = 0; j < _defNodes.size(); j++)
 			{
-				if (tvmet::norm2(CenterNode - _defNodes[j]->point()) <= _searchR && i != j) {
+				if (i != j && tvmet::norm2(CenterNode - _defNodes[j]->point())
+					<= _searchR) {
 					domain.insert(_defNodes[j]);
 				}
 			}
@@ -93,9 +68,9 @@ namespace voom
 
 		}
 
-	};
+	}
 
-
+	
 
 	//! Compute E0, E1, E2
 	void PotentialBody::compute(bool f0, bool f1, bool f2)
@@ -151,7 +126,7 @@ namespace voom
 		}
 		pd->SetPoints(points);
 		pd->GetPointData()->AddArray(displacements);
-		
+
 		writer->SetInputData(pd);
 		writer->SetFileName(fileName.c_str());
 		writer->Write();

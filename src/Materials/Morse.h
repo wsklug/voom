@@ -54,7 +54,7 @@ namespace voom {
     double getSigma() { return _sigma; };
     double getShift() { return _Rshift; };
     
-  private:
+  protected:
     
     // Members:
     double _epsilon;
