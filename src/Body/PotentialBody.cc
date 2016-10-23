@@ -20,7 +20,7 @@ namespace voom
 		MPI_Comm_size(MPI_COMM_WORLD, &_nProcessors);
 		MPI_Comm_rank(MPI_COMM_WORLD, &_processorRank);
 #endif
-
+		_dof = 0;
 		// Initialize Body.h containers
 		_nodes.insert(_nodes.begin(), DefNodes.begin(), DefNodes.end());
 		for (ConstNodeIterator n = _nodes.begin(); n != _nodes.end(); n++) {
@@ -37,7 +37,7 @@ namespace voom
 			// Find neighbors of CenterNode
 			for (uint j = 0; j < _defNodes.size(); j++)
 			{
-				if (tvmet::norm2(CenterNode - _defNodes[j]->point()) <= _searchR && i != j) {
+				if (i != j && tvmet::norm2(CenterNode - _defNodes[j]->point()) <= _searchR) {
 					domain.insert(_defNodes[j]);
 				}
 			}
@@ -68,9 +68,7 @@ namespace voom
 
 		}
 
-	}
-
-	
+	}	
 
 	//! Compute E0, E1, E2
 	void PotentialBody::compute(bool f0, bool f1, bool f2)

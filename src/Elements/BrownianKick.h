@@ -62,6 +62,9 @@ namespace voom
 
 	//!Set 2D kicks
 	void update2DKick();
+
+	//!Set 1D kicks
+	void update1DKick();
     
     //! Set the Brownian random displacements
     void updateSerialKick();

@@ -30,7 +30,7 @@ namespace voom {
 		MorsePeriodic() : Morse(0.0, 0.0, 0.0), _box(3, 0) {};
 		//! Construct potential from necessary constants
 		MorsePeriodic(double epsilon, double sigma, double Rshift,
-			std::vector<double> bounds) : Morse(epsilon, sigma, Rshift) {
+			const std::vector<double> bounds) : Morse(epsilon, sigma, Rshift) {
 			_box = bounds;
 		}
 
@@ -47,7 +47,7 @@ namespace voom {
 		double computeTension(DeformationNode<3> *nodeA, DeformationNode<3> *nodeB);
 
 	protected:
-		double getPeriodicDistance(DeformationNode<3> *nodeA, DeformationNode<3> *nodeB);
+		Vector3D getPeriodicDiffVector(DeformationNode<3> *nodeA, DeformationNode<3> *nodeB);
 
 	private:
 		//! Bounds of the orthorhombic periodic boundary box

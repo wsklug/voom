@@ -114,6 +114,14 @@ namespace voom
 		}
 	}
 
+
+	void BrownianKick::update1DKick() {
+		for (int i = 0; i < _nodeCount; i++) {
+			Vector3D xi(_rng.random(), 0.0, 0.0);
+			_delta_xB[i] = xi*sqrt(_D*_dt);
+		}
+	}
+
     // Do mechanics on element; compute energy, forces, and/or stiffness.
     void BrownianKick::compute(bool f0, bool f1, bool f2) {
         

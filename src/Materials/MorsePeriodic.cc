@@ -6,7 +6,7 @@ namespace voom {
 		return _box;
 	}
 
-	double MorsePeriodic::getPeriodicDistance(DeformationNode<3>* nodeA,
+	Vector3D MorsePeriodic::getPeriodicDiffVector(DeformationNode<3>* nodeA,
 		DeformationNode<3>* nodeB) {
 		Vector3D diff;
 		diff = nodeA->point() - nodeB->point();
@@ -18,13 +18,15 @@ namespace voom {
 				diff(k) = diff(k) + _box[k];
 			}
 		}
-		return tvmet::norm2(diff);
+		return diff;
 	}
 
 	void voom::MorsePeriodic::updateState(DeformationNode<3>* nodeA,
 		DeformationNode<3>* nodeB, bool fl0, bool fl1, bool fl2)
 	{
-		double r = getPeriodicDistance(nodeA, nodeB);
+		Vector3D diff;
+		diff = getPeriodicDiffVector(nodeA, nodeB);
+		double r = tvmet::norm2(diff);
 		if (fl0) {
 			// Morse energy
 			_W = _epsilon*(exp(-2 * _sigma*(r - _Rshift)) - 2 * exp(-_sigma*(r - _Rshift)));
@@ -35,7 +37,7 @@ namespace voom {
 			double factor = ((2.0*_sigma*exp(-(r - _Rshift)*_sigma) - 2.0*_sigma*exp(-2.0*(r - _Rshift)*_sigma))
 				*_epsilon) / r;
 			Vector3D ForceIncrement(0.0);
-			ForceIncrement = factor*(nodeA->point() - nodeB->point());
+			ForceIncrement = factor*(diff);
 			nodeA->updateForce(ForceIncrement);
 			ForceIncrement = -ForceIncrement;
 			nodeB->updateForce(ForceIncrement);
@@ -50,7 +52,9 @@ namespace voom {
 
 	double voom::MorsePeriodic::computeTension(DeformationNode<3>* nodeA, DeformationNode<3>* nodeB)
 	{
-		double r = getPeriodicDistance(nodeA, nodeB);
+		Vector3D diff;
+		diff = getPeriodicDiffVector(nodeA, nodeB);
+		double r = tvmet::norm2(diff);
 		return (2.0*_sigma*exp(-(r - _Rshift)*_sigma) - 2.0*_sigma*exp(-2.0*(r - _Rshift)*_sigma))
 			*_epsilon;
 	}

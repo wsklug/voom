@@ -79,16 +79,7 @@ namespace voom
 		void compute(bool f0, bool f1, bool f2);
 
 		void recomputeNeighbors(double searchR);
-
-		//! Recompute neighbors for Periodic Boundary conditions
-		// as per the minimum image convention
-		void recomputePeriodicBoundaryNeighbors(double searchR, 
-			std::vector<double> bounds);
-
-		//! Re-enter any particle that moves out of the box.
-		vector<vector<int> > updatePositionsForPeriodicBoundary
-		(std::vector<double> box);
-
+		
 		//! Return the energy of the body
 		double totalStrainEnergy() const { return _energy; };
 

@@ -9,6 +9,14 @@
 #include "PeriodicPotentialBody.h"
 
 namespace voom {
+	PeriodicPotentialBody::PeriodicPotentialBody(Potential * Mat, 
+		const vector<DeformationNode<3>*>& DefNodes, double SearchR,
+		std::vector<double> boundingBox): PotentialBody(Mat, DefNodes, SearchR)
+	{
+		_boundingBox = boundingBox;
+		std::vector<vector<int> > A(DefNodes.size(), vector<int>(3));
+		_boundaryCrossCounter = A;
+	}
 
 	//! Assuming a rectangular brick shaped bounding box for Periodic Boundary
 	// Lx-by-Ly-by-Lz centered at the origin
@@ -20,7 +28,7 @@ namespace voom {
 
 		if (Lx*0.5 < searchR || Ly*0.5 < searchR || Lz*0.5 < searchR) {
 			std::cout << "Bounding box should have dimensions greater"
-				<< "than twice the search radius." << std::endl;
+				<< " than twice the search radius." << std::endl;
 			exit(EXIT_FAILURE);
 		}
 		_searchR = searchR;
@@ -58,22 +66,30 @@ namespace voom {
 	if (rx[i]>L)   { rx[i]-=L; ix[i]++; }
 	*/
 	void PeriodicPotentialBody::adjustPositions() {
+		int crossedCount = 0;
+		bool crossedFlag = false;
 		std::vector<double> box = _boundingBox;
-
 		for (int i = 0; i < _defNodes.size(); i++) {
+			crossedFlag = false;
 			Vector3D pos = _defNodes[i]->point();
 			for (int k = 0; k < 3; k++) {
-				if (pos(k) < -0.5*box[k]){
+				if (pos(k) <= -0.5*box[k]){
 					pos(k) = pos(k) + box[k];
 					_boundaryCrossCounter[i][k]--;
+					crossedFlag = true;
 				}
 				if (pos(k) > 0.5*box[k]) {
 					pos(k) = pos(k) - box[k];
 					_boundaryCrossCounter[i][k]++;
+					crossedFlag = true;
 				}
 			}
+			crossedCount = crossedFlag ? crossedCount + 1 : crossedCount;
+			if(crossedFlag) _defNodes[i]->setPoint(pos);
 		}
-
+		if (crossedCount > 0)
+			std::cout << crossedCount << " particles crossed boundary."
+			<< std::endl;
 	}
 
 	//! Mean Sqaured Displacement
@@ -88,6 +104,8 @@ namespace voom {
 			}
 			msd += tvmet::dot(tempDisp, tempDisp);
 		}
+		msd /= _defNodes.size();
+		return msd;
 	}
 
 } // namespace voom

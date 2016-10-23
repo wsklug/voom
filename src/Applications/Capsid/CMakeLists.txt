@@ -37,7 +37,7 @@ find_package(Threads)
 set(voom_LIBRARIES Body Solvers Materials Elements Quadrature Shape VoomMath Geometry Mesh Model)
 
 set(capsid_targets asphNoRescale annealing asphBrownian asphHarmonic dual relaxMorse 
-    asphmodVsFVKcont indentWparticles edgeStrainAndValence harmonic2D Morse2D)
+    asphmodVsFVKcont indentWparticles edgeStrainAndValence harmonic2D Morse2D Morse2DPeriodic)
 
 foreach(curr_target ${capsid_targets})
 
