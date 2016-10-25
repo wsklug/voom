@@ -329,7 +329,7 @@ int main(int argc, char* argv[]) {
 			}
 			//****************************************************//
 
-			double msd = MorsePeriodicBody->meanSquaredDisplacement();
+			double msd = MorsePeriodicBody->rmsd();
 			msd /= (R_e*R_e);
 
 			int paraviewStepPrint;

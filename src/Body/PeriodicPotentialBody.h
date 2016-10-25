@@ -32,7 +32,7 @@ namespace voom {
 		void adjustPositions();
 
 		//! Return the mean squared displacement
-		double meanSquaredDisplacement();
+		double rmsd();
 
 	private:
 		std::vector<double> _boundingBox;

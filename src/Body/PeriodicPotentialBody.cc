@@ -93,8 +93,8 @@ namespace voom {
 	}
 
 	//! Mean Sqaured Displacement
-	double PeriodicPotentialBody::meanSquaredDisplacement() {
-		double msd = 0; //Mean Squared Displacement
+	double PeriodicPotentialBody::rmsd() {
+		double rmsd = 0; //root Mean Squared Displacement
 		for (int i = 0; i < _defNodes.size(); i++) {
 			Vector3D tempDisp;
 			tempDisp = (_defNodes[i]->point() - _defNodes[i]->position());
@@ -102,10 +102,10 @@ namespace voom {
 				tempDisp(k) = tempDisp(k) + 
 					_boundaryCrossCounter[i][k] * _boundingBox[k];
 			}
-			msd += tvmet::dot(tempDisp, tempDisp);
+			rmsd += tvmet::dot(tempDisp, tempDisp);
 		}
-		msd /= _defNodes.size();
-		return msd;
+		rmsd = sqrt( rmsd/_defNodes.size());
+		return rmsd;
 	}
 
 } // namespace voom
