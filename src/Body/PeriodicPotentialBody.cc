@@ -99,12 +99,12 @@ namespace voom {
 			Vector3D tempDisp;
 			tempDisp = (_defNodes[i]->point() - _defNodes[i]->position());
 			for (int k = 0; k < 3; k++) {
-				tempDisp(k) = tempDisp(k) + 
+				tempDisp(k) = tempDisp(k) +
 					_boundaryCrossCounter[i][k] * _boundingBox[k];
 			}
 			rmsd += tvmet::dot(tempDisp, tempDisp);
 		}
-		rmsd = sqrt( rmsd/_defNodes.size());
+		rmsd = sqrt(rmsd / _defNodes.size());
 		return rmsd;
 	}
 

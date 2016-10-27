@@ -457,7 +457,7 @@ int main(int argc, char* argv[]){
             viscosity = Cd/dt;
             
             sigma  = (100/(Rshift*percentStrain))*log(2.0);
-            PotentialSearchRF=1.1*Rshift; 
+            PotentialSearchRF=1.5*Rshift; 
             springConstant = 2*sigma*sigma*epsilon;
             
             if(pressureConstraintOn){
@@ -555,29 +555,25 @@ int main(int argc, char* argv[]){
                 
                 //bk.updateParallelKick();
                 bk.updateProjectedKick();
+				std::cout<<"Average kick norm: "<< bk.getKickStats()
+					<<std::endl;
                 //bk.updateRotationKick();
-                PrBody->recomputeNeighbors(PotentialSearchRF);
                 
-                bool printBeforeSolve = true;
+                bool printBeforeSolve = false;
                 if( printBeforeSolve ){
                     //We will print only after every currPrintStep iterations
                     if(viter % printStep == 0){
-                        sstm << fname <<"-initial-" << nameSuffix;
+						sstm << fname << "-initial-" << nameSuffix;
                         rName = sstm.str();
-                        model.print(rName);
-                        sstm <<"-bd1.vtk";
-                        actualFile = sstm.str();
-                        sstm.str("");
-                        sstm.clear();
-                        sstm << fname <<"-initial-" << nameSuffix <<".vtk";
-                        rName = sstm.str();
-                        std::rename(actualFile.c_str(),rName.c_str());
+						bd->printParaview(rName.c_str());
                         sstm.str("");
                         sstm.clear();
                     }
                 }
                 solver.solve( &model );
-                
+				//We also need to recompute the neighbors for PotentialBody
+				PrBody->recomputeNeighbors(PotentialSearchRF);
+
                 rsEnergy = rs.energy();
                 bkEnergy = bk.energy();
                 vrEnergy = vr.energy();
@@ -603,7 +599,7 @@ int main(int argc, char* argv[]){
                 double ARtol = 1.2;
                 uint elementsChanged = 0;
                 
-                if(remesh) {     
+                if(remesh) {
                     elementsChanged = bd->Remesh(ARtol,bending,quadOrder);
                     
                     //Print out the number of elements that changed due to remeshing
@@ -613,11 +609,11 @@ int main(int argc, char* argv[]){
                         
                         //If some elements have changed then we need to reset the
                         //reference configuration with average side lengths
-                        //bd->SetRefConfiguration(EdgeLength);
-                        
-                        //We also need to recompute the neighbors for PotentialBody
-                        PrBody->recomputeNeighbors(PotentialSearchRF);
-                        
+                        //bd->SetRefConfiguration(EdgeLength);     
+
+						//We also need to recompute the neighbors for PotentialBody
+						PrBody->recomputeNeighbors(PotentialSearchRF);
+
                         //Relax again after remeshing
                         solver.solve( &model );
                         rsEnergy = rs.energy();
@@ -628,6 +624,7 @@ int main(int argc, char* argv[]){
                         energy = solver.function();
                     }
                 }
+
                 //*********************************************************//
                 
                 std::cout << "Shape relaxed." << std::endl
@@ -639,17 +636,11 @@ int main(int argc, char* argv[]){
                 //We will print only after every currPrintStep iterations
                 if(viter % printStep == 0){
                     paraviewStep++;
-                    sstm << fname <<"-relaxed-" << nameSuffix;
-                    rName = sstm.str();
-                    model.print(rName);
-                    sstm <<"-bd1.vtk";
-                    actualFile = sstm.str();
-                    sstm.str("");
-                    sstm.clear();
-                    sstm << fname <<"-relaxed-" << nameSuffix <<".vtk";
-                    rName = sstm.str();
-                    std::rename(actualFile.c_str(),rName.c_str());
-                    
+					sstm << fname << "-relaxed-" << nameSuffix;
+					rName = sstm.str();
+					bd->printParaview(rName.c_str());
+					sstm << ".vtk";
+					rName = sstm.str();
                     //Store the printed out file name for post-processing
                     allVTKFiles.push_back( rName );
                     percentStrainData.push_back( percentStrain );

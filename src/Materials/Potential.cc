@@ -67,6 +67,5 @@ namespace voom {
     
   } //  Potential::ConsistencyTest
 
-
 } //namespace voom
 

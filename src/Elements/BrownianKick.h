@@ -80,6 +80,9 @@ namespace voom
 
     //! Access the container of nodes
     const NodeContainer& nodes() const { return _nodes; }    
+
+	//!Get Kick Stats
+	double getKickStats();
     
   private:
     NodeContainer _nodes;

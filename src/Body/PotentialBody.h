@@ -94,7 +94,8 @@ namespace voom
 			return _elementVector;
 		}
 
-
+		//! Return the mean squared displacement
+		double rmsd();
 
 	protected:
 		// Potential material

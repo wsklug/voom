@@ -56,6 +56,15 @@ namespace voom
             }
         }
     }
+
+	double BrownianKick::getKickStats()
+	{
+		double stats = 0.0;//Mean and std-dev
+		for (int i = 0; i < _nodeCount; i++) {
+			stats += tvmet::norm2( _delta_xB[i] );
+		}
+		return stats/_nodeCount;
+	}
     
     void BrownianKick::updateParallelKick(){
         

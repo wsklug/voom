@@ -129,6 +129,17 @@ namespace voom
 		writer->SetFileName(fileName.c_str());
 		writer->Write();
 
-	};
+	}
+	//! Mean Sqaured Displacement
+	double PotentialBody::rmsd() {
+		double rmsd = 0; //root Mean Squared Displacement
+		for (int i = 0; i < _defNodes.size(); i++) {
+			Vector3D tempDisp;
+			tempDisp = (_defNodes[i]->point() - _defNodes[i]->position());
+			rmsd += tvmet::dot(tempDisp, tempDisp);
+		}
+		rmsd = sqrt(rmsd / _defNodes.size());
+		return rmsd;
+	}
 
 } // namespace voom
