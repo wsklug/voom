@@ -65,9 +65,7 @@ set (helper_targets densityPlot rotatePoints createTfromOutline)
 foreach(curr_target ${helper_targets})
 
 	add_executable(${curr_target} ${curr_target}.cc)
+	target_include_directories(${curr_target} PRIVATE ${PROJECT_BINARY_DIR} ${tvmet_INCLUDE_DIRS})
 	target_link_libraries(${curr_target} ${VTK_LIBRARIES})
-	if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-			target_include_directories(${curr_target} PRIVATE ${PROJECT_BINARY_DIR} ${tvmet_INCLUDE_DIRS})
-	endif()
 	
 endforeach(curr_target)
