@@ -18,6 +18,8 @@ namespace voom {
 		_boundaryCrossCounter = A;
 		//Identify nearest neighbor
 		Vector3D xi, xj;
+		std::vector<int> temp(_defNodes.size(), -1);
+		_nearestNeighbor = temp;
 		for (int p = 0; p < _defNodes.size(); p++) {
 			xi = _defNodes[p]->position();
 			double dist_min = 10e6;
