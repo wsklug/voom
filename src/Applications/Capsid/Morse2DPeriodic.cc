@@ -175,7 +175,7 @@ int main(int argc, char* argv[]) {
 	double MorseEnergy;
 	double energy;
 	int printStep, stepCount = 0;
-	int paraviewStep = vtkFileNum - 1;
+	int paraviewStep = - 1;
 
 	//Setting bounds for z-axis degree of freedom for all nodes
 	IntArray nbd(3 * defNodes.size());
@@ -189,7 +189,7 @@ int main(int argc, char* argv[]) {
 		}
 	}
 	//Identify the central nodes and fix their x-y dofs.
-	double tempDist;
+	/*double tempDist;
 	std::vector<int> innerMostNodes;
 	for (int nodeIndex = 0; nodeIndex < defNodes.size(); nodeIndex++) {
 		Vector3D tempPosition = defNodes[nodeIndex]->position();
@@ -216,7 +216,7 @@ int main(int argc, char* argv[]) {
 			l(currDof) = coords(i);
 			u(currDof) = coords(i);
 		}
-	}
+	}*/
 	// Set bounds for the solver;
 	solver.setBounds(nbd, l, u);
 
@@ -241,10 +241,10 @@ int main(int argc, char* argv[]) {
 		delta = coolVec[q][4];
 		viscosity = Cd / dt;
 
-		std::cout << "Viscosity Input Parameters:" << std::endl
+		/*std::cout << "Viscosity Input Parameters:" << std::endl
 			<< " Cd = " << Cd << std::endl
 			<< "  D = " << diffusionCoeff << std::endl
-			<< " dt = " << dt << std::endl;
+			<< " dt = " << dt << std::endl;*/
 		MorsePeriodic Mat(epsilon, std::log(2) / (R_e*delta), R_e, L);
 		PeriodicPotentialBody * MorsePeriodicBody = new
 			PeriodicPotentialBody(&Mat, defNodes, PotentialSearchRF,L);
@@ -258,12 +258,12 @@ int main(int argc, char* argv[]) {
 		bdc.push_back(MorsePeriodicBody);
 		Model model(bdc, nodes);
 
-		bool checkConsistency = false;
+		/*bool checkConsistency = false;
 		if (checkConsistency) {
 			std::cout << "Checking consistency......" << std::endl;
 			bk.update2DKick();
 			MorsePeriodicBody->checkConsistency(true);
-		}
+		}*/
 
 		//***************************  INNER SOLUTION LOOP ***************************//  
 
@@ -291,7 +291,7 @@ int main(int argc, char* argv[]) {
 			MorseEnergy = MorsePeriodicBody->energy() - bkEnergy - vrEnergy;
 			energy = solver.function();
 
-			std::cout << "ENERGY:" << std::endl
+			/*std::cout << "ENERGY:" << std::endl
 				<< "viscous energy  = " << vrEnergy << std::endl
 				<< "Brownian energy = " << bkEnergy << std::endl
 				<< "Spring energy   = " << MorseEnergy << std::endl
@@ -300,13 +300,13 @@ int main(int argc, char* argv[]) {
 			std::cout << "VISCOSITY: " << std::endl
 				<< "          velocity = " << vr.velocity() << std::endl
 				<< " updated viscosity = " << vr.viscosity() << std::endl
-				<< std::endl;
+				<< std::endl;*/
 
 
 			//*********************************************************//
 
-			std::cout << "Shape relaxed." << std::endl
-				<< "Energy = " << energy << std::endl;
+			/*std::cout << "Shape relaxed." << std::endl
+				<< "Energy = " << energy << std::endl;*/
 
 
 			//********** Print relaxed configuration ************// 
@@ -316,14 +316,7 @@ int main(int argc, char* argv[]) {
 				paraviewStep++;
 				sstm << fname << "-relaxed-" << vtkFileNum;
 				rName = sstm.str();
-				model.print(rName);
-				sstm << "-bd1.vtk";
-				actualFile = sstm.str();
-				sstm.str("");
-				sstm.clear();
-				sstm << fname << "-relaxed-" << vtkFileNum << ".vtk";
-				rName = sstm.str();
-				std::rename(actualFile.c_str(), rName.c_str());
+				MorsePeriodicBody->printParaview(rName);
 				sstm.str("");
 				sstm.clear();
 			}
