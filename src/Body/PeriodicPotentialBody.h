@@ -44,7 +44,7 @@ namespace voom {
 		}
 
 		//Accessor for boundary cross counter
-		std::vector<std::vector<int>> getBoundaryCrossCount() {
+		std::vector<std::vector<int> > getBoundaryCrossCount() {
 			return _boundaryCrossCounter;
 		}
 
