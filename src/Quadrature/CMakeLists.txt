@@ -10,3 +10,4 @@ target_include_directories(Quadrature PUBLIC ${PROJECT_BINARY_DIR}/..)
 
 target_include_directories(Quadrature PUBLIC ${tvmet_INCLUDE_DIRS} )
 target_include_directories(Quadrature PUBLIC ${blitz_INCLUDE_DIRS} )
+target_include_directories(Quadrature PUBLIC ${EIGEN_INCLUDE_DIRS})

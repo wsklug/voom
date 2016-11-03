@@ -11,4 +11,4 @@ target_include_directories(Geometry PUBLIC ${GSL_INCLUDE_DIR})
 
 target_include_directories(Geometry PUBLIC ${tvmet_INCLUDE_DIRS} )
 target_include_directories(Geometry PUBLIC ${blitz_INCLUDE_DIRS} )
-
+target_include_directories(Geometry PUBLIC ${EIGEN_INCLUDE_DIRS})

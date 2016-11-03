@@ -19,4 +19,5 @@ endforeach(CURRD)
 
 target_include_directories(Body PUBLIC ${tvmet_INCLUDE_DIRS} )
 target_include_directories(Body PUBLIC ${blitz_INCLUDE_DIRS} )
+target_include_directories(Body PUBLIC ${EIGEN_INCLUDE_DIRS})
 #target_include_directories(Body PUBLIC ${VTK_INCLUDE_DIRS} )

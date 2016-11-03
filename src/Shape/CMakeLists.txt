@@ -20,3 +20,4 @@ endforeach(CURRD)
 
 target_include_directories(Shape PUBLIC ${tvmet_INCLUDE_DIRS} )
 target_include_directories(Shape PUBLIC ${blitz_INCLUDE_DIRS} )
+target_include_directories(Shape PUBLIC ${EIGEN_INCLUDE_DIRS})

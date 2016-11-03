@@ -188,35 +188,7 @@ int main(int argc, char* argv[]) {
 			nbd(nbd_idx) = 2;
 		}
 	}
-	//Identify the central nodes and fix their x-y dofs.
-	/*double tempDist;
-	std::vector<int> innerMostNodes;
-	for (int nodeIndex = 0; nodeIndex < defNodes.size(); nodeIndex++) {
-		Vector3D tempPosition = defNodes[nodeIndex]->position();
-		tempDist = tvmet::norm2(tempPosition);
-		if (std::abs(tempDist - 1.0) < 1e-6) {
-			innerMostNodes.push_back(nodeIndex);
-		}
-		if (std::abs(tempDist) < 1e-6) {
-			innerMostNodes.push_back(nodeIndex);
-		}
-		if (innerMostNodes.size() > 1) {
-			break;
-		}
-	}
-	std::cout << "Number of inner most nodes constrained = "
-		<< innerMostNodes.size() << std::endl;
-	for (int innerIdx = 0; innerIdx < innerMostNodes.size(); innerIdx++) {
-		int currId = innerMostNodes[innerIdx];
-		Vector3D coords = defNodes[currId]->position();
-		std::vector<int> index = defNodes[currId]->index();
-		for (int i = 0; i < index.size(); i++) {
-			int currDof = index[i];
-			nbd(currDof) = 2;
-			l(currDof) = coords(i);
-			u(currDof) = coords(i);
-		}
-	}*/
+
 	// Set bounds for the solver;
 	solver.setBounds(nbd, l, u);
 
@@ -258,13 +230,6 @@ int main(int argc, char* argv[]) {
 		bdc.push_back(MorsePeriodicBody);
 		Model model(bdc, nodes);
 
-		/*bool checkConsistency = false;
-		if (checkConsistency) {
-			std::cout << "Checking consistency......" << std::endl;
-			bk.update2DKick();
-			MorsePeriodicBody->checkConsistency(true);
-		}*/
-
 		//***************************  INNER SOLUTION LOOP ***************************//  
 
 		for (int viter = 0; viter < viterMax; viter++) {
@@ -290,24 +255,6 @@ int main(int argc, char* argv[]) {
 			vrEnergy = vr.energy();
 			MorseEnergy = MorsePeriodicBody->energy() - bkEnergy - vrEnergy;
 			energy = solver.function();
-
-			/*std::cout << "ENERGY:" << std::endl
-				<< "viscous energy  = " << vrEnergy << std::endl
-				<< "Brownian energy = " << bkEnergy << std::endl
-				<< "Spring energy   = " << MorseEnergy << std::endl
-				<< "  total energy  = " << energy << std::endl
-				<< std::endl;
-			std::cout << "VISCOSITY: " << std::endl
-				<< "          velocity = " << vr.velocity() << std::endl
-				<< " updated viscosity = " << vr.viscosity() << std::endl
-				<< std::endl;*/
-
-
-			//*********************************************************//
-
-			/*std::cout << "Shape relaxed." << std::endl
-				<< "Energy = " << energy << std::endl;*/
-
 
 			//********** Print relaxed configuration ************// 
 

@@ -2,6 +2,7 @@
 #define _VOOM_MATH_
  
 #include "voom.h"
+#include <Eigen/Geometry>
 
 namespace voom
 {
@@ -29,6 +30,10 @@ namespace voom
   void tensorProduct(const Vector3D u, const Vector3D v, Tensor3D & T);
 
   void tensorProduct(const Vector2D u, const Vector2D v, Tensor2D & T);
+
+  Eigen::Affine3d Find3DAffineTransform(Eigen::Matrix3Xd in, Eigen::Matrix3Xd out);
+
+  void TestFind3DAffineTransform();
 
 };
 

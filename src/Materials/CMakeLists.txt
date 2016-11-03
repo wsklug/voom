@@ -24,3 +24,4 @@ endforeach(CURRD)
 
 target_include_directories(Materials PUBLIC ${tvmet_INCLUDE_DIRS} )
 target_include_directories(Materials PUBLIC ${blitz_INCLUDE_DIRS} )
+target_include_directories(Materials PUBLIC ${EIGEN_INCLUDE_DIRS} )

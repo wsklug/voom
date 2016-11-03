@@ -37,7 +37,7 @@ namespace voom {
 
 		//! General printing of a Paraview file
 		void printParaview(const string name) const;
-
+			
 		//Accessor for bounding box
 		std::vector<double> getBoundingBox() {
 			return _boundingBox;
@@ -51,7 +51,6 @@ namespace voom {
 	private:
 		std::vector<double> _boundingBox;
 		std::vector<std::vector<int> > _boundaryCrossCounter;
-		std::vector<int> _nearestNeighbor;
 	};
 } // namespace voom
 #endif // __PeriodicPotentialBody_h__

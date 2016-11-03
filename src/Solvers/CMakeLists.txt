@@ -42,3 +42,4 @@ endforeach(CURRD)
 
 target_include_directories(Solvers PUBLIC ${tvmet_INCLUDE_DIRS} )
 target_include_directories(Solvers PUBLIC ${blitz_INCLUDE_DIRS} )
+target_include_directories(Solvers PUBLIC ${EIGEN_INCLUDE_DIRS})

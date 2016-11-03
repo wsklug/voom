@@ -86,6 +86,11 @@ namespace voom
 		//! General printing of a Paraview file
 		void printParaview(const string name) const;
 
+		//! General printing of a Paraview file
+		void printParaview(const string name, 
+			Eigen::Matrix3Xd, 
+			vector< tvmet::Vector<int, 3> > connectivities) const;
+
 		virtual void pushBack(Element* e) {
 			_elements.push_back(e);
 		}
@@ -96,6 +101,9 @@ namespace voom
 
 		//! Return the mean squared displacement
 		double rmsd();
+
+		//!Get nearest neighbor for rmsd calculation
+		std::vector<int> initialNearestNeighbor();
 
 	protected:
 		// Potential material
@@ -109,6 +117,9 @@ namespace voom
 
 		// Search radius
 		double _searchR;
+
+		//Nearest neighbor in Reference config, only for rmsd
+		std::vector<int> _nearestNeighbor;
 
 #ifdef WITH_MPI
 		int _processorRank;

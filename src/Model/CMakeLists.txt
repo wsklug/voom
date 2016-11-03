@@ -16,3 +16,4 @@ endforeach(CURRD)
 
 target_include_directories(Model PUBLIC ${tvmet_INCLUDE_DIRS} )
 target_include_directories(Model PUBLIC ${blitz_INCLUDE_DIRS} )
+target_include_directories(Model PUBLIC ${EIGEN_INCLUDE_DIRS})

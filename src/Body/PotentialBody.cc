@@ -46,6 +46,10 @@ namespace voom
 			_elementVector.push_back(el);
 		}
 
+		//Initialize initial nearest neighbor vector;
+		std::vector<int> temp(_defNodes.size(),-1);
+		_nearestNeighbor = temp;
+
 	}; // PotentialBody constructor
 
 	void PotentialBody::recomputeNeighbors(const double searchR) {
@@ -130,16 +134,95 @@ namespace voom
 		writer->Write();
 
 	}
+
+	void PotentialBody::printParaview(const string name,
+		Eigen::Matrix3Xd transformed, 
+		vector< tvmet::Vector<int, 3> > connectivities) const {
+		std::string fileName = name + ".vtk";
+		vtkSmartPointer<vtkPolyDataWriter> writer =
+			vtkSmartPointer<vtkPolyDataWriter>::New();
+		vtkSmartPointer<vtkPolyData> pd
+			= vtkSmartPointer<vtkPolyData>::New();
+		vtkSmartPointer<vtkPoints> points
+			= vtkSmartPointer<vtkPoints>::New();
+		vtkSmartPointer<vtkDoubleArray> displacements =
+			vtkSmartPointer<vtkDoubleArray>::New();
+
+		tvmet::Vector<double, 3> refPosition, currPosition, disp;
+		points->SetNumberOfPoints(_defNodes.size());
+		displacements->SetNumberOfComponents(3);
+		displacements->SetNumberOfTuples(_defNodes.size());
+		displacements->SetName("displacements");
+
+		for (int i = 0; i < _defNodes.size(); i++) {
+			double X[3] = { 0.0,0.0,0.0 };
+			refPosition = _defNodes[i]->position();
+			for (int q = 0; q < 3; q++) {
+				X[q] = refPosition(q);
+				currPosition(q) = transformed(q,i);
+			}
+			disp = currPosition - refPosition;
+			points->SetPoint(i, X);			
+			displacements->SetTuple3(i, 
+				disp(0), disp(1), disp(2));
+		}
+		
+		//Prepare the Cell data
+		vtkSmartPointer<vtkCellArray> cells =
+			vtkSmartPointer<vtkCellArray>::New();
+		for (int i = 0; i < connectivities.size(); i++) {
+			vtkIdType cell[3];
+			for (int j = 0; j < 3; j++) {				
+				cell[j] = connectivities[i](j);
+			}
+			cells->InsertNextCell(3, cell);
+		}
+
+		pd->SetPoints(points);
+		pd->GetPointData()->AddArray(displacements);
+		pd->SetPolys(cells);
+
+		writer->SetInputData(pd);
+		writer->SetFileName(fileName.c_str());
+		writer->Write();
+	}
+
 	//! Mean Sqaured Displacement
 	double PotentialBody::rmsd() {
 		double rmsd = 0; //root Mean Squared Displacement
+		int nn = -1;
 		for (int i = 0; i < _defNodes.size(); i++) {
-			Vector3D tempDisp;
-			tempDisp = (_defNodes[i]->point() - _defNodes[i]->position());
-			rmsd += tvmet::dot(tempDisp, tempDisp);
+			Vector3D xi, xj, diff;
+			nn = _nearestNeighbor[i];
+			xi = (_defNodes[i]->point() - _defNodes[i]->position());
+			xj = (_defNodes[nn]->point() - _defNodes[nn]->position());
+			diff = xi - xj;
+			rmsd += tvmet::dot(xi, xi);
 		}
-		rmsd = sqrt(rmsd / _defNodes.size());
+		rmsd = rmsd / (2 * _defNodes.size());
 		return rmsd;
+	}
+
+	//! Initial nearest neighbors, used in rmsd calculations
+	std::vector<int> PotentialBody::initialNearestNeighbor()
+	{
+		//Identify nearest neighbor
+		Vector3D xi, xj;
+		for (int p = 0; p < _defNodes.size(); p++) {
+			xi = _defNodes[p]->position();
+			double dist_min = 10e6;
+			for (int q = 0; q < _defNodes.size(); q++) {
+				if (p != q) {
+					xj = _defNodes[q]->position();
+					double dist = tvmet::norm2(xi - xj);
+					if (dist < dist_min) {
+						dist_min = dist;
+						_nearestNeighbor[p] = q;
+					}
+				}
+			}
+		}
+		return _nearestNeighbor;
 	}
 
 } // namespace voom

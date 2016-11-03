@@ -15,25 +15,7 @@ namespace voom {
 	{
 		_boundingBox = boundingBox;
 		std::vector<vector<int> > A(DefNodes.size(), vector<int>(3));
-		_boundaryCrossCounter = A;
-		//Identify nearest neighbor
-		Vector3D xi, xj;
-		std::vector<int> temp(_defNodes.size(), -1);
-		_nearestNeighbor = temp;
-		for (int p = 0; p < _defNodes.size(); p++) {
-			xi = _defNodes[p]->position();
-			double dist_min = 10e6;
-			for (int q = 0; q < _defNodes.size(); q++) {
-				if (p != q) {
-					xj = _defNodes[q]->position();
-					double dist = tvmet::norm2(xi - xj);
-					if (dist < dist_min) {
-						dist_min = dist;
-						_nearestNeighbor[p] = q;
-					}
-				}
-			}
-		}
+		_boundaryCrossCounter = A;		
 	}
 
 	//! Assuming a rectangular brick shaped bounding box for Periodic Boundary
