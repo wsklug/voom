@@ -160,11 +160,11 @@ void densityPlotter( std::vector<std::string> fileNames,
                 
                 //Compare to update max and min values
                 theta_max = std::max( theta, theta_max );
-                theta_min = std::min( theta, theta_min );
-                phi_max = std::max( phi, phi_max );
+                theta_min = std::min( theta, theta_min );          
                 phi_min = std::min( phi, phi_min );
                 
         }
+		phi_max = phi_min + (360/(long_res - 1.0));
         vector<double> temp;
         temp.push_back( phi_min );
         temp.push_back( phi_max );

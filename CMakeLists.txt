@@ -13,10 +13,10 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 
 set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose build type, options are: Debug|Release|MinSizeRel|RelWithDebInfo" FORCE)
 
-set(VTK_DIR "/u/local/apps/vtk/5.8.0/lib/vtk-5.8" CACHE PATH "Directory containing VTKConfig.cmake" FORCE)
-set(tvmet_DIR "/u/local/apps/tvmet/current" CACHE PATH "Directory containing include/tvmet/tvmet.h" FORCE)
-set(blitz_DIR "/u/local/apps/blitz/current" CACHE PATH "Directory containing include/blitz/blitz.h" FORCE)
-set(GSL_ROOT_DIR "/usr" CACHE PATH "Directory containing lib/libgsl.a" FORCE)
+# set(VTK_DIR "/u/local/apps/vtk/5.8.0/lib/vtk-5.8" CACHE PATH "Directory containing VTKConfig.cmake" FORCE)
+# set(tvmet_DIR "/u/local/apps/tvmet/current" CACHE PATH "Directory containing include/tvmet/tvmet.h" FORCE)
+# set(blitz_DIR "/u/local/apps/blitz/current" CACHE PATH "Directory containing include/blitz/blitz.h" FORCE)
+# set(GSL_ROOT_DIR "/usr" CACHE PATH "Directory containing lib/libgsl.a" FORCE)
 
 enable_language(Fortran)
 
@@ -24,6 +24,7 @@ find_package(tvmet REQUIRED)
 find_package(blitz REQUIRED)
 find_package(VTK REQUIRED)
 find_package(GSL REQUIRED)
+find_package(Eigen REQUIRED)
 
 include(${VTK_USE_FILE})
 
