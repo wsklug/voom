@@ -78,7 +78,7 @@ void densityPlotter(std::vector<std::string> fileNames,
 	std::string outputFile,
 	int lat_res, int long_res) {
 
-	bool debug = true;
+	bool debug = false;
 
 	/*
 	 * Create a sphere that is meshed along latitude and longitude
