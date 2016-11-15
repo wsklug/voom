@@ -162,9 +162,14 @@ void densityPlotter(std::vector<std::string> fileNames,
 			theta_max = std::max(theta, theta_max);
 			theta_min = std::min(theta, theta_min);
 			phi_min = std::min(phi, phi_min);
+			phi_max = std::max(phi, phi_max);
 
 		}
-		phi_max = phi_min + (360 / (long_res - 1.0));
+		//Checking for the last bin along phi direction
+		if ((phi_max - phi_min) > 2* (360 / (long_res - 1.0))) {
+			phi_min = phi_max;
+			phi_max = 360;
+		}		
 		vector<double> temp;
 		temp.push_back(phi_min);
 		temp.push_back(phi_max);
