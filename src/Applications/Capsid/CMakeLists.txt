@@ -60,7 +60,7 @@ foreach(curr_target ${capsid_targets})
 	
 endforeach(curr_target)
 
-set (helper_targets densityPlot rotatePoints createTfromOutline rmsd cellDataToPointData)
+set (helper_targets densityPlot rotatePoints createTfromOutline rmsd cellDataToPointData sphHarmCoeff)
 
 foreach(curr_target ${helper_targets})
 
@@ -69,3 +69,9 @@ foreach(curr_target ${helper_targets})
 	target_link_libraries(${curr_target} ${VTK_LIBRARIES})
 	
 endforeach(curr_target)
+
+
+#Using BOOST header files
+#set(BOOST_ROOT "C:/Software/intel/boost_1_62_0")
+find_package(Boost REQUIRED)
+target_include_directories(sphHarmCoeff PRIVATE ${Boost_INCLUDE_DIRS})

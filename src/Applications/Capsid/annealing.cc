@@ -572,8 +572,8 @@ int main(int argc, char* argv[]) {
 				<< std::endl
 				<< std::endl;
 
-			bk.updateParallelKick();
-			//bk.updateProjectedKick();
+			//bk.updateParallelKick();
+			bk.updateProjectedKick();
 			//std::cout<<"Average kick norm: "<< bk.getKickStats()
 				//<<std::endl;
 			//bk.updateRotationKick();

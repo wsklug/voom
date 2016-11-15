@@ -72,7 +72,7 @@ void cellToPoint(std::string inFile, std::string outFile) {
 	else {
 		std::cout << "Input file does not have density data."
 			<< std::endl;
-		exit( EXIT_FAILURE );
+		exit(EXIT_FAILURE);
 	}
 
 	ofstream output;
@@ -84,7 +84,7 @@ void cellToPoint(std::string inFile, std::string outFile) {
 	bins->InitTraversal();
 	int index = 0;
 	while (bins->GetNextCell(points)) {
-		double x_sum =0, y_sum=0, z_sum=0;
+		double x_sum = 0, y_sum = 0, z_sum = 0;
 		double * xyz;
 		int pointCount = points->GetNumberOfIds();
 		for (int i = 0; i < pointCount; i++) {
@@ -98,7 +98,7 @@ void cellToPoint(std::string inFile, std::string outFile) {
 		y_sum /= pointCount;
 		z_sum /= pointCount;
 
-		tvmet::Vector<double, 3> temp(x_sum,y_sum,z_sum);
+		tvmet::Vector<double, 3> temp(x_sum, y_sum, z_sum);
 		tvmet::Vector<double, 3> centroid;
 		centroid = temp / tvmet::norm2(temp);
 
