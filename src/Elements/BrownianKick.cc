@@ -85,14 +85,14 @@ namespace voom
             
             Vector3D tempVec( 0, 0, 0);
             
-            tempVec = currPoint + xi;
+            tempVec = currPoint + xi*sqrt(_D*_dt);
             xi = tempVec;
             
             tempVec = ( xi / tvmet::norm2( xi ) )*tvmet::norm2( currPoint );
             
             xi = tempVec - currPoint;
             
-            _delta_xB[i] = xi*sqrt(_D*_dt);
+            _delta_xB[i] = xi;
         }
     }
     
