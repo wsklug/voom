@@ -60,7 +60,7 @@ foreach(curr_target ${capsid_targets})
 	
 endforeach(curr_target)
 
-set (helper_targets densityPlot rotatePoints createTfromOutline rmsd)
+set (helper_targets densityPlot rotatePoints createTfromOutline rmsd cellDataToPointData)
 
 foreach(curr_target ${helper_targets})
 
