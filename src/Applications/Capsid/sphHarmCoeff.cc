@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <limits>
 #include <algorithm>
+#include <boost/math/special_functions/spherical_harmonic.hpp>
 
 #include <vtkPolyData.h>
 #include <vtkPolyDataReader.h>
