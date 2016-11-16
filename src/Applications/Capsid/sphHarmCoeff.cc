@@ -122,8 +122,8 @@ int main(int argc, char* argv[]) {
 //Function to get theta and phi limits of a cell
 double * getBinLimits(vtkSmartPointer<vtkPolyData> poly,
 	vtkSmartPointer<vtkIdList> points) {
-	double theta_max = 0, theta_min = 180,
-		phi_max = 0, phi_min = 360;
+	double theta_max = 0, theta_min = M_PI,
+		phi_max = 0, phi_min = 2*M_PI;
 
 	for (int i = 0; i < points->GetNumberOfIds(); i++) {
 
@@ -136,15 +136,15 @@ double * getBinLimits(vtkSmartPointer<vtkPolyData> poly,
 			if (std::abs(xyz[2] - 1) < 1e-8)
 				theta_min = 0;
 			if (std::abs(xyz[2] + 1) < 1e-8)
-				theta_max = 180;
+				theta_max = M_PI;
 			continue;
 		}
 
 		//Convert to spherical coordinates (phi,theta)
-		double phi = (180 / M_PI)*atan2(xyz[1], xyz[0]);
-		double theta = (180 / M_PI)*acos(xyz[2]);
+		double phi = atan2(xyz[1], xyz[0]);
+		double theta = acos(xyz[2]);
 
-		phi = (phi < 0) ? (360 + phi) : phi;
+		phi = (phi < 0) ? (2*M_PI + phi) : phi;
 
 		//Compare to update max and min values
 		theta_max = std::max(theta, theta_max);
@@ -155,9 +155,9 @@ double * getBinLimits(vtkSmartPointer<vtkPolyData> poly,
 	//Checking for the last bin along phi direction
 	//Assuming we will never make longitudinal bin width
 	//larger than 45 degrees which is already too much 
-	if ((phi_max - phi_min) > 45) {
+	if ((phi_max - phi_min) > M_PI_4) {
 		phi_min = phi_max;
-		phi_max = 360;
+		phi_max = 2*M_PI;
 	}
 
 	double binLimits[] = { theta_min, theta_max, phi_min, phi_max };

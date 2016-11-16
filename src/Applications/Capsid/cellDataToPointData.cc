@@ -103,9 +103,9 @@ void cellToPoint(std::string inFile, std::string outFile) {
 		centroid = temp / tvmet::norm2(temp);
 
 		//Convert to spherical coordinates (phi,theta)
-		double phi = (180 / M_PI)*atan2(centroid(1), centroid(0));
-		double theta = (180 / M_PI)*acos(centroid(2));
-		phi = (phi < 0) ? (360 + phi) : phi;
+		double phi = atan2(centroid(1), centroid(0));
+		double theta = acos(centroid(2));
+		phi = (phi < 0) ? (2*M_PI + phi) : phi;
 
 		double currDensity = density->GetTuple1(index++);
 
