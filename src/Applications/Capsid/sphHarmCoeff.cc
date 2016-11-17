@@ -28,12 +28,11 @@ using namespace std;
 
 double* getBinLimits(vtkSmartPointer<vtkPolyData> poly,
 	vtkSmartPointer<vtkIdList> points);
-std::complex<double> getIntegrandVal(int l, int m, double *, double, double);
 
 int main(int argc, char* argv[]) {
 
-	if (argc < 4) {
-		cout << "Usage: sphHarmCoeff <inFile> <outFile> <l_max>"
+	if (argc < 5) {
+		cout << "Usage: sphHarmCoeff <inFile> <outFile> <l_max> <vectorDensityFlag>"
 			<< endl;
 		return(0);
 	}
@@ -44,6 +43,7 @@ int main(int argc, char* argv[]) {
 	string inputFile = argv[1];
 	string outputFile = argv[2];
 	int l_max = std::atoi(argv[3]);
+	bool vectorDensityFlag = std::atoi(argv[4]);
 
 	//Read the input file
 	assert(ifstream(inputFile.c_str()));
@@ -55,8 +55,14 @@ int main(int argc, char* argv[]) {
 	vtkSmartPointer<vtkPolyData> poly = reader->GetOutput();
 	reader->Update();
 
-	vtkSmartPointer<vtkDataArray> density
-		= poly->GetCellData()->GetScalars("Density");
+	vtkSmartPointer<vtkDataArray> density;
+
+	if (vectorDensityFlag) {
+		density = poly->GetCellData()->GetVectors("VectorDensity");
+	}
+	else {
+		density = poly->GetCellData()->GetScalars("Density");
+	}
 
 	bool densityExists = false;
 	if (density.GetPointer()) {
@@ -74,7 +80,7 @@ int main(int argc, char* argv[]) {
 
 	ofstream output;
 	output.open(outputFile.c_str());
-	output << "#l\t\tm\t\tClm" << std::endl;
+	output << "#l\t\tm\t\tClm_real\t\tClm_imag" << std::endl;
 
 	//Set the quad-order and quad-points here
 	int quadLen = 3;
@@ -82,15 +88,24 @@ int main(int argc, char* argv[]) {
 	double w[] = { 0.555556, 0.888889, 0.555556 };
 
 	for (int l = 0; l < l_max; l++) {
-		std::complex<double> Clm = 0;
-
 		for (int m = -l; m <= l; m++) {
 
+			std::complex<double> Clm = 0;
 			bins->InitTraversal();
 			int index = 0;
 			while (bins->GetNextCell(points)) {
 				double * binLimits = getBinLimits(poly, points);
-				double rho = density->GetTuple1(index++);
+				std::complex<double> rho;
+				if (vectorDensityFlag) {
+					double* rhoTemp = density->GetTuple2(index++);
+					rho.real(rhoTemp[0]);
+					rho.imag(rhoTemp[1]);
+				}
+				else {
+					rho.real( density->GetTuple1(index++));
+					rho.imag(0);
+				}			
+				
 				double phi1, phi2, theta1, theta2;
 				theta1 = binLimits[0];
 				theta2 = binLimits[1];
@@ -101,14 +116,17 @@ int main(int argc, char* argv[]) {
 
 				for (int i = 0; i < quadLen; i++) {
 					for (int j = 0; j < quadLen; j++) {
-						std::complex<double> currVal =
-							getIntegrandVal(l, m, binLimits, xi[i], xi[j]);
-						Clm += rho*w[i] * w[j] * currVal*Jacobian;
+						double theta = theta1 + (xi[i] + 1)*(theta2 - theta1) / 2;
+						double phi = phi1 + (xi[j] + 1)*(phi2 - phi1) / 2;
+						std::complex<double> currVal = 
+							pow(-1, m)*boost::math::spherical_harmonic(l, -m, theta, phi)
+							*sin(theta);
+						Clm += rho * w[i] * w[j] * currVal * Jacobian;
 					}
 				}
 			}
-			output << l << "\t\t" << m << "\t\t" << Clm
-				<< std::endl;
+			output << l << "\t\t" << m << "\t\t" << std::real(Clm)
+				<<"\t\t"<< std::imag(Clm) <<"\t\t"<< std::endl;
 		}
 	}
 	t2 = clock();
@@ -164,26 +182,4 @@ double * getBinLimits(vtkSmartPointer<vtkPolyData> poly,
 
 	return binLimits;
 
-}
-
-std::complex<double> getIntegrandVal(int l, int m,
-	double* binLimits, double xi, double eta) {
-
-	double phi1, phi2, theta1, theta2;
-	theta1 = binLimits[0];
-	theta2 = binLimits[1];
-	phi1 = binLimits[2];
-	phi2 = binLimits[3];
-
-	double theta, phi;
-
-	theta = theta1 + (xi + 1)*(theta2 - theta1) / 2;
-	phi = phi1 + (eta + 1)*(phi2 - phi1) / 2;
-
-	std::complex<double> currVal;
-
-	//We want comple conjugate of Y_l^m = (-1)^m*Y_l^(-m)
-	currVal = pow(-1, m)*boost::math::spherical_harmonic(l, -m, theta, phi)*sin(theta);
-
-	return currVal;
 }
