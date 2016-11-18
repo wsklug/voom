@@ -34,8 +34,8 @@ double* getBinLimits(vtkSmartPointer<vtkPolyData> poly,
 
 int main(int argc, char* argv[]) {
 
-	if (argc < 6) {
-		cout << "Usage: testSphHarm <l> <m> <lat_res> <long_res> <outFile>"
+	if (argc < 5) {
+		cout << "Usage: testSphHarm <lat_res> <long_res> <inFile> <outFile>"
 			<< endl;
 		return(0);
 	}
@@ -43,11 +43,26 @@ int main(int argc, char* argv[]) {
 	clock_t t1, t2;
 	t1 = clock();
 
-	int l = std::atoi(argv[1]);
-	int m = std::atoi(argv[2]);
-	int lat_res = std::atoi(argv[3]);
-	int long_res = std::atoi(argv[4]);
-	string outFile = argv[5];
+	int lat_res = std::atoi(argv[1]);
+	int long_res = std::atoi(argv[2]);
+	string inFile = argv[3];
+	string outFile = argv[4];
+
+	std::ifstream input(inFile.c_str());
+	int l_temp, m_temp;
+	double Clm_temp1, Clm_temp2;
+
+	std::vector<int> l, m;
+	std::vector<std::complex<double> > Clm ;
+
+	while ( input >> l_temp >> m_temp >> Clm_temp1 >> Clm_temp2) {
+		l.push_back(l_temp);
+		m.push_back(m_temp);
+		std::complex<double> Clm_temp;
+		Clm_temp.real(Clm_temp1);
+		Clm_temp.imag(Clm_temp2);
+		Clm.push_back(Clm_temp);
+	}
 
 	vtkSmartPointer<vtkSphereSource> sp =
 		vtkSmartPointer<vtkSphereSource>::New();
@@ -70,7 +85,6 @@ int main(int argc, char* argv[]) {
 	scalarDensity->SetNumberOfTuples(poly->GetNumberOfCells());
 	scalarDensity->SetName("Density");
 	scalarDensity->FillComponent(0, 0.0);
-	
 
 	vtkSmartPointer<vtkDoubleArray> vectorDensity =
 		vtkSmartPointer<vtkDoubleArray>::New();
@@ -93,8 +107,13 @@ int main(int argc, char* argv[]) {
 		double theta = (theta1 + theta2) / 2;
 		double phi = (phi1 + phi2) / 2;
 
-		std::complex<double> den = 
-			boost::math::spherical_harmonic(l, m, theta, phi);
+		std::complex<double> den = 0;
+
+		for (int idx = 0; idx < Clm.size(); idx++) {
+			den += Clm[idx]*boost::math::spherical_harmonic(l[idx], 
+				m[idx], theta, phi);
+		}
+
 		vectorDensity->SetTuple2(index, std::real(den), std::imag(den));
 		scalarDensity->SetTuple1(index++,std::real(den));
 	}
