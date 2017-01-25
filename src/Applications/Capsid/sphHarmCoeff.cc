@@ -93,20 +93,20 @@ int main(int argc, char* argv[]) {
 
 	//Set the quad-order and quad-points here
 	//3-point quadrature
-	int quadLen = 3;
+	/*int quadLen = 3;
 	double xi[] = { -0.7745966692414834, 0.0, 0.7745966692414834 };
 	double w[] = { 0.5555555555555556,
-		0.888888888888889, 0.5555555555555556 };
+		0.888888888888889, 0.5555555555555556 };*/
 
 	//4-point quadrature
-	/*int quadLen = 4;
+	int quadLen = 4;
 	double quad1 = 0.339981043584856;
 	double quad2 = 0.861136311594053;
 	double w1 = 0.652145154862546;
 	double w2 = 0.347854845137454;
 
 	double xi[] = { -quad2,-quad1 ,quad1 ,quad2 };
-	double w[] = { w2,w1,w1,w2 };*/
+	double w[] = { w2,w1,w1,w2 };
 
 	for (int l = 0; l < l_max; l++) {
 		for (int m = -l; m <= l; m++) {

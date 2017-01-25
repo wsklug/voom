@@ -37,6 +37,10 @@
 #include <cstdlib>
 #include <ctime>
 #include "HalfEdgeMesh.h"
+#include <vtkSmartPointer.h>
+#include <vtkPolyData.h>
+#include <vtkPolyDataWriter.h>
+#include <vtkPointSet.h>
 
 #ifdef WITH_MPI
 #include <mpi.h>
@@ -281,6 +285,9 @@ namespace voom
     // Calculate and return maximum principal strain (using right
     // Cauchy-Green strain) for all active elements
     void calcMaxPrincipalStrains();
+
+	//! Print Quad Points
+	void printQuadPoints(std::string fileName);
 
     //Get Maximum Principal Strains
     std::vector<double> getMaxPrincipalStrains() {return _maxPrincipalStrain;};

@@ -10,10 +10,10 @@
 #include <limits>
 #include "Node.h"
 #include "FVK.h"
-#include "LoopShellBody.h"
 #include "Model.h"
 #include "Lbfgsb.h"
 #include "Quadrature.h"
+#include "LoopShellBody.h"
 #include "TriangleQuadrature.h"
 
 #include <vtkPolyData.h>
@@ -57,8 +57,6 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
-	TestFind3DAffineTransform();
-
 #ifdef _OPENMP
 	std::cout << "************* PARALLELIZATION USING OPENMP ****************"
 		<< endl << endl;
@@ -81,6 +79,7 @@ int main(int argc, char* argv[]) {
 	double dt = 9.76e-4;
 	int nameSuffix = 0;
 	int lat_res = 100, long_res = 101;
+	double scaleC0 = 1.0;
 
 	//Read epsilon and percentStrain from input file. percentStrain is
 	//calculated so as to set the inflection point of Morse potential
@@ -96,7 +95,8 @@ int main(int argc, char* argv[]) {
 		>> temp >> areaConstraintOn
 		>> temp >> rescale
 		>> temp >> lat_res
-		>> temp >> long_res;
+		>> temp >> long_res
+		>> temp >> scaleC0;
 
 	miscInpFile.close();
 
@@ -508,7 +508,10 @@ int main(int argc, char* argv[]) {
 		nu = 1.0 / 3.0;
 		KC = Y*Ravg*Ravg / gamma;
 		KG = -2 * (1 - nu)*KC; // Gaussian modulus
-		C0 = 0.0;
+		bool useSpontaneousCurvature = true;
+		
+		C0 = useSpontaneousCurvature? scaleC0*(2/Ravg) : 0.0;
+		std::cout << "Spontaneous Curvature = " << C0 << std::endl;
 
 		//The Bodies
 		MaterialType bending(KC, KG, C0, 0.0, 0.0);
@@ -628,7 +631,7 @@ int main(int argc, char* argv[]) {
 				<< std::endl;
 
 			//*******************  REMESHING **************************//
-			bool remesh = true;
+			bool remesh = false;
 			double ARtol = 1.2;
 			uint elementsChanged = 0;
 
@@ -682,6 +685,16 @@ int main(int argc, char* argv[]) {
 					+ A.translation();
 			}
 
+			//Update the Kabsch transformed positions as new current 
+			//configuration in the node container
+			for (int i = 0; i < defNodes.size(); i++) {
+				DeformationNode<3>::Point kabschPoint;
+				for (int j = 0; j < 3; j++) {
+					kabschPoint(j) = newCurr(j, i);
+				}
+				defNodes[i]->setPoint(kabschPoint);
+			}
+
 			//We will print only after every currPrintStep iterations
 			if (viter % printStep == 0) {
 				paraviewStep++;
@@ -694,8 +707,14 @@ int main(int argc, char* argv[]) {
 				//Store the printed out file name for post-processing
 				allVTKFiles.push_back(rName);
 
-
 				percentStrainData.push_back(percentStrain);
+
+				sstm.str("");
+				sstm.clear();
+
+				sstm << fname << "-QP-" << nameSuffix << ".vtk";
+				rName = sstm.str();
+				bd->printQuadPoints(rName.c_str());
 
 				sstm.str("");
 				sstm.clear();
