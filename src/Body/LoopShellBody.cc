@@ -1467,7 +1467,7 @@ namespace voom
 			typename FeElement_t::QuadPointContainer quadPoints
 				= elements[e]->quadraturePoints();
 
-			for (FeElement_t::ConstQuadPointIterator quadPoint = quadPoints.begin();
+			for (typename FeElement_t::ConstQuadPointIterator quadPoint = quadPoints.begin();
 				quadPoint != quadPoints.end(); ++quadPoint) {
 
 				LoopShellShape s = (*quadPoint).shape;
