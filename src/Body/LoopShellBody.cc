@@ -1456,7 +1456,7 @@ namespace voom
 #endif
 		for (int e = 0; e < elements.size(); e++) {
 
-			const FeElement_t::NodeContainer eleNodes = elements[e]->nodes();
+			const typename FeElement_t::NodeContainer eleNodes = elements[e]->nodes();
 
 			/*for (int i = 0; i < eleNodes.size(); i++) {
 				tvmet::Vector<double, 3> currNode = eleNodes[i]->point();
@@ -1464,7 +1464,7 @@ namespace voom
 				newPointSet->SetPoint(pointIndex++, currNodePoint);
 			}*/
 
-			FeElement_t::QuadPointContainer quadPoints
+			typename FeElement_t::QuadPointContainer quadPoints
 				= elements[e]->quadraturePoints();
 
 			for (FeElement_t::ConstQuadPointIterator quadPoint = quadPoints.begin();
