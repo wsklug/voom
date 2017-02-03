@@ -40,10 +40,8 @@
 #include <vtkSmartPointer.h>
 #include <vtkPolyData.h>
 #include <vtkPolyDataWriter.h>
-#include <vtkPointSet.h>
-#include <vtkCellArray.h>
 #include <vtkDoubleArray.h>
-#include <vtkPoints.h>
+#include <vtkPointData.h>
 
 #ifdef WITH_MPI
 #include <mpi.h>
