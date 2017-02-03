@@ -863,6 +863,59 @@ namespace voom
 		return;
 	}
 
+	template < class Material_t >
+	void LoopShellBody< Material_t >::printParaview(const std::string name, 
+		Eigen::Matrix3Xd transformed, std::vector< tvmet::Vector<int, 3> > connectivities) const {
+		std::string fileName = name + ".vtk";
+		vtkSmartPointer<vtkPolyDataWriter> writer =
+			vtkSmartPointer<vtkPolyDataWriter>::New();
+		vtkSmartPointer<vtkPolyData> pd
+			= vtkSmartPointer<vtkPolyData>::New();
+		vtkSmartPointer<vtkPoints> points
+			= vtkSmartPointer<vtkPoints>::New();
+		vtkSmartPointer<vtkDoubleArray> displacements =
+			vtkSmartPointer<vtkDoubleArray>::New();
+
+		tvmet::Vector<double, 3> refPosition, currPosition, disp;
+		points->SetNumberOfPoints(_shellNodes.size());
+		displacements->SetNumberOfComponents(3);
+		displacements->SetNumberOfTuples(_shellNodes.size());
+		displacements->SetName("displacements");
+
+		for (int i = 0; i < _shellNodes.size(); i++) {
+			double X[3] = { 0.0,0.0,0.0 };
+			refPosition = _shellNodes[i]->position();
+			for (int q = 0; q < 3; q++) {
+				X[q] = refPosition(q);
+				currPosition(q) = transformed(q, i);
+			}
+			disp = currPosition - refPosition;
+			points->SetPoint(i, X);
+			displacements->SetTuple3(i,
+				disp(0), disp(1), disp(2));
+		}
+
+		//Prepare the Cell data
+		vtkSmartPointer<vtkCellArray> cells =
+			vtkSmartPointer<vtkCellArray>::New();
+		for(int i = 0; i < connectivities.size(); i++) {
+			vtkIdType cell[3];
+			for (int j = 0; j < 3; j++) {
+				cell[j] = connectivities[i](j);
+			}
+			cells->InsertNextCell(3, cell);
+		}
+
+		pd->SetPoints(points);
+		pd->GetPointData()->AddArray(displacements);
+		pd->SetPolys(cells);
+
+		writer->SetInputData(pd);
+		writer->SetFileName(fileName.c_str());
+		writer->Write();
+
+	}
+
 	//! create Alias-Wavefront .obj file
 	template < class Material_t >
 	void LoopShellBody< Material_t >::printObj(const std::string name) const

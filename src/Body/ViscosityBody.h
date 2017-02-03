@@ -22,7 +22,6 @@
 #include <cstdlib>
 #include <ctime>
 #include "Body.h"
-#include "LennardJones.h"
 #include "voom.h"
 #include "Node.h"
 

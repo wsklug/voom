@@ -41,6 +41,9 @@
 #include <vtkPolyData.h>
 #include <vtkPolyDataWriter.h>
 #include <vtkPointSet.h>
+#include <vtkCellArray.h>
+#include <vtkDoubleArray.h>
+#include <vtkPoints.h>
 
 #ifdef WITH_MPI
 #include <mpi.h>
@@ -205,6 +208,11 @@ namespace voom
 			  const int nWhichForce = 2);
 
     void printParaview(const std::string fileName) const;
+
+	//! Printing of a Paraview file with rigid rotations undone
+	void printParaview(const std::string name,
+		Eigen::Matrix3Xd,
+		std::vector< tvmet::Vector<int, 3> > connectivities) const;
 
     void printObj(const std::string name) const;
     

@@ -19,6 +19,8 @@
 #include <vtkSetGet.h>
 #include <vtkSphereSource.h>
 #include <vtkCellArray.h>
+#include <vtkTriangleFilter.h>
+#include <vtkLinearSubdivisionFilter.h>
 
 #include "Morse.h"
 #include "SpringPotential.h"
@@ -26,6 +28,7 @@
 #include "BrownianKick.h"
 #include "ViscousRegularizer.h"
 #include "RadialSpring.h"
+#include "ViscosityBody.h"
 
 #include "HelperFunctions.h"
 
@@ -74,6 +77,7 @@ int main(int argc, char* argv[]) {
 	int nameSuffix = 0;
 	int lat_res = 100, long_res = 101;
 	double scaleC0 = 1.0;
+	int numSubDivide = 0.0;
 
 	//Read epsilon and percentStrain from input file. percentStrain is
 	//calculated so as to set the inflection point of Morse potential
@@ -90,7 +94,8 @@ int main(int argc, char* argv[]) {
 		>> temp >> rescale
 		>> temp >> lat_res
 		>> temp >> long_res
-		>> temp >> scaleC0;
+		>> temp >> scaleC0
+		>> temp >> numSubDivide;
 
 	miscInpFile.close();
 
@@ -126,58 +131,70 @@ int main(int argc, char* argv[]) {
 	std::cout << "Mesh->GetNumberOfPoints() = " << mesh->GetNumberOfPoints()
 		<< std::endl;
 
-	// create vector of nodes
+	//Create a finer mesh by sub-dividing triangles from the original mesh
+	vtkSmartPointer<vtkTriangleFilter> triangles 
+		= vtkSmartPointer<vtkTriangleFilter>::New();
+	triangles->SetInputData(mesh);
 
+	vtkSmartPointer<vtkLinearSubdivisionFilter> linSub 
+		= vtkSmartPointer<vtkLinearSubdivisionFilter>::New();
+	linSub->SetInputConnection(triangles->GetOutputPort());
+	linSub->SetNumberOfSubdivisions(numSubDivide);
+	linSub->Update();
+
+	vtkSmartPointer<vtkPolyData> finerMesh = linSub->GetOutput();
+
+	//Just for testing.. print the finer mesh
+	/*vtkSmartPointer<vtkPolyDataWriter> writer 
+		= vtkSmartPointer<vtkPolyDataWriter>::New();
+	writer->SetInputData(finerMesh);
+	writer->SetFileName("FinerMesh.vtk");
+	writer->Write();*/
+
+	//Create vector of nodes
 	int dof = 0;
-	std::vector< NodeBase* > nodes;
+	//std::vector< NodeBase* > nodes;
 	std::vector< DeformationNode<3>* > defNodes;
+	std::vector< NodeBase* > allNodes;
+	std::vector< DeformationNode<3>* > allDefNodes;
 	double Ravg = 0.0;
-
-	vtkSmartPointer<vtkDataArray> displacements
-		= mesh->GetPointData()->GetVectors("displacements");
-
-	bool displacementsExist = false;
-
-	if (displacements.GetPointer()) {
-		displacementsExist = true;
-	}
 
 	// read in points
 	for (int a = 0; a < mesh->GetNumberOfPoints(); a++) {
 		int id = a;
 		DeformationNode<3>::Point x;
 		mesh->GetPoint(a, &(x[0]));
-
-
-		if (displacementsExist) {
-
-			tvmet::Vector< double, 3 > disp(0, 0, 0);
-			tvmet::Vector< double, 3 > tempSum(0, 0, 0);
-			displacements->GetTuple(a, &(disp[0]));
-
-			tempSum = x + disp;
-			x = tempSum;
-
-		}
-
 		Ravg += tvmet::norm2(x);
 		NodeBase::DofIndexMap idx(3);
 		for (int j = 0; j < 3; j++) idx[j] = dof++;
 		DeformationNode<3>* n = new DeformationNode<3>(id, idx, x);
-		nodes.push_back(n);
+		//nodes.push_back(n);
 		defNodes.push_back(n);
+		allNodes.push_back(n);
+		allDefNodes.push_back(n);
 	}
-	assert(nodes.size() != 0);
-	Ravg /= nodes.size();
-	cout << "Number of nodes: " << nodes.size() << endl
-		<< "Initial radius: " << Ravg << endl;
+	for (int a = mesh->GetNumberOfPoints(); 
+		a < finerMesh->GetNumberOfPoints(); a++) {
+		int id = a;
+		DeformationNode<3>::Point x;
+		finerMesh->GetPoint(a, &(x[0]));
+		Ravg += tvmet::norm2(x);
+		NodeBase::DofIndexMap idx(3);
+		for (int j = 0; j < 3; j++) idx[j] = dof++;
+		DeformationNode<3>* n = new DeformationNode<3>(id, idx, x);
+		allNodes.push_back(n);
+		allDefNodes.push_back(n);
+	}
+	assert(allNodes.size() != 0);
+	Ravg /= allNodes.size();
+	cout << "Initial radius: " << Ravg << endl;
 
-	// read in triangle connectivities
+	// read in coarse mesh triangle connectivities
 	vector< tvmet::Vector<int, 3> > connectivities;
 	tvmet::Vector<int, 3> c;
 	int ntri = mesh->GetNumberOfCells();
 	connectivities.reserve(ntri);
-	std::cout << "Number of triangles: " << ntri << endl;
+	std::cout << "Number of triangles in coarse mesh: " << ntri << endl;
 
 	for (int i = 0; i < ntri; i++) {
 		assert(mesh->GetCell(i)->GetNumberOfPoints() == 3);
@@ -185,10 +202,21 @@ int main(int argc, char* argv[]) {
 		connectivities.push_back(c);
 	}
 
+	// read in finer mesh triangle connectivities
+	vector< tvmet::Vector<int, 3> > fineConnectivities;
+	fineConnectivities.reserve(ntri);
+	std::cout << "Number of triangles in finer mesh: " << ntri << endl;
+
+	for (int i = 0; i < ntri; i++) {
+		assert(finerMesh->GetCell(i)->GetNumberOfPoints() == 3);
+		for (int a = 0; a < 3; a++) c[a] = finerMesh->GetCell(i)->GetPointId(a);
+		fineConnectivities.push_back(c);
+	}
+
 	// Calculate side lengths average and std dev of the 
 	//equilateral triangles
 	std::vector<double> lengthStat =
-		calcEdgeLenAndStdDev(defNodes, connectivities);
+		calcEdgeLenAndStdDev(allDefNodes, fineConnectivities);
 	double EdgeLength = lengthStat[0];
 	double stdDevEdgeLen = lengthStat[1];
 	std::cout << "Before any relaxation :" << endl
@@ -200,35 +228,35 @@ int main(int argc, char* argv[]) {
 
 	if (rescale) {
 		// Rescale size of the capsid by the average equilateral edge length
-		for (int i = 0; i < defNodes.size(); i++) {
+		for (int i = 0; i < allNodes.size(); i++) {
 			DeformationNode<3>::Point x;
-			x = defNodes[i]->point();
+			x = allDefNodes[i]->point();
 			x *= 1.0 / EdgeLength;
-			defNodes[i]->setPoint(x);
-			defNodes[i]->setPosition(x);
+			allDefNodes[i]->setPoint(x);
+			allDefNodes[i]->setPosition(x);
 		}
 		//Recalculate edge lengths and dependent quantities
-		lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);
+		lengthStat = calcEdgeLenAndStdDev(allDefNodes, fineConnectivities);
 		EdgeLength = lengthStat[0];
 		Ravg = 0.0;
-		for (int i = 0; i < defNodes.size(); i++) {
+		for (int i = 0; i < allDefNodes.size(); i++) {
 			DeformationNode<3>::Point x;
-			x = defNodes[i]->point();
+			x = allDefNodes[i]->point();
 			double tempRadius = tvmet::norm2(x);
 			Ravg += tempRadius;
 		}
-		Ravg /= defNodes.size();
+		Ravg /= allDefNodes.size();
 		std::cout << "Radius of capsid after rescaling = " << Ravg << endl;
 	}
 
-	Rshift = EdgeLength;
+	Rshift = EdgeLength*std::pow(2,numSubDivide);
 
 	// Prepare Eigen matrices
-	Eigen::Matrix3Xd initial(3, defNodes.size()), current(3, defNodes.size());
+	Eigen::Matrix3Xd initial(3, allDefNodes.size()), current(3, allDefNodes.size());
 
 	//Fill in matrix of the initial state for Kabsch algorithm
-	for (int col = 0; col < defNodes.size(); col++) {
-		Vector3D coord = defNodes[col]->point();
+	for (int col = 0; col < allDefNodes.size(); col++) {
+		Vector3D coord = allDefNodes[col]->point();
 		for (int row = 0; row < 3; row++) {
 			initial(row, col) = coord(row);
 		}
@@ -283,7 +311,7 @@ int main(int argc, char* argv[]) {
 	double factr = 1.0e+1;
 	double pgtol = 1e-7;
 	int iprint = 100;
-	Lbfgsb solver(3 * nodes.size(), m, factr, pgtol, iprint, maxIter);
+	Lbfgsb solver(3 * allDefNodes.size(), m, factr, pgtol, iprint, maxIter);
 
 	typedef FVK MaterialType;
 	typedef LoopShellBody<MaterialType> LSB;
@@ -506,18 +534,18 @@ int main(int argc, char* argv[]) {
 		if (areaConstraintOn) {
 			std::cout << "********** AREA and PRESSURE CONSTRAINTS ACTIVE  **********"
 				<< std::endl;
-			bd = new LSB(bending, connectivities, nodes, quadOrder, pressure,
+			bd = new LSB(bending, fineConnectivities, allNodes, quadOrder, pressure,
 				0.0, 0.0, 1.0e4, 1.0e6, 1.0e4, multiplier, penalty, noConstraint);
 			std::cout << "Prescribed Area = " << bd->prescribedArea() << std::endl;
 		}
 		else if (pressureConstraintOn && !areaConstraintOn) {
 			std::cout << "********** ONLY PRESSURE CONSTRAINT ACTIVE **********" << std::endl;
-			bd = new LSB(bending, connectivities, nodes, quadOrder, pressure,
+			bd = new LSB(bending, fineConnectivities, allNodes, quadOrder, pressure,
 				0.0, 0.0, 1.0e4, 1.0e6, 1.0e4, multiplier, noConstraint, noConstraint);
 		}
 		else {
 			std::cout << "********** CONSTRAINTS NOT BEING USED **********" << std::endl;
-			bd = new LSB(bending, connectivities, nodes, quadOrder);
+			bd = new LSB(bending, fineConnectivities, allNodes, quadOrder);
 		}
 
 		bd->setOutput(paraview);
@@ -525,23 +553,24 @@ int main(int argc, char* argv[]) {
 		Morse Mat(epsilon, sigma, Rshift);
 		PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);
 		PrBody->initialNearestNeighbor();
-		ViscousRegularizer vr(bd->nodes(), viscosity);
+		ViscousRegularizer vr(allNodes, viscosity);
 		bd->pushBack(&vr);
-		BrownianKick bk(defNodes, Cd, diffusionCoeff, dt);
+		BrownianKick bk(allDefNodes, Cd, diffusionCoeff, dt);
 		bd->pushBack(&bk);
-		RadialSpring rs(defNodes, radialSpringConstant, Ravg);
+		RadialSpring rs(allDefNodes, radialSpringConstant, Ravg);
 		bd->pushBack(&rs);
 
 		//Create Model
 		Model::BodyContainer bdc;
 		bdc.push_back(PrBody);
 		bdc.push_back(bd);
-		Model model(bdc, nodes);
+		
+		Model model(bdc, allNodes);
 
-		bool checkConsistency = false;
+		bool checkConsistency = true;
 		if (checkConsistency) {
 			std::cout << "Checking consistency......" << std::endl;
-			bk.updateParallelKick();
+			bk.updateProjectedKick();
 			bd->checkConsistency(true);
 			PrBody->checkConsistency(true);
 		}
@@ -585,8 +614,8 @@ int main(int argc, char* argv[]) {
 			solver.solve(&model);
 
 			//Fill-in Matrix for new state for Kabsch algorithm
-			for (int col = 0; col < defNodes.size(); col++) {
-				Vector3D coord = defNodes[col]->point();
+			for (int col = 0; col < allDefNodes.size(); col++) {
+				Vector3D coord = allDefNodes[col]->point();
 				for (int row = 0; row < 3; row++) {
 					current(row, col) = coord(row);
 				}
@@ -639,8 +668,8 @@ int main(int argc, char* argv[]) {
 					solver.solve(&model);
 
 					//Fill-in Matrix for new state for Kabsch algorithm
-					for (int col = 0; col < defNodes.size(); col++) {
-						Vector3D coord = defNodes[col]->point();
+					for (int col = 0; col < allDefNodes.size(); col++) {
+						Vector3D coord = allDefNodes[col]->point();
 						for (int row = 0; row < 3; row++) {
 							current(row, col) = coord(row);
 						}
@@ -663,7 +692,7 @@ int main(int argc, char* argv[]) {
 
 			//********** Print relaxed configuration ************// 
 			Eigen::Affine3d A;
-			Eigen::Matrix3Xd newCurr(3, defNodes.size());
+			Eigen::Matrix3Xd newCurr(3, allDefNodes.size());
 			A = Find3DAffineTransform(current, initial);
 			for (int col = 0; col < current.cols(); col++) {
 				newCurr.col(col) = A.linear()*current.col(col)
@@ -672,12 +701,12 @@ int main(int argc, char* argv[]) {
 
 			//Update the Kabsch transformed positions as new current 
 			//configuration in the node container
-			for (int i = 0; i < defNodes.size(); i++) {
+			for (int i = 0; i < allDefNodes.size(); i++) {
 				DeformationNode<3>::Point kabschPoint;
 				for (int j = 0; j < 3; j++) {
 					kabschPoint(j) = newCurr(j, i);
 				}
-				defNodes[i]->setPoint(kabschPoint);
+				allDefNodes[i]->setPoint(kabschPoint);
 			}
 
 			//We will print only after every currPrintStep iterations
@@ -686,7 +715,7 @@ int main(int argc, char* argv[]) {
 				sstm << fname << "-relaxed-" << nameSuffix;
 				rName = sstm.str();
 				//bd->printParaview(rName.c_str());
-				PrBody->printParaview(rName, newCurr, connectivities);
+				bd->printParaview(rName, newCurr, connectivities);
 				sstm << ".vtk";
 				rName = sstm.str();
 				//Store the printed out file name for post-processing
@@ -707,7 +736,7 @@ int main(int argc, char* argv[]) {
 			//****************************************************//
 
 			//Re-calculate triangle edge length mean and deviation
-			lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);
+			lengthStat = calcEdgeLenAndStdDev(allDefNodes, fineConnectivities);
 			EdgeLength = lengthStat[0];
 			stdDevEdgeLen = lengthStat[1];
 			std::cout << "After relaxing with Morse potential: " << endl
@@ -719,10 +748,10 @@ int main(int argc, char* argv[]) {
 
 			//Calculate centre of sphere as average of position vectors of all nodes.
 			tvmet::Vector<double, 3> Xavg(0.0);
-			for (int i = 0; i < defNodes.size(); i++) {
-				Xavg += defNodes[i]->point();
+			for (int i = 0; i < allDefNodes.size(); i++) {
+				Xavg += allDefNodes[i]->point();
 			}
-			Xavg /= defNodes.size();
+			Xavg /= allDefNodes.size();
 
 			//We will calculate radius using the quadrature points
 			LSB::FeElementContainer elements = bd->shells();
