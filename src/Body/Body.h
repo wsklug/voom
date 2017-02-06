@@ -103,7 +103,7 @@ namespace voom
     virtual void addConstraint( Constraint * e ) { _constraints.push_back( e ); }
 
     //! Query an element's activity status
-    virtual bool active(int e) {};
+	virtual bool active(int e) {};
 
     //! Mark an element as active so it will be computed
     virtual void activate(int e) {};

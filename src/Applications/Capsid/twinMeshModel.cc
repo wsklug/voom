@@ -21,6 +21,7 @@
 #include <vtkCellArray.h>
 #include <vtkTriangleFilter.h>
 #include <vtkLinearSubdivisionFilter.h>
+#include <vtkLoopSubdivisionFilter.h>
 
 #include "Morse.h"
 #include "SpringPotential.h"
@@ -138,6 +139,8 @@ int main(int argc, char* argv[]) {
 
 	vtkSmartPointer<vtkLinearSubdivisionFilter> linSub 
 		= vtkSmartPointer<vtkLinearSubdivisionFilter>::New();
+	//vtkSmartPointer<vtkLoopSubdivisionFilter> linSub
+		//= vtkSmartPointer<vtkLoopSubdivisionFilter>::New();
 	linSub->SetInputConnection(triangles->GetOutputPort());
 	linSub->SetNumberOfSubdivisions(numSubDivide);
 	linSub->Update();
@@ -145,15 +148,14 @@ int main(int argc, char* argv[]) {
 	vtkSmartPointer<vtkPolyData> finerMesh = linSub->GetOutput();
 
 	//Just for testing.. print the finer mesh
-	/*vtkSmartPointer<vtkPolyDataWriter> writer 
+	vtkSmartPointer<vtkPolyDataWriter> writer 
 		= vtkSmartPointer<vtkPolyDataWriter>::New();
 	writer->SetInputData(finerMesh);
 	writer->SetFileName("FinerMesh.vtk");
-	writer->Write();*/
+	writer->Write();
 
 	//Create vector of nodes
 	int dof = 0;
-	//std::vector< NodeBase* > nodes;
 	std::vector< DeformationNode<3>* > defNodes;
 	std::vector< NodeBase* > allNodes;
 	std::vector< DeformationNode<3>* > allDefNodes;
@@ -168,13 +170,14 @@ int main(int argc, char* argv[]) {
 		NodeBase::DofIndexMap idx(3);
 		for (int j = 0; j < 3; j++) idx[j] = dof++;
 		DeformationNode<3>* n = new DeformationNode<3>(id, idx, x);
-		//nodes.push_back(n);
 		defNodes.push_back(n);
 		allNodes.push_back(n);
 		allDefNodes.push_back(n);
 	}
-	for (int a = mesh->GetNumberOfPoints(); 
-		a < finerMesh->GetNumberOfPoints(); a++) {
+	std::cout << "Number of points in finer mesh:"<< finerMesh->GetNumberOfPoints() << std::endl;
+	std::cout << "Number of points in coarser mesh:" << mesh->GetNumberOfPoints() << std::endl;
+
+	for (int a = mesh->GetNumberOfPoints();	a < finerMesh->GetNumberOfPoints(); a++) {
 		int id = a;
 		DeformationNode<3>::Point x;
 		finerMesh->GetPoint(a, &(x[0]));
@@ -190,7 +193,7 @@ int main(int argc, char* argv[]) {
 	cout << "Initial radius: " << Ravg << endl;
 
 	// read in coarse mesh triangle connectivities
-	vector< tvmet::Vector<int, 3> > connectivities;
+	/*vector< tvmet::Vector<int, 3> > connectivities;
 	tvmet::Vector<int, 3> c;
 	int ntri = mesh->GetNumberOfCells();
 	connectivities.reserve(ntri);
@@ -200,10 +203,12 @@ int main(int argc, char* argv[]) {
 		assert(mesh->GetCell(i)->GetNumberOfPoints() == 3);
 		for (int a = 0; a < 3; a++) c[a] = mesh->GetCell(i)->GetPointId(a);
 		connectivities.push_back(c);
-	}
+	}*/
 
 	// read in finer mesh triangle connectivities
 	vector< tvmet::Vector<int, 3> > fineConnectivities;
+	int ntri = finerMesh->GetNumberOfCells();
+	tvmet::Vector<int, 3> c;
 	fineConnectivities.reserve(ntri);
 	std::cout << "Number of triangles in finer mesh: " << ntri << endl;
 
@@ -212,6 +217,14 @@ int main(int argc, char* argv[]) {
 		for (int a = 0; a < 3; a++) c[a] = finerMesh->GetCell(i)->GetPointId(a);
 		fineConnectivities.push_back(c);
 	}
+	std::cout << "Printing fineConnectivities: " << std::endl;
+		for (int i = 0; i < fineConnectivities.size(); i++){
+			std::cout << i << " :";
+			for (int j = 0; j < fineConnectivities[i].size(); j++) {
+				std::cout << " " << fineConnectivities[i][j];
+			}
+			std::cout << std::endl;
+		}
 
 	// Calculate side lengths average and std dev of the 
 	//equilateral triangles
@@ -567,7 +580,7 @@ int main(int argc, char* argv[]) {
 		
 		Model model(bdc, allNodes);
 
-		bool checkConsistency = true;
+		bool checkConsistency = false;
 		if (checkConsistency) {
 			std::cout << "Checking consistency......" << std::endl;
 			bk.updateProjectedKick();
@@ -715,7 +728,7 @@ int main(int argc, char* argv[]) {
 				sstm << fname << "-relaxed-" << nameSuffix;
 				rName = sstm.str();
 				//bd->printParaview(rName.c_str());
-				bd->printParaview(rName, newCurr, connectivities);
+				bd->printParaview(rName, newCurr, fineConnectivities);
 				sstm << ".vtk";
 				rName = sstm.str();
 				//Store the printed out file name for post-processing
