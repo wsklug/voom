@@ -71,10 +71,10 @@ template<class T>
 std::vector<double> getRadialStats(LoopShellBody<T>* bd, 
 	tvmet::Vector<double, 3> Xavg) {
 
-	typedef typename LoopShellBody<T> LSB;
-	typedef typename LoopShell<T> LS;
+	typedef LoopShellBody<T> LSB;
+	typedef LoopShell<T> LS;
 
-	LSB::FeElementContainer elements = bd->shells();
+	typename LSB::FeElementContainer elements = bd->shells();
 	std::vector<double> qpRadius(elements.size(), 0.0);
 
 #ifdef _OPENMP
@@ -82,10 +82,10 @@ std::vector<double> getRadialStats(LoopShellBody<T>* bd,
 #endif
 	for (int e = 0; e < elements.size(); e++) {
 
-		const LS::NodeContainer eleNodes = elements[e]->nodes();
-		LS::QuadPointContainer quadPoints = elements[e]->quadraturePoints();
+		const typename LS::NodeContainer eleNodes = elements[e]->nodes();
+		typename LS::QuadPointContainer quadPoints = elements[e]->quadraturePoints();
 
-		for (LS::ConstQuadPointIterator quadPoint = quadPoints.begin();
+		for (typename LS::ConstQuadPointIterator quadPoint = quadPoints.begin();
 			quadPoint != quadPoints.end(); ++quadPoint) {
 
 			LoopShellShape s = (*quadPoint).shape;
