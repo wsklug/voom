@@ -71,8 +71,8 @@ template<class T>
 std::vector<double> getRadialStats(LoopShellBody<T>* bd, 
 	tvmet::Vector<double, 3> Xavg) {
 
-	typedef LoopShellBody<T> LSB;
-	typedef LoopShell<T> LS;
+	typedef typename LoopShellBody<T> LSB;
+	typedef typename LoopShell<T> LS;
 
 	LSB::FeElementContainer elements = bd->shells();
 	std::vector<double> qpRadius(elements.size(), 0.0);
