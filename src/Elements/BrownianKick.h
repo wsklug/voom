@@ -82,7 +82,7 @@ namespace voom
     const NodeContainer& nodes() const { return _nodes; }    
 
 	//!Get Kick Stats
-	double getKickStats();
+	std::vector<double> getKickStats();
     
   private:
     NodeContainer _nodes;

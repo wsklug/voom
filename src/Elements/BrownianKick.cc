@@ -57,13 +57,19 @@ namespace voom
         }
     }
 
-	double BrownianKick::getKickStats()
+	std::vector<double> BrownianKick::getKickStats()
 	{
-		double stats = 0.0;//Mean and std-dev
+		double avg = 0.0;//Mean and std-dev
+		double max = 0.0, min = 1e10;
 		for (int i = 0; i < _nodeCount; i++) {
-			stats += tvmet::norm2( _delta_xB[i] );
+			double currNorm = tvmet::norm2(_delta_xB[i]);
+			avg += currNorm;
+			max = (currNorm > max)? currNorm : max;
+			min = (currNorm < min) ? currNorm : min;
 		}
-		return stats/_nodeCount;
+		avg /= _nodeCount;
+		std::vector<double> out = {max, min, avg};
+		return out;
 	}
     
     void BrownianKick::updateParallelKick(){

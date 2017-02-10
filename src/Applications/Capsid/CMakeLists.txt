@@ -1,20 +1,19 @@
 project(Capsid)
 
-if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
-	configure_file(${CMAKE_SOURCE_DIR}/cmake/Windows/getopt.c ${PROJECT_BINARY_DIR} COPYONLY)
-	configure_file(${CMAKE_SOURCE_DIR}/cmake/Windows/getopt.h ${PROJECT_BINARY_DIR} COPYONLY)
-	configure_file(${CMAKE_SOURCE_DIR}/cmake/Windows/unistd.h ${PROJECT_BINARY_DIR} COPYONLY)
-endif()
+set(voom_LIBRARIES Body Solvers Materials Elements Quadrature Shape VoomMath Geometry Mesh Model)
 
 add_library(HelperFunctions OBJECT HelperFunctions.cc)
 target_include_directories(HelperFunctions PUBLIC ${VTK_INCLUDE_DIRS}
-	${tvmet_INCLUDE_DIRS} ${blitz_INCLUDE_DIRS}
+	${tvmet_INCLUDE_DIRS} ${blitz_INCLUDE_DIRS} ${EIGEN_INCLUDE_DIRS}
 	${CMAKE_SOURCE_DIR}/src	${CMAKE_SOURCE_DIR}/src/Node ${CMAKE_BINARY_DIR}/src
 	${PROJECT_BINARY_DIR})
-	
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-	add_library (getopt OBJECT getopt.c)
-endif()
+
+foreach(CURRL ${voom_LIBRARIES})
+	target_include_directories(HelperFunctions PRIVATE $<TARGET_PROPERTY:${CURRL},INTERFACE_INCLUDE_DIRECTORIES>)
+		if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+			target_include_directories(HelperFunctions PRIVATE ${PROJECT_BINARY_DIR})
+		endif()
+endforeach(CURRL)
 
 #set(ENV{LIB} $ENV{LIB} "C:/Software/OpenBLAS/lib" PATH)
 find_package(BLAS REQUIRED)
@@ -41,12 +40,7 @@ set(capsid_targets asphNoRescale annealing asphBrownian asphHarmonic dual relaxM
     twinMeshModel)
 
 foreach(curr_target ${capsid_targets})
-
-	if(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND curr_target STREQUAL dual)
-		add_executable(${curr_target} $<TARGET_OBJECTS:getopt> ${curr_target}.cc)
-	else()
-		add_executable(${curr_target} $<TARGET_OBJECTS:HelperFunctions> ${curr_target}.cc)
-	endif()
+	add_executable(${curr_target} $<TARGET_OBJECTS:HelperFunctions> ${curr_target}.cc)
 	target_link_libraries(${curr_target} ${blitz_LIBRARIES})
 	
 	foreach(CURRL ${voom_LIBRARIES})

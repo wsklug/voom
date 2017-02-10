@@ -1,13 +1,10 @@
 #include "HelperFunctions.h"
 
-///////////////////////////////////////////////////////////////////////////////
-//                                                                           //    
-//                        WRITEEDGESTRAINVTK BEGINS                          //
-//                                                                           //
-///////////////////////////////////////////////////////////////////////////////
-//The method writeEdgeStrainVtk() inserts edge strain information in a vtk file
-//The calling method must ensure that 'fileName' exists and is a valid vtk file.
-//MUST use the extension '.vtk' in 'fileName'.
+/*
+	The method writeEdgeStrainVtk() inserts edge strain information in a vtk file
+	The calling method must ensure that 'fileName' exists and is a valid vtk file.
+	MUST use the extension '.vtk' in 'fileName'.
+*/
 namespace voom
 {
 	using namespace std;
@@ -215,11 +212,6 @@ namespace voom
 		}
 	}
 
-	///////////////////////////////////////////////////////////////////////////
-	//                                                                       //
-	//                    CALCEDGELENANDSTDDEV BEGINS                        //
-	//                                                                       //
-	///////////////////////////////////////////////////////////////////////////
 	/*
 	  Calculates average edge lengths of triangles in the mesh and the
 	  standard deviation in the edge lengths.
@@ -282,15 +274,238 @@ namespace voom
 		result.push_back(stdDevEdgeLen);
 		return result;
 	}
+	/*
+		This function returns a surface made of a cloud of points
+	*/
+	vector<tvmet::Vector<int, 3> > delaunay3DSurf(std::vector<DeformationNode<3>*> nodes)
+	{
+		vtkSmartPointer<vtkPoints> pts = vtkSmartPointer<vtkPoints>::New();
+		for (int i = 0; i < nodes.size(); i++) {
+			tvmet::Vector<double, 3> cp = nodes[i]->point();
+			pts->InsertNextPoint(cp(0), cp(1), cp(2));
+		}
+		vtkSmartPointer<vtkPolyDataWriter> pdWriter = vtkSmartPointer<vtkPolyDataWriter>::New();
+		vtkSmartPointer<vtkPolyData> pd = vtkSmartPointer<vtkPolyData>::New();
+		pd->SetPoints(pts);
 
-	///////////////////////// INSERTVALENCEINVTK BEGINS ///////////////////////////
-	/////////////////////////                           //////////////////////////
+		vtkSmartPointer<vtkDelaunay3D> d3D = vtkSmartPointer<vtkDelaunay3D>::New();
+		d3D->SetInputData(pd);
+		vtkSmartPointer<vtkDataSetSurfaceFilter> sf = vtkSmartPointer<vtkDataSetSurfaceFilter>::New();
+		sf->SetInputConnection(d3D->GetOutputPort());
+		sf->Update();
 
-	//The method insertValenceInVtk() inserts valence information in a vtk file
-	//The calling method must ensure that 'fileName' exists and is a valid vtk file.
-	//MUST use the extension '.vtk' in 'fileName'.
-	//'mesh' is a pointer to a vtkPolyData
+		vtkSmartPointer<vtkMeshQuality> mq = vtkSmartPointer<vtkMeshQuality>::New();
+		mq->SetTriangleQualityMeasure(VTK_QUALITY_ASPECT_RATIO);
+		mq->SetInputConnection(sf->GetOutputPort());
+		mq->Update();
+		double quality = mq->GetOutput()->GetFieldData()->
+			GetArray("Mesh Triangle Quality")->GetComponent(0, 1);
+		std::cout << "Average aspect ratio for triangles of new mesh = " << quality << "." << std::endl;
+		pd = sf->GetOutput();
 
+		std::map<int, int> nodeIndexMap;
+		for (int i = 0; i < pd->GetNumberOfPoints(); i++) {
+			double x[3] = { 0.0, 0.0, 0.0 };
+			pd->GetPoint(i, &x[0]);
+			tvmet::Vector<double, 3> temp(x[0], x[1], x[2]);
+			for (int j = 0; j < nodes.size(); j++) {
+				tvmet::Vector<double, 3> currNode = nodes[j]->point();
+				if (tvmet::norm2(temp - currNode) < 1e-6) {
+					nodeIndexMap[i] = j;
+					break;
+				}
+			}
+		}
+
+		tvmet::Vector<int, 3> c;
+		int ntri = pd->GetNumberOfCells();
+		vector<tvmet::Vector<int, 3> > connectivities;
+		connectivities.reserve(ntri);
+		for (int i = 0; i < ntri; i++) {
+			for (int a = 0; a < 3; a++) {
+				c[a] = nodeIndexMap[pd->GetCell(i)->GetPointId(a)];
+			}
+			connectivities.push_back(c);
+		}
+		return connectivities;
+	}
+	/*
+		This function is meant to calculate theta and phi limits for bins on
+		a spherical surface. It is meant to avoid common code from multiple
+		drivers
+	*/
+	std::vector<vector<double> > getSphCellLimits(vtkSmartPointer<vtkPolyData> pd, int long_res) {
+
+		bool debug = false;
+		vtkSmartPointer<vtkIdList> points
+			= vtkSmartPointer<vtkIdList>::New();
+		std::vector<vector<double> > cellLimits;
+		vtkSmartPointer<vtkCellArray> bins = pd->GetPolys();
+		bins->InitTraversal();
+		int cellId = 0;
+
+		while (bins->GetNextCell(points)) {
+
+			if (debug) {
+				std::cout << "Cell Id: " << cellId++
+					<< std::endl;
+			}
+
+			double theta_max = 0, theta_min = 180,
+				phi_max = 0, phi_min = 360;
+
+			for (int i = 0; i < points->GetNumberOfIds(); i++) {
+
+				if (debug) {
+					std::cout << "\tPoint Id : " << points->GetId(i)
+						<< std::endl << "\t\t";
+				}
+
+				//Get Cartesian coordinates for each point
+				double *xyz = pd->GetPoint(points->GetId(i));
+
+				if (debug) {
+					std::cout << xyz[0] << "," << xyz[1] << ","
+						<< xyz[2] << std::endl << "\t\t";
+				}
+
+				//Skip the "poles" of the sphere
+				if ((std::abs(xyz[0]) < 1e-8) &&
+					(std::abs(xyz[1]) < 1e-8)) {
+					if (std::abs(xyz[2] - 1) < 1e-8)
+						theta_min = 0;
+					if (std::abs(xyz[2] + 1) < 1e-8)
+						theta_max = 180;
+					if (debug) {
+						std::cout << std::endl;
+					}
+					continue;
+				}
+
+				//Convert to spherical coordinates (phi,theta)
+				double phi = (180 / M_PI)*atan2(xyz[1], xyz[0]);
+				double theta = (180 / M_PI)*acos(xyz[2]);
+
+				phi = (phi < 0) ? (360 + phi) : phi;
+
+				if (debug) {
+					std::cout << "Phi = " << phi << " Theta = " << theta
+						<< std::endl;
+				}
+
+				//Compare to update max and min values
+				theta_max = std::max(theta, theta_max);
+				theta_min = std::min(theta, theta_min);
+				phi_min = std::min(phi, phi_min);
+				phi_max = std::max(phi, phi_max);
+			}
+			//Checking for the last bin along phi direction
+			if ((phi_max - phi_min) > 2 * (360 / (long_res - 1.0))) {
+				phi_min = phi_max;
+				phi_max = 360;
+			}
+			vector<double> temp;
+			temp.push_back(phi_min);
+			temp.push_back(phi_max);
+			temp.push_back(theta_min);
+			temp.push_back(theta_max);
+
+			if (debug) {
+				std::cout << "\tPhi_min_max: " << phi_min << "," << phi_max
+					<< std::endl << "\t"
+					<< "Theta_min_max: " << theta_min << "," << theta_max
+					<< std::endl;
+			}
+
+			cellLimits.push_back(temp);
+
+		}
+		if (debug) {
+			std::cout << "Printing the bins : " << std::endl;
+			std::cout << "\tBinId\tPhi_min\tPhi_max\tTheta_min\tTheta_max" << std::endl;
+			for (int binIter = 0; binIter < cellLimits.size(); binIter++) {
+				std::cout << "\t" << binIter
+					<< "\t" << cellLimits[binIter][0]
+					<< "\t" << cellLimits[binIter][1]
+					<< "\t" << cellLimits[binIter][2]
+					<< "\t" << cellLimits[binIter][3]
+					<< std::endl;
+			}
+		}
+		return cellLimits;
+	}
+	/*
+		This function classifies the particles belonging to certain bins
+	*/
+	void putParticlesInBins(std::vector<std::vector<double> > cellLimits,
+		Eigen::Matrix3Xd newCurr, std::vector<DeformationNode<3>*> defNodes,
+		vtkSmartPointer<vtkDoubleArray> binDensity, int viterMax) {
+
+		bool debug = false;
+		for (int i = 0; i < defNodes.size(); i++) {
+
+			if (debug) {
+				std::cout << "\tPoint Id = " << i << std::endl;
+			}
+
+			tvmet::Vector<double, 3> pos(0.0);
+			for (int row = 0; row < 3; row++) {
+				pos(row) = newCurr(row, i);
+			}
+
+			if (debug) {
+				std::cout << "\t\tOriginal : " << pos << std::endl;
+			}
+
+			tvmet::Vector<double, 3> normalizedPos(0.0);
+			normalizedPos = pos / tvmet::norm2(pos);
+
+
+			if (debug) {
+				std::cout << "\t\tNormalized : " << normalizedPos << std::endl;
+			}
+
+			//Convert to spherical coordinates (phi,theta)
+			double phi = (180 / M_PI)*atan2(normalizedPos(1),
+				normalizedPos(0));
+			double theta = (180 / M_PI)*acos(normalizedPos(2));
+
+			phi = (phi < 0) ? (360 + phi) : phi;
+
+			if (debug) {
+				std::cout << "\t\tPhi = " << phi << " Theta = " << theta
+					<< std::endl;
+			}
+
+			for (int binId = 0; binId < cellLimits.size(); binId++) {
+				double p_min, p_max, t_min, t_max;
+				p_min = cellLimits[binId][0];
+				p_max = cellLimits[binId][1];
+				t_min = cellLimits[binId][2];
+				t_max = cellLimits[binId][3];
+
+				if ((p_min <= phi && phi < p_max) &&
+					(t_min <= theta && theta < t_max))
+				{
+
+					if (debug) {
+						std::cout << "\t\tBin found : " << binId << std::endl;
+					}
+
+					double tempCount = binDensity->GetTuple1(binId);
+					//Size of fileNames vector corresponds to number of time steps
+					binDensity->SetTuple1(binId, tempCount + (1.0 / viterMax));
+					break;
+				}
+			}
+				}
+			}
+	/*
+		The method insertValenceInVtk() inserts valence information in a vtk file.
+		The calling method must ensure that 'fileName' exists and is a valid vtk file.
+		MUST use the extension '.vtk' in 'fileName'.
+		'mesh' is a pointer to a vtkPolyData
+	*/
 	void insertValenceInVtk(std::vector<std::string> fileNames) {
 
 #ifdef _OPENMP
@@ -357,4 +572,4 @@ namespace voom
 		}
 	}
 
-}
+		}
