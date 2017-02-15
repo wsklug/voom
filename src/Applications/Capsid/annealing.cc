@@ -17,10 +17,9 @@
 #include "TriangleQuadrature.h"
 
 #include <vtkPolyData.h>
-#include <vtkDataSetReader.h>
+#include <vtkPolyDataReader.h>
 #include <vtkPolyDataNormals.h>
 #include <vtkSmartPointer.h>
-#include <vtkUnstructuredGrid.h>
 #include <vtkGeometryFilter.h>
 #include <vtkSetGet.h>
 #include <vtkSphereSource.h>
@@ -100,8 +99,8 @@ int main(int argc, char* argv[]) {
 
 	miscInpFile.close();
 
-	vtkSmartPointer<vtkDataSetReader> reader =
-		vtkSmartPointer<vtkDataSetReader>::New();
+	vtkSmartPointer<vtkPolyDataReader> reader =
+		vtkSmartPointer<vtkPolyDataReader>::New();
 
 	std::stringstream sstm;
 
@@ -112,24 +111,12 @@ int main(int argc, char* argv[]) {
 	vtkSmartPointer<vtkPolyDataNormals> normals =
 		vtkSmartPointer<vtkPolyDataNormals>::New();
 
-	//We have to pass a vtkPolyData to vtkPolyDataNormals::SetInputData(). If
-	//our input vtk file has vtkUnstructuredGridData instead of
-	//vtkPolyData then we need to convert it using vtkGeometryFilter
-	vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();
+	vtkSmartPointer<vtkPolyData> ds = reader->GetOutput();
 	reader->Update();
-
-	vtkSmartPointer<vtkGeometryFilter> geometryFilter =
-		vtkSmartPointer<vtkGeometryFilter>::New();
 
 	vtkSmartPointer<vtkPolyData> mesh;
 
-	if (ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID) {
-		geometryFilter->SetInputConnection(reader->GetOutputPort());
-		normals->SetInputConnection(geometryFilter->GetOutputPort());
-	}
-	else {
-		normals->SetInputConnection(reader->GetOutputPort());
-	}
+	normals->SetInputConnection(reader->GetOutputPort());
 
 	// send through normals filter to ensure that triangle orientations
 	// are consistent 
@@ -354,107 +341,7 @@ int main(int argc, char* argv[]) {
 	 * In the next few lines we will identify spherical co-ordinate
 	 * limits for each cell in the sphere
 	 */
-	std::vector<vector<double> > cellLimits;
-
-	vtkSmartPointer<vtkCellArray> bins = pd->GetPolys();
-
-	vtkSmartPointer<vtkIdList> points
-		= vtkSmartPointer<vtkIdList>::New();
-
-	bins->InitTraversal();
-	int cellId = 0;
-
-	while (bins->GetNextCell(points)) {
-
-		if (debug) {
-			std::cout << "Cell Id: " << cellId++
-				<< std::endl;
-		}
-
-		double theta_max = 0, theta_min = 180,
-			phi_max = 0, phi_min = 360;
-
-		for (int i = 0; i < points->GetNumberOfIds(); i++) {
-
-			if (debug) {
-				std::cout << "\tPoint Id : " << points->GetId(i)
-					<< std::endl << "\t\t";
-			}
-
-			//Get Cartesian coordinates for each point
-			double *xyz = pd->GetPoint(points->GetId(i));
-
-			if (debug) {
-				std::cout << xyz[0] << "," << xyz[1] << ","
-					<< xyz[2] << std::endl << "\t\t";
-			}
-
-			//Skip the "poles" of the sphere
-			if ((std::abs(xyz[0]) < 1e-8) &&
-				(std::abs(xyz[1]) < 1e-8)) {
-				if (std::abs(xyz[2] - 1) < 1e-8)
-					theta_min = 0;
-				if (std::abs(xyz[2] + 1) < 1e-8)
-					theta_max = 180;
-				if (debug) {
-					std::cout << std::endl;
-				}
-				continue;
-			}
-
-			//Convert to spherical coordinates (phi,theta)
-			double phi = (180 / M_PI)*atan2(xyz[1], xyz[0]);
-			double theta = (180 / M_PI)*acos(xyz[2]);
-
-			phi = (phi < 0) ? (360 + phi) : phi;
-
-			if (debug) {
-				std::cout << "Phi = " << phi << " Theta = " << theta
-					<< std::endl;
-			}
-
-			//Compare to update max and min values
-			theta_max = std::max(theta, theta_max);
-			theta_min = std::min(theta, theta_min);
-			phi_min = std::min(phi, phi_min);
-			phi_max = std::max(phi, phi_max);
-		}
-		//Checking for the last bin along phi direction
-		if ((phi_max - phi_min) > 2 * (360 / (long_res - 1.0))) {
-			phi_min = phi_max;
-			phi_max = 360;
-		}
-		vector<double> temp;
-		temp.push_back(phi_min);
-		temp.push_back(phi_max);
-		temp.push_back(theta_min);
-		temp.push_back(theta_max);
-
-		if (debug) {
-			std::cout << "\tPhi_min_max: " << phi_min << "," << phi_max
-				<< std::endl << "\t"
-				<< "Theta_min_max: " << theta_min << "," << theta_max
-				<< std::endl;
-		}
-
-		cellLimits.push_back(temp);
-
-	}
-
-	if (debug) {
-
-		std::cout << "Printing the bins : " << std::endl;
-		std::cout << "\tBinId\tPhi_min\tPhi_max\tTheta_min\tTheta_max" << std::endl;
-
-		for (int binIter = 0; binIter < cellLimits.size(); binIter++) {
-			std::cout << "\t" << binIter
-				<< "\t" << cellLimits[binIter][0]
-				<< "\t" << cellLimits[binIter][1]
-				<< "\t" << cellLimits[binIter][2]
-				<< "\t" << cellLimits[binIter][3]
-				<< std::endl;
-		}
-	}
+	std::vector<vector<double> > cellLimits = getSphCellLimits(pd, long_res);
 
 	vtkSmartPointer<vtkDoubleArray> binDensity =
 		vtkSmartPointer<vtkDoubleArray>::New();
@@ -740,49 +627,10 @@ int main(int argc, char* argv[]) {
 			Xavg /= defNodes.size();
 
 			//We will calculate radius using the quadrature points
-			LSB::FeElementContainer elements = bd->shells();
-			std::vector<double> qpRadius(elements.size(), 0.0);
-
-#ifdef _OPENMP
-#pragma omp parallel for
-#endif
-			for (int e = 0; e < elements.size(); e++) {
-
-				const LS::NodeContainer eleNodes = elements[e]->nodes();
-				LS::QuadPointContainer quadPoints = elements[e]->quadraturePoints();
-
-				for (LS::ConstQuadPointIterator quadPoint = quadPoints.begin();
-					quadPoint != quadPoints.end(); ++quadPoint) {
-
-					LoopShellShape s = (*quadPoint).shape;
-					const LoopShellShape::FunctionArray fn = s.functions();
-					tvmet::Vector<double, 3> Xq(0.0);
-
-					for (int i = 0; i < fn.size(); i++) {
-						Xq += tvmet::mul(eleNodes[i]->point(), fn(i));
-					}
-
-					double qpR = tvmet::norm2(Xq - Xavg);
-					qpRadius[e] = qpR;
-				}
-			}
-
-			Ravg = 0.0;
-			for (int i = 0; i < qpRadius.size(); i++) {
-				Ravg += qpRadius[i];
-			}
-			Ravg /= qpRadius.size();
+			std::vector<double> radialStats = getRadialStats(bd, Xavg);
+			Ravg = radialStats[0];
 			std::cout << "Radius of capsid after relaxation = " << Ravg << endl;
-
-			double dRavg2 = 0.0;
-			for (int i = 0; i < qpRadius.size(); i++) {
-				double dR = qpRadius[i] - Ravg;
-				dRavg2 += dR*dR;
-			}
-			dRavg2 /= qpRadius.size();
-
-			double asphericity = dRavg2 / (Ravg*Ravg);
-			//double gammaCalc = Y*Ravg*Ravg/KC;
+			double asphericity = radialStats[1];
 
 			double msd = PrBody->rmsd(); 
 			msd /= (Rshift*Rshift);
@@ -799,66 +647,7 @@ int main(int argc, char* argv[]) {
 				<< endl;
 
 			//********** Find bins for each particle ************//
-			
-			for (int i = 0; i < defNodes.size(); i++) {
-
-				if (debug) {
-					std::cout << "\tPoint Id = " << i << std::endl;
-				}
-
-				tvmet::Vector<double, 3> pos(0.0);
-				for (int row = 0; row < 3; row++) {
-					pos(row) = newCurr(row, i);
-				}
-
-				if (debug) {
-					std::cout << "\t\tOriginal : " << pos << std::endl;
-				}
-
-				tvmet::Vector<double, 3> normalizedPos(0.0);
-				normalizedPos = pos / tvmet::norm2(pos);
-
-
-				if (debug) {
-					std::cout << "\t\tNormalized : " << normalizedPos << std::endl;
-				}
-
-				//Convert to spherical coordinates (phi,theta)
-				double phi = (180 / M_PI)*atan2(normalizedPos(1),
-					normalizedPos(0));
-				double theta = (180 / M_PI)*acos(normalizedPos(2));
-
-				phi = (phi < 0) ? (360 + phi) : phi;
-
-				if (debug) {
-					std::cout << "\t\tPhi = " << phi << " Theta = " << theta
-						<< std::endl;
-				}
-
-				for (int binId = 0; binId < cellLimits.size(); binId++) {
-					double p_min, p_max, t_min, t_max;
-					p_min = cellLimits[binId][0];
-					p_max = cellLimits[binId][1];
-					t_min = cellLimits[binId][2];
-					t_max = cellLimits[binId][3];
-
-					if ((p_min <= phi && phi < p_max) &&
-						(t_min <= theta && theta < t_max))
-					{
-
-						if (debug) {
-							std::cout << "\t\tBin found : " << binId << std::endl;
-						}
-
-						double tempCount = binDensity->GetTuple1(binId);
-						//Size of fileNames vector corresponds to number of time steps
-						binDensity->SetTuple1(binId, tempCount + (1.0 / viterMax));
-						break;
-					}
-
-				}
-
-			}
+			putParticlesInBins(cellLimits, newCurr, defNodes, binDensity, viterMax);
 
 			// step forward in "time", relaxing viscous energy & forces 
 			vr.step();

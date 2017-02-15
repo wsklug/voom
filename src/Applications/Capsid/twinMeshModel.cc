@@ -644,6 +644,7 @@ int main(int argc, char* argv[]) {
 
 			// step forward in "time", relaxing viscous energy & forces 
 			vr.step();
+			delete PrBody;
 			delete bd;
 		}
 
