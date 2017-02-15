@@ -46,21 +46,21 @@ namespace voom
 {
 
 // Function declarations
-void writeEdgeStrainVtk(std::vector<std::string> fileNames, \
+void writeEdgeStrainVtk(std::vector<std::string> &fileNames, \
 			double avgEdgeLen, double percentStrain);
-void writeEdgeStrainVtk(std::vector<std::string> fileNames, \
+void writeEdgeStrainVtk(std::vector<std::string> &fileNames, \
 			double avgEdgeLen, std::vector<double> percentStrain);
-void insertValenceInVtk(std::vector<std::string> fileNames);
+void insertValenceInVtk(std::vector<std::string> &fileNames);
 
-std::vector<double> calcEdgeLenAndStdDev(std::vector<DeformationNode<3>*> a,
-	std::vector< tvmet::Vector<int,3> > b);
+std::vector<double> calcEdgeLenAndStdDev(const std::vector<DeformationNode<3>*> &a,
+	const std::vector< tvmet::Vector<int,3> > &b);
 
-std::vector<tvmet::Vector<int, 3> > delaunay3DSurf(std::vector<DeformationNode<3>*> a);
+std::vector<tvmet::Vector<int, 3> > delaunay3DSurf(const std::vector<DeformationNode<3>*> &a);
 
-std::vector<std::vector<double> > getSphCellLimits(vtkSmartPointer<vtkPolyData> bins, int long_res);
+std::vector<std::vector<double> > getSphCellLimits(const vtkSmartPointer<vtkPolyData> &bins, int long_res);
 
-void putParticlesInBins(std::vector<std::vector<double> > cellLimits,
-	Eigen::Matrix3Xd newCurr, std::vector<DeformationNode<3>*> defNodes,
+void putParticlesInBins(const std::vector<std::vector<double> > &cellLimits,
+	const Eigen::Matrix3Xd &newCurr, const std::vector<DeformationNode<3>*> &defNodes,
 	vtkSmartPointer<vtkDoubleArray> binDensity, int viterMax);
 
 /*

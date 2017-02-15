@@ -9,7 +9,7 @@ namespace voom
 {
 	using namespace std;
 
-	void writeEdgeStrainVtk(std::vector<std::string> fileNames, \
+	void writeEdgeStrainVtk(std::vector<std::string> &fileNames,
 		double avgEdgeLen, double percentStrain) {
 
 #ifdef _OPENMP
@@ -200,7 +200,7 @@ namespace voom
 	//                                                                      //
 	//////////////////////////////////////////////////////////////////////////
 
-	void writeEdgeStrainVtk(std::vector<std::string> fileNames, \
+	void writeEdgeStrainVtk(std::vector<std::string> &fileNames,
 		double avgEdgeLen, std::vector<double> percentStrain) {
 
 		assert(fileNames.size() == percentStrain.size());
@@ -218,8 +218,8 @@ namespace voom
 	*/
 
 	std::vector<double> calcEdgeLenAndStdDev
-	(std::vector< DeformationNode<3>* > defNodes,
-		vector< tvmet::Vector<int, 3> > connectivities) {
+	(const std::vector< DeformationNode<3>* > &defNodes,
+		const vector< tvmet::Vector<int, 3> > &connectivities) {
 
 		double EdgeLength = 0.0;
 #ifdef _OPENMP
@@ -277,7 +277,7 @@ namespace voom
 	/*
 		This function returns a surface made of a cloud of points
 	*/
-	vector<tvmet::Vector<int, 3> > delaunay3DSurf(std::vector<DeformationNode<3>*> nodes)
+	vector<tvmet::Vector<int, 3> > delaunay3DSurf(const std::vector<DeformationNode<3>*> &nodes)
 	{
 		vtkSmartPointer<vtkPoints> pts = vtkSmartPointer<vtkPoints>::New();
 		for (int i = 0; i < nodes.size(); i++) {
@@ -334,7 +334,7 @@ namespace voom
 		a spherical surface. It is meant to avoid common code from multiple
 		drivers
 	*/
-	std::vector<vector<double> > getSphCellLimits(vtkSmartPointer<vtkPolyData> pd, int long_res) {
+	std::vector<vector<double> > getSphCellLimits(const vtkSmartPointer<vtkPolyData> &pd, int long_res) {
 
 		bool debug = false;
 		vtkSmartPointer<vtkIdList> points
@@ -437,8 +437,8 @@ namespace voom
 	/*
 		This function classifies the particles belonging to certain bins
 	*/
-	void putParticlesInBins(std::vector<std::vector<double> > cellLimits,
-		Eigen::Matrix3Xd newCurr, std::vector<DeformationNode<3>*> defNodes,
+	void putParticlesInBins(const std::vector<std::vector<double> > &cellLimits,
+		const Eigen::Matrix3Xd &newCurr, const std::vector<DeformationNode<3>*> &defNodes,
 		vtkSmartPointer<vtkDoubleArray> binDensity, int viterMax) {
 
 		bool debug = false;
@@ -498,15 +498,15 @@ namespace voom
 					break;
 				}
 			}
-				}
-			}
+		}
+	}
 	/*
 		The method insertValenceInVtk() inserts valence information in a vtk file.
 		The calling method must ensure that 'fileName' exists and is a valid vtk file.
 		MUST use the extension '.vtk' in 'fileName'.
 		'mesh' is a pointer to a vtkPolyData
 	*/
-	void insertValenceInVtk(std::vector<std::string> fileNames) {
+	void insertValenceInVtk(std::vector<std::string> &fileNames) {
 
 #ifdef _OPENMP
 #pragma omp parallel for
@@ -572,4 +572,4 @@ namespace voom
 		}
 	}
 
-		}
+}

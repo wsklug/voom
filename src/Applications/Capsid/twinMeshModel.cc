@@ -45,6 +45,7 @@ typedef DeformationNode<3> Node; // nickname for mechanics nodes
 typedef std::vector< Node* > NodeContainer;
 
 int main(int argc, char* argv[]) {
+
 	clock_t t1, t2, t3;
 	t1 = clock();
 	if (argc != 2) {
@@ -400,51 +401,7 @@ int main(int argc, char* argv[]) {
 		MaterialType bending(KC, KG, C0, 0.0, 0.0);
 
 		LSB * bd;
-
-		if (areaConstraintOn) {
-			std::cout << "********** AREA and PRESSURE CONSTRAINTS ACTIVE  **********"
-				<< std::endl;
-			bd = new LSB(bending, fineConnectivities, allNodes, quadOrder, pressure,
-				0.0, 0.0, 1.0e4, 1.0e6, 1.0e4, multiplier, penalty, noConstraint);
-			std::cout << "Prescribed Area = " << bd->prescribedArea() << std::endl;
-		}
-		else if (pressureConstraintOn && !areaConstraintOn) {
-			std::cout << "********** ONLY PRESSURE CONSTRAINT ACTIVE **********" << std::endl;
-			bd = new LSB(bending, fineConnectivities, allNodes, quadOrder, pressure,
-				0.0, 0.0, 1.0e4, 1.0e6, 1.0e4, multiplier, noConstraint, noConstraint);
-		}
-		else {
-			std::cout << "********** CONSTRAINTS NOT BEING USED **********" << std::endl;
-			bd = new LSB(bending, fineConnectivities, allNodes, quadOrder);
-		}
-
-		bd->setOutput(paraview);
-
-		Morse Mat(epsilon, sigma, Rshift);
-		PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);
-		PrBody->initialNearestNeighbor();
-		ViscousRegularizer vr(allNodes, viscosity);
-		bd->pushBack(&vr);
-		BrownianKick bk(allDefNodes, Cd, diffusionCoeff, dt);
-		bd->pushBack(&bk);
-		RadialSpring rs(allDefNodes, radialSpringConstant, Ravg);
-		bd->pushBack(&rs);
-
-		//Create Model
-		Model::BodyContainer bdc;
-		bdc.push_back(PrBody);
-		bdc.push_back(bd);
-
-		Model model(bdc, allNodes);
-
-		bool checkConsistency = false;
-		if (checkConsistency) {
-			std::cout << "Checking consistency......" << std::endl;
-			bk.updateProjectedKick();
-			bd->checkConsistency(true);
-			PrBody->checkConsistency(true);
-		}
-
+		
 		std::cout << "Morse potential parameters:" << endl
 			<< "sigma = " << sigma << " epsilon = " << epsilon
 			<< " Rshift = " << Rshift << endl;
@@ -454,33 +411,48 @@ int main(int argc, char* argv[]) {
 
 
 		//***************************  INNER SOLUTION LOOP ***************************//  
-		bool rebuildModel = true;
+
 		for (int viter = 0; viter < viterMax; viter++) {
-
-			if (rebuildModel) {
-				fineConnectivities = delaunay3DSurf(allDefNodes);
-				if (areaConstraintOn) {
-					std::cout << "********** AREA and PRESSURE CONSTRAINTS ACTIVE  **********"
-						<< std::endl;
-					bd = new LSB(bending, fineConnectivities, allNodes, quadOrder, pressure,
-						0.0, 0.0, 1.0e4, 1.0e6, 1.0e4, multiplier, penalty, noConstraint);
-					std::cout << "Prescribed Area = " << bd->prescribedArea() << std::endl;
-				}
-				else if (pressureConstraintOn && !areaConstraintOn) {
-					std::cout << "********** ONLY PRESSURE CONSTRAINT ACTIVE **********" << std::endl;
-					bd = new LSB(bending, fineConnectivities, allNodes, quadOrder, pressure,
-						0.0, 0.0, 1.0e4, 1.0e6, 1.0e4, multiplier, noConstraint, noConstraint);
-				}
-				else {
-					std::cout << "********** CONSTRAINTS NOT BEING USED **********" << std::endl;
-					bd = new LSB(bending, fineConnectivities, allNodes, quadOrder);
-				}
-
-				bd->setOutput(paraview);
-				bd->pushBack(&vr);
-				bd->pushBack(&bk);
-				bd->pushBack(&rs);
+			fineConnectivities = delaunay3DSurf(allDefNodes);
+			Morse Mat(epsilon, sigma, Rshift);
+			if (areaConstraintOn) {
+				std::cout << "********** AREA and PRESSURE CONSTRAINTS ACTIVE  **********"
+					<< std::endl;
+				bd = new LSB(bending, fineConnectivities, allNodes, quadOrder, pressure,
+					0.0, 0.0, 1.0e4, 1.0e6, 1.0e4, multiplier, penalty, noConstraint);
+				std::cout << "Prescribed Area = " << bd->prescribedArea() << std::endl;
 			}
+			else if (pressureConstraintOn && !areaConstraintOn) {
+				std::cout << "********** ONLY PRESSURE CONSTRAINT ACTIVE **********" << std::endl;
+				bd = new LSB(bending, fineConnectivities, allNodes, quadOrder, pressure,
+					0.0, 0.0, 1.0e4, 1.0e6, 1.0e4, multiplier, noConstraint, noConstraint);
+			}
+			else {
+				std::cout << "********** CONSTRAINTS NOT BEING USED **********" << std::endl;
+				bd = new LSB(bending, fineConnectivities, allNodes, quadOrder);
+			}
+
+			bd->setOutput(paraview);
+			PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);
+			PrBody->initialNearestNeighbor();
+			ViscousRegularizer vr(allNodes, viscosity);
+			bd->pushBack(&vr);
+			BrownianKick bk(allDefNodes, Cd, diffusionCoeff, dt);
+			bd->pushBack(&bk);
+			RadialSpring rs(allDefNodes, radialSpringConstant, Ravg);
+			bd->pushBack(&rs);
+
+			//Create Model
+			Model::BodyContainer bdc;
+			bdc.push_back(PrBody);
+			bdc.push_back(bd);
+
+			Model model(bdc, allNodes);
+
+			bd->pushBack(&vr);
+			bd->pushBack(&bk);
+			bd->pushBack(&rs);
+
 
 			std::cout << std::endl
 				<< "VISCOUS ITERATION: " << viter + stepCount
@@ -672,6 +644,7 @@ int main(int argc, char* argv[]) {
 
 			// step forward in "time", relaxing viscous energy & forces 
 			vr.step();
+			delete bd;
 		}
 
 		pd->GetCellData()->AddArray(binDensity);
@@ -690,12 +663,7 @@ int main(int argc, char* argv[]) {
 		wr->Write();
 
 		stepCount += viterMax;
-		//Release the dynamically allocated memory
-		delete bd;
-		delete PrBody;
-
 	}
-
 	myfile.close();
 	t2 = clock();
 	float diff((float)t2 - (float)t1);
@@ -709,5 +677,4 @@ int main(int argc, char* argv[]) {
 	diff = ((float)t3 - (float)t2);
 	std::cout << "Post-processing execution time: " << diff / CLOCKS_PER_SEC
 		<< " seconds" << std::endl;
-
 }
