@@ -121,8 +121,6 @@ int main(int argc, char* argv[]) {
 
 	vtkSmartPointer<vtkLinearSubdivisionFilter> linSub
 		= vtkSmartPointer<vtkLinearSubdivisionFilter>::New();
-	//vtkSmartPointer<vtkLoopSubdivisionFilter> linSub
-		//= vtkSmartPointer<vtkLoopSubdivisionFilter>::New();
 	linSub->SetInputConnection(triangles->GetOutputPort());
 	linSub->SetNumberOfSubdivisions(numSubDivide);
 	linSub->Update();
@@ -398,10 +396,8 @@ int main(int argc, char* argv[]) {
 		std::cout << "Spontaneous Curvature = " << C0 << std::endl;
 
 		//The Bodies
-		MaterialType bending(KC, KG, C0, 0.0, 0.0);
+		MaterialType bending(KC, KG, C0, 0.0, 0.0);		
 
-		LSB * bd;
-		
 		std::cout << "Morse potential parameters:" << endl
 			<< "sigma = " << sigma << " epsilon = " << epsilon
 			<< " Rshift = " << Rshift << endl;
@@ -415,10 +411,11 @@ int main(int argc, char* argv[]) {
 		for (int viter = 0; viter < viterMax; viter++) {
 			fineConnectivities = delaunay3DSurf(allDefNodes);
 			Morse Mat(epsilon, sigma, Rshift);
+			LSB* bd;
 			if (areaConstraintOn) {
 				std::cout << "********** AREA and PRESSURE CONSTRAINTS ACTIVE  **********"
 					<< std::endl;
-				bd = new LSB(bending, fineConnectivities, allNodes, quadOrder, pressure,
+				 bd = new LSB(bending, fineConnectivities, allNodes, quadOrder, pressure,
 					0.0, 0.0, 1.0e4, 1.0e6, 1.0e4, multiplier, penalty, noConstraint);
 				std::cout << "Prescribed Area = " << bd->prescribedArea() << std::endl;
 			}
@@ -437,7 +434,7 @@ int main(int argc, char* argv[]) {
 			PrBody->initialNearestNeighbor();
 			ViscousRegularizer vr(allNodes, viscosity);
 			bd->pushBack(&vr);
-			BrownianKick bk(allDefNodes, Cd, diffusionCoeff, dt);
+			BrownianKick bk(allDefNodes, Cd, diffusionCoeff, dt, 0, 0.75);
 			bd->pushBack(&bk);
 			RadialSpring rs(allDefNodes, radialSpringConstant, Ravg);
 			bd->pushBack(&rs);

@@ -277,7 +277,8 @@ namespace voom
 	/*
 		This function returns a surface made of a cloud of points
 	*/
-	vector<tvmet::Vector<int, 3> > delaunay3DSurf(const std::vector<DeformationNode<3>*> &nodes)
+	vector<tvmet::Vector<int, 3> > delaunay3DSurf(const std::vector<DeformationNode<3>*> 
+		&nodes)
 	{
 		vtkSmartPointer<vtkPoints> pts = vtkSmartPointer<vtkPoints>::New();
 		for (int i = 0; i < nodes.size(); i++) {
@@ -329,6 +330,88 @@ namespace voom
 		}
 		return connectivities;
 	}
+
+	/*
+		This method creates a 3D surface from unorganized points using 
+		Poisson surface reconstruction. It returns a connectivity matrix
+	*/
+	vector<tvmet::Vector<int, 3> > Poisson3DSurf(const std::vector<DeformationNode<3>*> 
+		&nodes)
+	{
+		vtkSmartPointer<vtkPoints> pts = vtkSmartPointer<vtkPoints>::New();
+		for (int i = 0; i < nodes.size(); i++) {
+			tvmet::Vector<double, 3> cp = nodes[i]->point();
+			pts->InsertNextPoint(cp(0), cp(1), cp(2));
+		}
+		vtkSmartPointer<vtkPolyDataWriter> pdWriter = 
+			vtkSmartPointer<vtkPolyDataWriter>::New();
+		vtkSmartPointer<vtkPolyData> pd = vtkSmartPointer<vtkPolyData>::New();
+		pd->SetPoints(pts);
+
+		vtkSmartPointer<vtkSurfaceReconstructionFilter> surf = 
+			vtkSmartPointer<vtkSurfaceReconstructionFilter>::New();
+		surf->SetInputData(pd);
+
+		vtkSmartPointer<vtkContourFilter> cf =
+			vtkSmartPointer<vtkContourFilter>::New();
+		cf->SetInputConnection(surf->GetOutputPort());
+		cf->SetValue(0, 0.0);
+
+		// Sometimes the contouring algorithm can create a volume whose gradient
+		// vector and ordering of polygon (using the right hand rule) are
+		// inconsistent. vtkReverseSense cures this problem.
+		vtkSmartPointer<vtkReverseSense> reverse =
+			vtkSmartPointer<vtkReverseSense>::New();
+		reverse->SetInputConnection(cf->GetOutputPort());
+		reverse->ReverseCellsOn();
+		reverse->ReverseNormalsOn();
+		reverse->Update();
+
+		pdWriter->SetInputConnection(reverse->GetOutputPort());
+		pdWriter->SetFileName("PoissonSurface.vtk");
+		pdWriter->Write();
+
+		vtkSmartPointer<vtkDataSetSurfaceFilter> sf 
+			= vtkSmartPointer<vtkDataSetSurfaceFilter>::New();
+		sf->SetInputConnection(reverse->GetOutputPort());
+		sf->Update();
+
+		vtkSmartPointer<vtkMeshQuality> mq = vtkSmartPointer<vtkMeshQuality>::New();
+		mq->SetTriangleQualityMeasure(VTK_QUALITY_ASPECT_RATIO);
+		mq->SetInputConnection(sf->GetOutputPort());
+		mq->Update();
+		double quality = mq->GetOutput()->GetFieldData()->
+			GetArray("Mesh Triangle Quality")->GetComponent(0, 1);
+		std::cout << "Average aspect ratio for triangles of new mesh = " << quality << "." << std::endl;
+		pd = sf->GetOutput();
+
+		std::map<int, int> nodeIndexMap;
+		for (int i = 0; i < pd->GetNumberOfPoints(); i++) {
+			double x[3] = { 0.0, 0.0, 0.0 };
+			pd->GetPoint(i, &x[0]);
+			tvmet::Vector<double, 3> temp(x[0], x[1], x[2]);
+			for (int j = 0; j < nodes.size(); j++) {
+				tvmet::Vector<double, 3> currNode = nodes[j]->point();
+				if (tvmet::norm2(temp - currNode) < 1e-6) {
+					nodeIndexMap[i] = j;
+					break;
+				}
+			}
+		}
+
+		tvmet::Vector<int, 3> c;
+		int ntri = pd->GetNumberOfCells();
+		vector<tvmet::Vector<int, 3> > connectivities;
+		connectivities.reserve(ntri);
+		for (int i = 0; i < ntri; i++) {
+			for (int a = 0; a < 3; a++) {
+				c[a] = nodeIndexMap[pd->GetCell(i)->GetPointId(a)];
+			}
+			connectivities.push_back(c);
+		}
+		return connectivities;
+	}
+
 	/*
 		This function is meant to calculate theta and phi limits for bins on
 		a spherical surface. It is meant to avoid common code from multiple

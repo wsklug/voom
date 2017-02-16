@@ -43,10 +43,14 @@ namespace voom
     typedef std::vector< Node* > NodeContainer;    
 
     //! Constructor
-    BrownianKick( const NodeContainer &nodes, double Cd, double D, double dt);
+	BrownianKick(const NodeContainer &nodes, double Cd, double D, double dt);
+
+	//! Another constructor
+    BrownianKick( const NodeContainer &nodes, double Cd, double D, double dt, 
+		double mean, double variance);
 
     //! Destructor
-    ~BrownianKick();
+	~BrownianKick();
     
     //! Do mechanics on element; compute energy, forces, and/or stiffness.
     void compute(bool f0, bool f1, bool f2);
@@ -93,7 +97,7 @@ namespace voom
 
     int _nodeCount;
 
-    ranlib::NormalUnit<double> _rng;
+    ranlib::Normal<double> _rng;
     ranlib::DiscreteUniform<int>* _dis;
   };
 

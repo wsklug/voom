@@ -20,11 +20,28 @@
 
 namespace voom
 {
-    
-    // Constructor
-    BrownianKick::BrownianKick(const NodeContainer &defNodes, 
-                               double Cd, double D, double dt )
-    : _nodes(defNodes), _Cd(Cd), _D(D), _dt(dt) {
+	//! Constructor 1
+	BrownianKick::BrownianKick(const NodeContainer &defNodes, double Cd,
+		double D, double dt) : _nodes(defNodes), _Cd(Cd), _D(D), _dt(dt), _rng(0,1) {
+
+		// seed random number generator
+		_rng.seed((unsigned int)time(0));
+
+		// set the number of nodes
+		_nodeCount = _nodes.size();
+		_delta_xB.resize(_nodeCount);
+
+		//seed the nodal random number generator
+		ranlib::DiscreteUniform<int> dis(_nodeCount);
+		_dis = &dis;
+		_dis->seed((unsigned int)time(0));
+
+	}
+
+    //! Constructor 2
+    BrownianKick::BrownianKick(const NodeContainer &defNodes, double Cd,
+		double D, double dt, double mu, double sigma ): _nodes(defNodes), 
+		_Cd(Cd), _D(D), _dt(dt), _rng(mu, sigma) {
         
         // seed random number generator
         _rng.seed((unsigned int)time(0));

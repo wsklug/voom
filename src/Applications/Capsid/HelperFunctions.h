@@ -33,6 +33,9 @@
 #include <vtkMeshQuality.h>
 #include <Eigen/Dense>
 #include <LoopShellBody.h>
+#include <vtkSurfaceReconstructionFilter.h>
+#include <vtkContourFilter.h>
+#include <vtkReverseSense.h>
 
 #if defined(_OPENMP)
 #include <omp.h>
@@ -56,6 +59,8 @@ std::vector<double> calcEdgeLenAndStdDev(const std::vector<DeformationNode<3>*> 
 	const std::vector< tvmet::Vector<int,3> > &b);
 
 std::vector<tvmet::Vector<int, 3> > delaunay3DSurf(const std::vector<DeformationNode<3>*> &a);
+
+std::vector<tvmet::Vector<int, 3> > Poission3DSurf(const std::vector<DeformationNode<3>*> &a);
 
 std::vector<std::vector<double> > getSphCellLimits(const vtkSmartPointer<vtkPolyData> &bins, int long_res);
 
