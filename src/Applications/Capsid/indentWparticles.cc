@@ -107,7 +107,7 @@ int main(int argc, char* argv[])
 	double Rshift = 1.0;
 	double Zmin;
 	double Zmax;
-	double afmR = 1.0*Ravg;
+	double afmR;
 	tvmet::Vector<double, 3> xc(0.0);
 	double Z_glass;
 	double dZ;
@@ -282,6 +282,9 @@ int main(int argc, char* argv[])
 
 		std::cout << "Radius of capsid after rescaling = " << Ravg << endl;
 	}
+
+	//Set the AFM indenter radius
+	afmR = Ravg;
 
 	//Material properties
 	if (continueFromNum == 0) {
@@ -497,7 +500,7 @@ int main(int argc, char* argv[])
 		}
 
 		std::cout << "Zmax = " << Zmax << std::endl
-			<< "Zmin = " << Zmin;
+			<< "Zmin = " << Zmin << std::endl;
 
 		xc = 0.0, 0.0, Zmax + afmR;
 	}
