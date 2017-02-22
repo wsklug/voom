@@ -434,7 +434,7 @@ int main(int argc, char* argv[]) {
 			PrBody->initialNearestNeighbor();
 			ViscousRegularizer vr(allNodes, viscosity);
 			bd->pushBack(&vr);
-			BrownianKick bk(allDefNodes, Cd, diffusionCoeff, dt, 0, 0.75);
+			BrownianKick bk(allDefNodes, Cd, diffusionCoeff, dt, 0.75);
 			bd->pushBack(&bk);
 			RadialSpring rs(allDefNodes, radialSpringConstant, Ravg);
 			bd->pushBack(&rs);

@@ -47,7 +47,7 @@ namespace voom
 
 	//! Another constructor
     BrownianKick( const NodeContainer &nodes, double Cd, double D, double dt, 
-		double mean, double variance);
+		double cut);
 
     //! Destructor
 	~BrownianKick();
@@ -63,6 +63,9 @@ namespace voom
     
     //!Set rigid rotation kicks
     void updateRotationKick();
+
+	//!Set truncated projected kicks
+	void truncatedProjectedKick();
 
 	//!Set 2D kicks
 	void update2DKick();
@@ -93,11 +96,12 @@ namespace voom
     double _Cd; //Drag coeff or viscosity coeff
     double _D; //Diffusion coefficient
     double _dt; //time step
+	double _cutOff;
     std::vector<Vector3D> _delta_xB; //3-D Brownian displacement
 
     int _nodeCount;
 
-    ranlib::Normal<double> _rng;
+    ranlib::NormalUnit<double> _rng;
     ranlib::DiscreteUniform<int>* _dis;
   };
 

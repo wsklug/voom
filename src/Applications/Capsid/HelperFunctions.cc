@@ -285,25 +285,37 @@ namespace voom
 			tvmet::Vector<double, 3> cp = nodes[i]->point();
 			pts->InsertNextPoint(cp(0), cp(1), cp(2));
 		}
-		vtkSmartPointer<vtkPolyDataWriter> pdWriter = vtkSmartPointer<vtkPolyDataWriter>::New();
+		pts->InsertNextPoint(0.0,0.0,0.0);
 		vtkSmartPointer<vtkPolyData> pd = vtkSmartPointer<vtkPolyData>::New();
 		pd->SetPoints(pts);
 
 		vtkSmartPointer<vtkDelaunay3D> d3D = vtkSmartPointer<vtkDelaunay3D>::New();
 		d3D->SetInputData(pd);
-		vtkSmartPointer<vtkDataSetSurfaceFilter> sf = vtkSmartPointer<vtkDataSetSurfaceFilter>::New();
-		sf->SetInputConnection(d3D->GetOutputPort());
-		sf->Update();
+		d3D->Update();
+		vtkSmartPointer<vtkUnstructuredGrid> usg = d3D->GetOutput();
+		int originId;
+		for (originId = 0; originId < usg->GetNumberOfPoints(); originId++) {
+			Vector3D trial;
+			usg->GetPoint(originId, &(trial[0]));
+			if (tvmet::norm2(trial) < 1e-6) {
+				break;
+			}
+		}
+		vtkSmartPointer<vtkIdList> cells = vtkSmartPointer<vtkIdList>::New();
+		cells->SetNumberOfIds(usg->GetNumberOfCells());
 
-		vtkSmartPointer<vtkMeshQuality> mq = vtkSmartPointer<vtkMeshQuality>::New();
+		/*vtkSmartPointer<vtkMeshQuality> mq = vtkSmartPointer<vtkMeshQuality>::New();
 		mq->SetTriangleQualityMeasure(VTK_QUALITY_ASPECT_RATIO);
 		mq->SetInputConnection(sf->GetOutputPort());
 		mq->Update();
 		double quality = mq->GetOutput()->GetFieldData()->
 			GetArray("Mesh Triangle Quality")->GetComponent(0, 1);
-		std::cout << "Average aspect ratio for triangles of new mesh = " << quality << "." << std::endl;
-		pd = sf->GetOutput();
-
+		std::cout << "Average aspect ratio for triangles of new mesh = " << quality << "." << std::endl;*/
+		
+		std::cout << " Number of points in the new surface: "<<pd->GetNumberOfPoints()<<std::endl;
+		if (pd->GetNumberOfPoints() < nodes.size()) {
+			exit(EXIT_FAILURE);
+		}
 		std::map<int, int> nodeIndexMap;
 		for (int i = 0; i < pd->GetNumberOfPoints(); i++) {
 			double x[3] = { 0.0, 0.0, 0.0 };

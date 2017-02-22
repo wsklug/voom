@@ -101,7 +101,7 @@ int main(int argc, char* argv[])
 	double percentStrain;
 	double pressureFactor;
 	bool harmonicRelaxNeeded;
-	int interimIter = 10;
+	int interimIter = 1e5;
 	int continueFromNum = 1;
 	double Ravg = 0;
 	double Rshift = 1.0;
@@ -136,7 +136,7 @@ int main(int argc, char* argv[])
 
 	miscInpFile.close();
 
-	vtkDataSetReader * reader = vtkDataSetReader::New();
+	vtkPolyDataReader * reader = vtkPolyDataReader::New();
 	vtkSmartPointer<vtkPolyData> mesh;
 	string inputFileName;
 	vtkSmartPointer<vtkDataArray> displacements;
@@ -152,7 +152,7 @@ int main(int argc, char* argv[])
 		sprintf(name, "%s-body%d-step%04d", modelName.c_str(), 1, continueFromNum);
 		inputFileName = string(name);
 		reader->SetFileName(inputFileName.c_str());
-		mesh = reader->GetPolyDataOutput();
+		mesh = reader->GetOutput();
 		reader->Update();
 		displacements = mesh->GetPointData()->GetVectors("displacements");
 
@@ -160,7 +160,7 @@ int main(int argc, char* argv[])
 		sprintf(name, "%s-body%d-step%04d", modelName.c_str(), 1, continueFromNum - 1);
 		inputFileName = string(name);
 		reader->SetFileName(inputFileName.c_str());
-		mesh_prev = reader->GetPolyDataOutput();
+		mesh_prev = reader->GetOutput();
 		reader->Update();
 		displacements_prev = mesh->GetPointData()->GetVectors("displacements");
 
@@ -173,23 +173,9 @@ int main(int argc, char* argv[])
 		vtkPolyDataNormals * normals = vtkPolyDataNormals::New();
 
 		//We have to pass a vtkPolyData to vtkPolyDataNormals::SetInput()
-		//If our input vtk file has vtkUnstructuredGridData instead of vtkPolyData
-		//then we need to convert it using vtkGeometryFilter
-		vtkSmartPointer<vtkDataSet> ds = reader->GetOutput();
+		vtkSmartPointer<vtkPolyData> ds = reader->GetOutput();
 		reader->Update();
-
-		vtkSmartPointer<vtkGeometryFilter> geometryFilter =
-			vtkSmartPointer<vtkGeometryFilter>::New();
-
-		if (ds->GetDataObjectType() == VTK_UNSTRUCTURED_GRID) {
-
-			geometryFilter->SetInputConnection(reader->GetOutputPort());
-			normals->SetInputConnection(geometryFilter->GetOutputPort());
-		}
-		else {
-			normals->SetInputConnection(reader->GetOutputPort());
-		}
-
+		normals->SetInputConnection(reader->GetOutputPort());
 		// send through normals filter to ensure that triangle orientations
 		// are consistent 
 		normals->ConsistencyOn();
@@ -489,48 +475,11 @@ int main(int argc, char* argv[])
 		Xavg /= defNodes.size();
 
 		//We will calculate radius using the quadrature points
-		LSB::FeElementContainer elements = bd->shells();
-		std::vector<double> qpRadius(elements.size(), 0.0);
-
-#ifdef _OPENMP
-#pragma omp parallel for
-#endif
-		for (int e = 0; e < elements.size(); e++) {
-
-			const LS::NodeContainer eleNodes = elements[e]->nodes();
-			LS::QuadPointContainer quadPoints = elements[e]->quadraturePoints();
-
-			for (LS::ConstQuadPointIterator quadPoint = quadPoints.begin();
-				quadPoint != quadPoints.end(); ++quadPoint) {
-
-				LoopShellShape s = (*quadPoint).shape;
-				const LoopShellShape::FunctionArray fn = s.functions();
-				tvmet::Vector<double, 3> Xq(0.0);
-
-				for (int i = 0; i < fn.size(); i++) {
-					Xq += tvmet::mul(eleNodes[i]->point(), fn(i));
-				}
-
-				double qpR = tvmet::norm2(Xq - Xavg);
-				qpRadius[e] = qpR;
-			}
-		}
-
-		Ravg = 0.0;
-		for (int i = 0; i < qpRadius.size(); i++) {
-			Ravg += qpRadius[i];
-		}
-		Ravg /= qpRadius.size();
+		std::vector<double> radialStats = getRadialStats(bd, Xavg);
+		Ravg = radialStats[0];
 		std::cout << "Radius of capsid after relaxation = " << Ravg << endl;
+		double asphericity = radialStats[1];
 
-		double dRavg2 = 0.0;
-		for (int i = 0; i < qpRadius.size(); i++) {
-			double dR = qpRadius[i] - Ravg;
-			dRavg2 += dR*dR;
-		}
-		dRavg2 /= qpRadius.size();
-
-		double asphericity = dRavg2 / (Ravg*Ravg);
 		double gammaCalc = Y*Ravg*Ravg / KC;
 
 		std::cout << "Effective 2D Young's modulus = " << Y << endl

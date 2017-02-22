@@ -36,6 +36,7 @@
 #include <vtkSurfaceReconstructionFilter.h>
 #include <vtkContourFilter.h>
 #include <vtkReverseSense.h>
+#include <vtkUnstructuredGrid.h>
 
 #if defined(_OPENMP)
 #include <omp.h>

@@ -22,7 +22,7 @@ namespace voom
 {
 	//! Constructor 1
 	BrownianKick::BrownianKick(const NodeContainer &defNodes, double Cd,
-		double D, double dt) : _nodes(defNodes), _Cd(Cd), _D(D), _dt(dt), _rng(0,1) {
+		double D, double dt) : _nodes(defNodes), _Cd(Cd), _D(D), _dt(dt) {
 
 		// seed random number generator
 		_rng.seed((unsigned int)time(0));
@@ -36,12 +36,13 @@ namespace voom
 		_dis = &dis;
 		_dis->seed((unsigned int)time(0));
 
+		_cutOff = 1.0;
 	}
 
     //! Constructor 2
     BrownianKick::BrownianKick(const NodeContainer &defNodes, double Cd,
-		double D, double dt, double mu, double sigma ): _nodes(defNodes), 
-		_Cd(Cd), _D(D), _dt(dt), _rng(mu, sigma) {
+		double D, double dt, double cut): _nodes(defNodes), 
+		_Cd(Cd), _D(D), _dt(dt), _cutOff(cut) {
         
         // seed random number generator
         _rng.seed((unsigned int)time(0));
@@ -119,6 +120,32 @@ namespace voom
         }
     }
     
+	void BrownianKick::truncatedProjectedKick() {
+
+		for (int i = 0; i < _nodeCount; i++) {
+			Vector3D xi(_rng.random(),
+				_rng.random(), _rng.random());
+
+			Vector3D currPoint = _nodes[i]->point();
+
+			Vector3D tempVec(0, 0, 0);
+
+			tempVec = currPoint + xi*sqrt(_D*_dt);
+			xi = tempVec;
+
+			tempVec = (xi / tvmet::norm2(xi))*tvmet::norm2(currPoint);
+
+			xi = tempVec - currPoint;
+
+			if (tvmet::norm2(xi) > _cutOff) {
+				Vector3D temp(0,0,0);
+				temp = xi / tvmet::norm2(xi)*_cutOff;
+				xi = temp;
+			}
+			_delta_xB[i] = xi;
+		}
+	}
+
     //Rigid rotations as kicks
     void BrownianKick::updateRotationKick(){
         Vector3D tempAxis(_rng.random(), _rng.random(),_rng.random());
