@@ -16,6 +16,7 @@
 #include <vtkPolyData.h>
 #include <vtkPolyDataReader.h>
 #include <vtkPolyDataWriter.h>
+#include <vtkUnstructuredGridWriter.h>
 #include <vtkSmartPointer.h>
 #include <vtkExtractEdges.h>
 #include <vtkCellArray.h>

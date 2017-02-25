@@ -301,9 +301,23 @@ namespace voom
 				break;
 			}
 		}
-		vtkSmartPointer<vtkIdList> cells = vtkSmartPointer<vtkIdList>::New();
-		cells->SetNumberOfIds(usg->GetNumberOfCells());
+		vtkSmartPointer<vtkIdList> cellList = vtkSmartPointer<vtkIdList>::New();
+		cellList->SetNumberOfIds(usg->GetNumberOfCells());
+		usg->GetPointCells(originId, cellList);
+		cellList->Squeeze();
+		cellList->Print(std::cout);
+		vtkSmartPointer<vtkCellArray> cells = vtkSmartPointer<vtkCellArray>::New();
+		for (int q = 0; q < cellList->GetNumberOfIds(); q++) {
+			cells->InsertNextCell(usg->GetCell(cellList->GetId(q)));
+		}
+		vtkSmartPointer<vtkUnstructuredGrid> newUsg = vtkSmartPointer<vtkUnstructuredGrid>::New();
+		newUsg->SetPoints(usg->GetPoints());
+		newUsg->SetCells(usg->GetCell(0)->GetCellType(), cells);
 
+		vtkSmartPointer<vtkUnstructuredGridWriter> usgWriter = vtkSmartPointer<vtkUnstructuredGridWriter>::New();
+		usgWriter->SetFileName("testUsg.vtk");
+		usgWriter->SetInputData(newUsg);
+		usgWriter->Write();
 		/*vtkSmartPointer<vtkMeshQuality> mq = vtkSmartPointer<vtkMeshQuality>::New();
 		mq->SetTriangleQualityMeasure(VTK_QUALITY_ASPECT_RATIO);
 		mq->SetInputConnection(sf->GetOutputPort());

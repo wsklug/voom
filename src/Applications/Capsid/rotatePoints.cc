@@ -145,7 +145,7 @@ int main(int argc, char* argv[])
       std::vector<string> elems = split(axisString,',');
 
       for(int i=0; i<3; i++){
-	axis[i] = atoi((elems[i]).c_str());
+	axis[i] = atof((elems[i]).c_str());
       }
       z++;
     }
