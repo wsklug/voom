@@ -39,5 +39,10 @@ if(VTK_BUILD_SHARED_LIBS STREQUAL ON)
 		
 endif(VTK_BUILD_SHARED_LIBS STREQUAL ON)
 
+if(WIN32)
+	include_directories(${CMAKE_SOURCE_DIR}/cmake/Windows)
+	add_definitions(-DNOMINMAX)
+endif(WIN32)
+
 add_subdirectory(src)
 

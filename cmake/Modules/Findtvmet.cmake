@@ -29,10 +29,10 @@ SET(tvmet_DIR_DESCRIPTION "directory that contains sub-folder include which shou
 
 SET(tvmet_DIR_MESSAGE "tvmet not found.  Set the tvmet_ROOT cmake cache entry to the ${tvmet_DIR_DESCRIPTION}")
 
-mark_as_advanced (tvmet_DIR)
+mark_as_advanced (tvmet__INCLUDE_DIRS)
 
 # Look for Usetvmet.cmake in build trees or under <prefix>/include/tvmet.
-FIND_PATH(tvmet_DIR
+FIND_PATH(tvmet_INCLUDE_DIRS
    NAMES tvmet.h
    PATHS ${tvmet_ROOT}
    PATH_SUFFIXES "include/tvmet/"
@@ -40,11 +40,12 @@ FIND_PATH(tvmet_DIR
    DOC "The ${tvmet_DIR_DESCRIPTION}"
    )
 
-   IF(tvmet_DIR)
+   IF(tvmet_INCLUDE_DIRS)
+   SET(tvmet_INCLUDE_DIRS "${tvmet_INCLUDE_DIRS}/..")
+   SET(tvmet_DIR "${tvmet_INCLUDE_DIRS}/..")
 	MESSAGE(STATUS "tvmet headers located under ${tvmet_DIR}")
 	set(tvmet_FOUND 1)
-	set(tvmet_INCLUDE_DIRS "${tvmet_DIR}/include")
-   ENDIF(tvmet_DIR)
+   ENDIF(tvmet_INCLUDE_DIRS)
    
 #-----------------------------------------------------------------------------
 IF(tvmet_FOUND)
