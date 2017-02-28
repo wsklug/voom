@@ -619,10 +619,12 @@ int main(int argc, char* argv[])
     sstm << modelName << "-step-" << step;
     rName = sstm.str();
     bd->printParaview(rName.c_str());
-    sstm.str("");
-    sstm.clear();
     //We will append Caspsomer POINT_DATA to the vtk output file
     //printed by printParaview(), if such a file exists
+    sstm << ".vtk";
+    rName = sstm.str();
+    sstm.str("");
+    sstm.clear();
     if (ifstream(rName.c_str())) {
       std::vector<string> fakeVec;
       fakeVec.push_back(rName);
