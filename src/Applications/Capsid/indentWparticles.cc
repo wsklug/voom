@@ -74,25 +74,7 @@ int main(int argc, char* argv[])
   double friction_inp = 0.0;
   double step_inp = 0.0;
   bool remesh = true;
-  bool unload = false;
-
-  std::ifstream cmdInp("cmdInp.dat");
-  assert(cmdInp);
-  string temp;
-  cmdInp >> temp >> gamma_inp
-	 >> temp >> indent_inp
-	 >> temp >> step_inp
-	 >> temp >> friction_inp
-	 >> temp >> viscosity_inp
-	 >> temp >> unload;
-
-  if (gamma_inp <= 0.0) {
-    std::cout << "gamma = " << gamma_inp << " but should be positive."
-	      << std::endl;
-    return 0;
-  }
-
-  //For Morse material 
+  bool unload = false; 
   double epsilon;
   double percentStrain;
   double pressureFactor;
@@ -105,20 +87,35 @@ int main(int argc, char* argv[])
   tvmet::Vector<double, 3> xc(0.0);
   double Z_glass;
   double dZ;
+  double ARtol = 1.05;
 
   //Read epsilon and percentStrain from input file. percentStrain is
   //calculated so as to set the inflection point of Morse potential
   //at a fixed distance relative to the equilibrium separation
   //e.g. 1.1*R_eq, 1.5*R_eq etc.
+  string temp;
   std::ifstream miscInpFile("miscInp.dat");
   assert(miscInpFile);
   miscInpFile >> temp >> epsilon
 	      >> temp >> percentStrain
 	      >> temp >> pressureFactor
-	      >> temp >> harmonicRelaxNeeded;
-
+	      >> temp >> harmonicRelaxNeeded
+	      >> temp >> gamma_inp
+	      >> temp >> indent_inp
+	      >> temp >> step_inp
+	      >> temp >> friction_inp
+	      >> temp >> viscosity_inp
+	      >> temp >> unload
+	      >> temp >> ARtol;
+  
   miscInpFile.close();
 
+  if (gamma_inp <= 0.0) {
+    std::cout << "gamma = " << gamma_inp << " but should be positive."
+	      << std::endl;
+    return 0;
+  }  
+  
   vtkPolyDataReader * reader = vtkPolyDataReader::New();
   vtkSmartPointer<vtkPolyData> mesh;
   string inputFileName;
@@ -252,7 +249,6 @@ int main(int argc, char* argv[])
   double KC = Y*Ravg*Ravg / gamma; //Bending modulus
   double KG = -2 * (1 - nu)*KC; // Gaussian modulus
   C0 = 0.0;
-  double ARtol = 1.1;
   int quadOrder = 2;
 
   int m = 5;
