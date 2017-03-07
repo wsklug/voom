@@ -435,7 +435,7 @@ int main(int argc, char* argv[])
   string fzName = modelName + ".fz";
   ofstream FvsZ(fzName.c_str());
   FvsZ << "#Step\tIndentation\tGlass_Fz\tAFM_Fz"
-       <<"\tElasticEnergy\tMorseEnergy"
+       <<"\tBendingEnergy\tMorseEnergy\tSolverFunction"
        <<std::endl;
 
   blitz::Array<double, 1> x_prev(model.dof());
@@ -598,18 +598,13 @@ int main(int argc, char* argv[])
 
     //*********** BEGIN PRINTING OUTPUT (and log) FILES ***********//
 
-    FvsZ << std::setw(10)
-	 << step
-	 << std::setw(24) << std::setprecision(16)
+    FvsZ << step << "\t"
 	 << (originalHeight - height)/Ravg
-	 << std::setw(24) << std::setprecision(16)
-	 << glass->FZ()/std::sqrt(Y*KC)
-	 << std::setw(24) << std::setprecision(16)
-	 << afm->FZ()/std::sqrt(Y*KC)
-	 << std::setw(24) << std::setprecision(16)
-	 << bd->energy()/(Ravg*std::sqrt(Y*KC))
-	 << std::setw(24) << std::setprecision(16)
-	 << PrBody->energy()/(Ravg*std::sqrt(Y*KC))
+	 << "\t" << glass->FZ()/std::sqrt(Y*KC)
+	 << "\t" << afm->FZ()/std::sqrt(Y*KC)
+	 << "\t" << bd->energy()/(Ravg*std::sqrt(Y*KC))
+	 << "\t" << PrBody->energy()/(Ravg*std::sqrt(Y*KC))
+	 << "\t" << solver.function()
 	 << std::endl;
 
     sstm << modelName << "-step-" << step;
