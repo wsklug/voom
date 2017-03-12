@@ -1,7 +1,5 @@
 project(Solvers C CXX Fortran)
 
-#enable_language(Fortran)
-
 set(SRCS DirectLinearSolver.cc 	
 	ConjugateGradientWSK.cc 
 	ViscousRelaxation.cc 	

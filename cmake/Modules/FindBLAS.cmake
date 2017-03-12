@@ -114,6 +114,11 @@ foreach(_library ${_list})
         # for ubuntu's libblas3gf and liblapack3gf packages
         set(CMAKE_FIND_LIBRARY_SUFFIXES ${CMAKE_FIND_LIBRARY_SUFFIXES} .so.3gf)
       endif ()
+	  if(WIN32 AND BLA_VENDOR STREQUAL "OpenBLAS")
+		MESSAGE(STATUS "CMAKE_FIND_LIBRARY_PREFIXES=${CMAKE_FIND_LIBRARY_PREFIXES}")
+		set(CMAKE_FIND_LIBRARY_PREFIXES lib ${CMAKE_FIND_LIBRARY_PREFIXES})
+		set(CMAKE_FIND_LIBRARY_SUFFIXES .dll.a ${CMAKE_FIND_LIBRARY_SUFFIXES})
+	  endif()
     endif ()
     find_library(${_prefix}_${_library}_LIBRARY
       NAMES ${_library}

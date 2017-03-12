@@ -1,5 +1,6 @@
 project(lbfgsb)
-
+enable_language(Fortran)
+set (MINGW_GFORTRAN "C:/Software/mingw-w64/mingw64/bin/gfortran.exe" CACHE FILEPATH "Please provide full path to mingw-gfortran.exe")
 if(VOOM_USE_OPENMP)
 	add_library(lbfgsb lbfgsb-routines-parallel.f)
 else()
