@@ -476,17 +476,6 @@ int main(int argc, char* argv[])
 		double gammaCalc = Y*Ravg*Ravg / KC;
 
 		//Calculate Average Principal Strain
-		//std::vector<double> maxStrain =  bd->getMaxPrincipalStrains();
-		//double avgStrain = 0.0;
-		//for(int e=0; e < maxStrain.size(); e++){
-		//  avgStrain += maxStrain[e];
-		//}
-		//avgStrain /= maxStrain.size();
-
-		//myfile<< stepNumber++<<"\t\t"<< Ravg <<"\t\t"<< Y <<"\t\t"<< asphericity
-		//	  <<"\t\t"<< gamma <<"\t\t"<< gammaCalc
-		//	  <<"\t\t"<< avgStrain << "\t\t" << solver1.function() 
-		//	  << endl;
 
 		myfile << q << "\t\t" << Ravg << "\t\t" << Y << "\t\t" << asphericity
 			<< "\t\t" << gamma << "\t\t" << gammaCalc

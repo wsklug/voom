@@ -16,9 +16,6 @@ namespace voom
 #pragma omp parallel for
 #endif
 		for (int i = 0; i < fileNames.size(); i++) {
-			//for(std::vector<std::string>::iterator it=fileNames.begin();
-			//    it!= fileNames.end(); ++it){
-			//  std::string fileName = *it;
 			std::string fileName = fileNames[i];
 			//Check that the file exists
 			assert(ifstream(fileName.c_str()));

@@ -37,7 +37,7 @@ set(voom_LIBRARIES Body Solvers Materials Elements Quadrature Shape VoomMath Geo
 
 set(capsid_targets asphNoRescale annealing asphBrownian asphHarmonic dual relaxMorse 
     asphmodVsFVKcont indentWparticles edgeStrainAndValence harmonic2D Morse2D Morse2DPeriodic reOrient
-    twinMeshModel)
+    twinMeshModel unstableBonds indentContinuum)
 
 foreach(curr_target ${capsid_targets})
 	add_executable(${curr_target} $<TARGET_OBJECTS:HelperFunctions> ${curr_target}.cc)
