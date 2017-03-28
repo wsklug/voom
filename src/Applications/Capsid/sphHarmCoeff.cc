@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <boost/math/special_functions/spherical_harmonic.hpp>
 
+#include <vtkCellArray.h>
 #include <vtkPolyData.h>
 #include <vtkPolyDataReader.h>
 #include <vtkSmartPointer.h>

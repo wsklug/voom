@@ -38,6 +38,7 @@
 #include <ctime>
 #include "HalfEdgeMesh.h"
 #include <vtkSmartPointer.h>
+#include <vtkCellArray.h>
 #include <vtkPolyData.h>
 #include <vtkPolyDataWriter.h>
 #include <vtkDoubleArray.h>
@@ -45,6 +46,10 @@
 
 #ifdef WITH_MPI
 #include <mpi.h>
+#endif
+
+#if VTK_MAJOR_VERSION < 6
+#define SetInputData SetInput
 #endif
 
 namespace voom

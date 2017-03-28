@@ -13,6 +13,7 @@
 #include <limits>
 #include <algorithm>
 
+#include <vtkCellArray.h>
 #include <vtkPolyData.h>
 #include <vtkPolyDataReader.h>
 #include <vtkSmartPointer.h>

@@ -30,6 +30,7 @@
 #include "VoomMath.h"
 
 #include <vtkSmartPointer.h>
+#include <vtkCellArray.h>
 #include <vtkPolyData.h>
 #include <vtkPolyDataWriter.h>
 #include <vtkDoubleArray.h>
