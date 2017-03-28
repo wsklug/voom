@@ -18,7 +18,8 @@ namespace voom {
     double r = tvmet::norm2( nodeA->point() - nodeB->point() );
     if (fl0) {
       // Morse energy
-      _W = _epsilon*(exp(-2*_sigma*(r-_Rshift))-2*exp(-_sigma*(r-_Rshift)));
+      //_W = _epsilon*(exp(-2*_sigma*(r-_Rshift))-2*exp(-_sigma*(r-_Rshift)) + 1.0);
+	  _W = _epsilon*(exp(-2 * _sigma*(r - _Rshift)) - 2 * exp(-_sigma*(r - _Rshift)));
     }
     
     if (fl1) {

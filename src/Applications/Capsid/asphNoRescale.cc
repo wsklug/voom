@@ -245,8 +245,9 @@ int main(int argc, char* argv[])
 	myfile.open(dataOutputFile.c_str());
 	myfile << setw(5) << "#Step" << "\t" << setw(9) << "Ravg" << "\t"
 		<< setw(8) << "Y" << "\t" << "asphericity" << "\t"
-		<< setw(8) << "FVKin" << "\t" << setw(8) << "FVKout" << "\t"
-		<< setw(8) << "Energy" << endl;
+		<< setw(8) << "FVKin" << "\t" << setw(8) << "LSBStrainEnergy" << "\t" 
+		<< setw(8) << "MorseEnergy" <<"\t"
+		<< setw(8) << "TotalFunctional" << endl;
 	myfile << showpoint;
 
 
@@ -423,14 +424,16 @@ int main(int argc, char* argv[])
 
 				//If some elements have changed then we need to reset the
 				//reference configuration with average side lengths
-				bd->SetRefConfiguration(EdgeLength);
+				//bd->SetRefConfiguration(EdgeLength);
 
 				//We also need to recompute the neighbors for PotentialBody
-				PrBody->recomputeNeighbors(PotentialSearchRF);
+				//PrBody->recomputeNeighbors(PotentialSearchRF);
 
 				//Relax again after remeshing
 				solver2.solve(&model);
+				std::cout << "Energy before remeshing = " << energy << std::endl;
 				energy = solver2.function();
+				std::cout << "Energy after remeshing  = " << energy << std::endl;
 			}
 
 		}// Remeshing ends here
@@ -478,8 +481,8 @@ int main(int argc, char* argv[])
 		//Calculate Average Principal Strain
 
 		myfile << q << "\t\t" << Ravg << "\t\t" << Y << "\t\t" << asphericity
-			<< "\t\t" << gamma << "\t\t" << gammaCalc
-			<< "\t\t" << energy << endl;
+			<< "\t\t" << gamma << "\t\t" << bd->totalStrainEnergy()
+			<< "\t\t" << PrBody->energy()<< "\t\t" << energy << endl;
 
 
 		//Release the dynamically allocated memory
