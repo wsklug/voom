@@ -260,7 +260,7 @@ int main(int argc, char* argv[])
 
 	double factr = 1.0e+1;
 	double pgtol = 1e-7;
-	int iprint = 50;
+	int iprint = 1000;
 	Lbfgsb solver1(3 * nodes.size(), m, factr, pgtol, iprint, maxIter1);
 	Lbfgsb solver2(3 * nodes.size(), m, factr, pgtol, iprint, maxIter2);
 

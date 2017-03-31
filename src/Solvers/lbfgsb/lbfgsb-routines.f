@@ -463,12 +463,7 @@ c     ************
 c        Generate the current machine precision.
 
 C         write(6,*) 'Computing machine precision...'
-! #if defined (__INTEL_COMPILER) 
-          ! epsmch = 2.220446d-16
-! #else
-          ! epsmch = dpmeps()
-! #endif
-          epsmch = EPSILON(SELECTED_REAL_KIND)
+         epsmch = dpmeps()
 C         write(6,*) '... done: ', epsmch
 
 c        Initialize counters and scalars when task='START'.
