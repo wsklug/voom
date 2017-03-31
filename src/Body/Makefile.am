@@ -9,7 +9,7 @@ AM_CPPFLAGS =	-I$(srcdir)/..			\
 		-I$(srcdir)/../Quadrature/	\
 		-I$(blitz_includes) 		\
 		-I$(tvmet_includes)		\
-		-I$(vtk_includes)		
+		#-I$(vtk_includes)		
 
 lib_LIBRARIES = libBody.a
 libBody_a_SOURCES = Body.cc GenericBody.cc PotentialBody.cc ViscosityBody.cc ProteinBody.cc
