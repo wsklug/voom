@@ -247,7 +247,8 @@ int main(int argc, char* argv[])
 		<< setw(8) << "Y" << "\t" << "asphericity" << "\t"
 		<< setw(8) << "FVKin" << "\t" << setw(8) << "LSBStrainEnergy" << "\t" 
 		<< setw(8) << "MorseEnergy" <<"\t"
-		<< setw(8) << "TotalFunctional" << endl;
+		<< setw(8) << "TotalFunctional" <<"\t"
+		<< setw(8) << "RemeshOccured" << std::endl;
 	myfile << showpoint;
 
 
@@ -410,7 +411,7 @@ int main(int argc, char* argv[])
 		energy = solver1.function();
 
 		// REMESHING
-		bool remesh = true;
+		bool remesh = false;
 		double ARtol = 1.5;
 		uint elementsChanged = 0;
 
@@ -482,7 +483,8 @@ int main(int argc, char* argv[])
 
 		myfile << q << "\t\t" << Ravg << "\t\t" << Y << "\t\t" << asphericity
 			<< "\t\t" << gamma << "\t\t" << bd->totalStrainEnergy()
-			<< "\t\t" << PrBody->energy()<< "\t\t" << energy << endl;
+			<< "\t\t" << PrBody->energy()<< "\t\t" << energy 
+			<< "\t\t" << ((elementsChanged > 0) ? 1 : 0) << std::endl;
 
 
 		//Release the dynamically allocated memory

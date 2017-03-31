@@ -463,7 +463,8 @@ c     ************
 c        Generate the current machine precision.
 
 c         write(6,*) 'Computing machine precision...'
-          epsmch = dpmeps()
+C         epsmch = dpmeps()
+         epsmch = EPSILON(0.0d0)
 c         write(6,*) '... done: ', epsmch
 
 c        Initialize counters and scalars when task='START'.
