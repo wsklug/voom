@@ -61,13 +61,16 @@ std::vector<double> calcEdgeLenAndStdDev(const std::vector<DeformationNode<3>*> 
 
 std::vector<tvmet::Vector<int, 3> > delaunay3DSurf(const std::vector<DeformationNode<3>*> &a);
 
-std::vector<tvmet::Vector<int, 3> > Poission3DSurf(const std::vector<DeformationNode<3>*> &a);
+std::vector<tvmet::Vector<int, 3> > Poisson3DSurf(const std::vector<DeformationNode<3>*> &a);
 
 std::vector<std::vector<double> > getSphCellLimits(const vtkSmartPointer<vtkPolyData> &bins, int long_res);
 
 void putParticlesInBins(const std::vector<std::vector<double> > &cellLimits,
 	const Eigen::Matrix3Xd &newCurr, const std::vector<DeformationNode<3>*> &defNodes,
 	vtkSmartPointer<vtkDoubleArray> binDensity, int viterMax);
+
+std::vector<double> getMeshQualityInfo(const std::vector<DeformationNode<3>*> &a, 
+	const std::vector< tvmet::Vector<int, 3> > connectivities);
 
 /*
 This function calculates radius of a LoopShellBody shell using

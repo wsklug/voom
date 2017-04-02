@@ -272,85 +272,77 @@ namespace voom
 		return result;
 	}
 	/*
-		This function returns a surface made of a cloud of points
+		This function returns does Delaunay3D triangulation of a cloud of points which 
+		form a closed shell by first projecting it to a unit sphere. We extract the 
+		surface polydata connectivity from the resulting shell. We return the connectivity
+		after mapping them back to the original point ids		
 	*/
 	vector<tvmet::Vector<int, 3> > delaunay3DSurf(const std::vector<DeformationNode<3>*> 
 		&nodes)
 	{
+		clock_t t1, t2;
+		t1 = clock();
+		//Convert DeformationNodes to vtkPoints projected to a unit sphere
+		vtkSmartPointer<vtkPolyData> pd = vtkSmartPointer<vtkPolyData>::New();
 		vtkSmartPointer<vtkPoints> pts = vtkSmartPointer<vtkPoints>::New();
 		for (int i = 0; i < nodes.size(); i++) {
 			tvmet::Vector<double, 3> cp = nodes[i]->point();
+			cp /= norm2(cp);
 			pts->InsertNextPoint(cp(0), cp(1), cp(2));
 		}
-		pts->InsertNextPoint(0.0,0.0,0.0);
-		vtkSmartPointer<vtkPolyData> pd = vtkSmartPointer<vtkPolyData>::New();
+		//We need to insert a point at origin for 3D Delaunay triangulation
+		pts->InsertNextPoint(0.0,0.0,0.0);		
 		pd->SetPoints(pts);
-
-		vtkSmartPointer<vtkDelaunay3D> d3D = vtkSmartPointer<vtkDelaunay3D>::New();
+		//Now we will do the Delaunay triangulation
+		vtkSmartPointer<vtkDelaunay3D> d3D = 
+			vtkSmartPointer<vtkDelaunay3D>::New();
 		d3D->SetInputData(pd);
 		d3D->Update();
-		vtkSmartPointer<vtkUnstructuredGrid> usg = d3D->GetOutput();
-		int originId;
-		for (originId = 0; originId < usg->GetNumberOfPoints(); originId++) {
-			Vector3D trial;
-			usg->GetPoint(originId, &(trial[0]));
-			if (tvmet::norm2(trial) < 1e-6) {
-				break;
-			}
-		}
-		vtkSmartPointer<vtkIdList> cellList = vtkSmartPointer<vtkIdList>::New();
-		cellList->SetNumberOfIds(usg->GetNumberOfCells());
-		usg->GetPointCells(originId, cellList);
-		cellList->Squeeze();
-		cellList->Print(std::cout);
-		vtkSmartPointer<vtkCellArray> cells = vtkSmartPointer<vtkCellArray>::New();
-		for (int q = 0; q < cellList->GetNumberOfIds(); q++) {
-			cells->InsertNextCell(usg->GetCell(cellList->GetId(q)));
-		}
-		vtkSmartPointer<vtkUnstructuredGrid> newUsg = vtkSmartPointer<vtkUnstructuredGrid>::New();
-		newUsg->SetPoints(usg->GetPoints());
-		newUsg->SetCells(usg->GetCell(0)->GetCellType(), cells);
+		//Extract the surface from convex hull obtained after Delaunay3D
+		vtkSmartPointer<vtkDataSetSurfaceFilter> dss = 
+			vtkSmartPointer<vtkDataSetSurfaceFilter>::New();
+		dss->SetInputConnection(d3D->GetOutputPort());
+		vtkSmartPointer<vtkPolyData> surf = dss->GetOutput();
+		dss->Update();
 
-		vtkSmartPointer<vtkUnstructuredGridWriter> usgWriter = vtkSmartPointer<vtkUnstructuredGridWriter>::New();
-		usgWriter->SetFileName("testUsg.vtk");
-		usgWriter->SetInputData(newUsg);
-		usgWriter->Write();
-		/*vtkSmartPointer<vtkMeshQuality> mq = vtkSmartPointer<vtkMeshQuality>::New();
-		mq->SetTriangleQualityMeasure(VTK_QUALITY_ASPECT_RATIO);
-		mq->SetInputConnection(sf->GetOutputPort());
-		mq->Update();
-		double quality = mq->GetOutput()->GetFieldData()->
-			GetArray("Mesh Triangle Quality")->GetComponent(0, 1);
-		std::cout << "Average aspect ratio for triangles of new mesh = " << quality << "." << std::endl;*/
-		
-		std::cout << " Number of points in the new surface: "<<pd->GetNumberOfPoints()<<std::endl;
-		if (pd->GetNumberOfPoints() < nodes.size()) {
+		//Sanity check: Number of points in 'surf' should be equal to number 
+		//of points in 'surf'
+		if (surf->GetNumberOfPoints() != nodes.size()) {
 			exit(EXIT_FAILURE);
 		}
+		//We need to map the point ids of the extracted surface 'surf'
+		//to the point ids of 'pd'. Both are renormalized to the surface 
+		//of a unit sphere. The point ids of 'pd' are same as vector index
+		//of 'nodes'
 		std::map<int, int> nodeIndexMap;
-		for (int i = 0; i < pd->GetNumberOfPoints(); i++) {
-			double x[3] = { 0.0, 0.0, 0.0 };
-			pd->GetPoint(i, &x[0]);
-			tvmet::Vector<double, 3> temp(x[0], x[1], x[2]);
-			for (int j = 0; j < nodes.size(); j++) {
-				tvmet::Vector<double, 3> currNode = nodes[j]->point();
-				if (tvmet::norm2(temp - currNode) < 1e-6) {
+		for (int i = 0; i < surf->GetNumberOfPoints(); i++) {
+			tvmet::Vector<double, 3> y(0.0);
+			surf->GetPoint(i, &y[0]);
+			for (int j = 0; j < pd->GetNumberOfPoints(); j++) {
+				tvmet::Vector<double, 3> currNode(0.0);
+				pd->GetPoint(j, &currNode[0]);
+				if (tvmet::norm2(y - currNode) < 1e-6) {
 					nodeIndexMap[i] = j;
 					break;
 				}
 			}
 		}
-
+		//Map the connectivity information from point ids 
+		//of 'surf' to 'node' indices
 		tvmet::Vector<int, 3> c;
-		int ntri = pd->GetNumberOfCells();
+		int ntri = surf->GetNumberOfCells();
 		vector<tvmet::Vector<int, 3> > connectivities;
 		connectivities.reserve(ntri);
 		for (int i = 0; i < ntri; i++) {
 			for (int a = 0; a < 3; a++) {
-				c[a] = nodeIndexMap[pd->GetCell(i)->GetPointId(a)];
+				c[a] = nodeIndexMap[surf->GetCell(i)->GetPointId(a)];
 			}
 			connectivities.push_back(c);
 		}
+		t2 = clock();
+		float diff = ((float)t2 - (float)t1);
+		std::cout << "\tRe-meshing processing time =" << diff / CLOCKS_PER_SEC
+			<< " seconds" << std::endl;
 		return connectivities;
 	}
 
@@ -421,7 +413,6 @@ namespace voom
 				}
 			}
 		}
-
 		tvmet::Vector<int, 3> c;
 		int ntri = pd->GetNumberOfCells();
 		vector<tvmet::Vector<int, 3> > connectivities;
@@ -433,6 +424,47 @@ namespace voom
 			connectivities.push_back(c);
 		}
 		return connectivities;
+	}
+
+	/*
+		This method returns mesh quality from a vector of DeformationNodes and a 
+		connectivity vector
+	*/
+	std::vector<double> getMeshQualityInfo(const std::vector<DeformationNode<3>*> &nodes,
+		const std::vector< tvmet::Vector<int, 3> > connectivities) {
+		//Convert DeformationNodes to vtkPoints
+		vtkSmartPointer<vtkPoints> pts = vtkSmartPointer<vtkPoints>::New();
+		for (int i = 0; i < nodes.size(); i++) {
+			tvmet::Vector<double, 3> cp = nodes[i]->point();
+			pts->InsertNextPoint(cp(0), cp(1), cp(2));
+		}
+		//Convert connectivity information to a vtkCellArray
+		vtkSmartPointer<vtkCellArray> cellArray = 
+			vtkSmartPointer<vtkCellArray>::New();
+		vtkIdType cell[3] = {0,0,0};
+		for (int i = 0; i < connectivities.size(); i++) {
+			cell[0] = connectivities[i](0);
+			cell[1] = connectivities[i](1);
+			cell[2] = connectivities[i](2);
+			cellArray->InsertNextCell(3, cell);
+		}
+		//Make a polydata from points and cells
+		vtkSmartPointer<vtkPolyData> pd = vtkSmartPointer<vtkPolyData>::New();
+		pd->SetPoints(pts);
+		pd->SetPolys(cellArray);
+		//Measure mesh quality -> Aspect Ratio
+		vtkSmartPointer<vtkMeshQuality> mq = vtkSmartPointer<vtkMeshQuality>::New();
+		mq->SetTriangleQualityMeasure(VTK_QUALITY_ASPECT_RATIO);
+		mq->SetInputData(pd);
+		mq->Update();
+		double avgQuality = mq->GetOutput()->GetFieldData()->
+			GetArray("Mesh Triangle Quality")->GetComponent(0, 1);
+		double minQuality = mq->GetOutput()->GetFieldData()->
+			GetArray("Mesh Triangle Quality")->GetComponent(0, 0);
+		double maxQuality = mq->GetOutput()->GetFieldData()->
+			GetArray("Mesh Triangle Quality")->GetComponent(0, 2);
+		std::vector<double> quality = {minQuality, avgQuality, maxQuality};
+		return quality;
 	}
 
 	/*
