@@ -25,6 +25,10 @@ find_package(blitz REQUIRED)
 find_package(VTK REQUIRED)
 find_package(GSL REQUIRED)
 find_package(Eigen REQUIRED)
+IF(USE_MULTIPRECISION)
+	find_package(MPFR REQUIRED)
+	find_package(GMP REQUIRED)
+ENDIF(USE_MULTIPRECISION)
 
 include(${VTK_USE_FILE})
 

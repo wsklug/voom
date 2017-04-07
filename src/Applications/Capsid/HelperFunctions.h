@@ -72,6 +72,9 @@ void putParticlesInBins(const std::vector<std::vector<double> > &cellLimits,
 std::vector<double> getMeshQualityInfo(const std::vector<DeformationNode<3>*> &a, 
 	const std::vector< tvmet::Vector<int, 3> > connectivities);
 
+void plotMorseBonds(const std::vector<std::string> &fileNames, std::string fname, 
+	double epsilon, double Rshift, double sigma, vtkSmartPointer<vtkCellArray> bonds);
+
 /*
 This function calculates radius of a LoopShellBody shell using
 quadrature points

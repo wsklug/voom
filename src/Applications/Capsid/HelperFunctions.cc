@@ -454,7 +454,7 @@ namespace voom
 		pd->SetPolys(cellArray);
 		//Measure mesh quality -> Aspect Ratio
 		vtkSmartPointer<vtkMeshQuality> mq = vtkSmartPointer<vtkMeshQuality>::New();
-		mq->SetTriangleQualityMeasure(VTK_QUALITY_ASPECT_RATIO);
+		mq->SetTriangleQualityMeasure(VTK_QUALITY_RADIUS_RATIO);
 		mq->SetInputData(pd);
 		mq->Update();
 		double avgQuality = mq->GetOutput()->GetFieldData()->
@@ -465,6 +465,62 @@ namespace voom
 			GetArray("Mesh Triangle Quality")->GetComponent(0, 2);
 		std::vector<double> quality = {minQuality, avgQuality, maxQuality};
 		return quality;
+	}
+
+	void plotMorseBonds(const std::vector<std::string> &fileNames, std::string fname,
+		double epsilon, double Rshift, double sigma, vtkSmartPointer<vtkCellArray> bonds)
+	{
+		std::stringstream sstm;
+		std::string fileName;
+		for (int z = 0; z < fileNames.size(); z++) {
+			fileName = fileNames[z];
+			//Check that the file exists
+			assert(ifstream(fileName.c_str()));
+			vtkSmartPointer<vtkPolyDataReader> reader =
+				vtkSmartPointer<vtkPolyDataReader>::New();
+			reader->SetFileName(fileName.c_str());			
+			vtkSmartPointer<vtkPolyData> mesh = reader->GetOutput();
+			reader->Update(); 
+			vtkSmartPointer<vtkDataArray> displacements = mesh->GetPointData()->
+				GetVectors("displacements");			
+			vtkSmartPointer<vtkDoubleArray> force = vtkSmartPointer<vtkDoubleArray>::New();
+			force->SetNumberOfTuples(bonds->GetNumberOfCells());
+			force->SetNumberOfComponents(1);
+			force->SetName("MutualForce");
+			
+			//Iterate over cells (lines) in bonds and calculate forces						
+			vtkSmartPointer<vtkIdList> points = vtkSmartPointer<vtkIdList>::New();	
+			int forceIdx = 0;
+			bonds->InitTraversal();
+			while (bonds->GetNextCell(points)) {				
+				tvmet::Vector<double, 3> r1(0.0), r2(0.0), d1(0.0), d2(0.0);
+				vtkIdType a, b;
+				a = points->GetId(0);
+				b = points->GetId(1);
+				mesh->GetPoint(a, &r1[0]);
+				mesh->GetPoint(b, &r2[0]);
+				displacements->GetTuple(a, &d1[0]);
+				displacements->GetTuple(b, &d2[0]);
+				double r = tvmet::norm2(r1 + d1 - r2 - d2);
+				double forceMag = -((2.0*sigma*exp(-(r - Rshift)*sigma)
+					- 2.0*sigma*exp(-2.0*(r - Rshift)*sigma))*epsilon);
+				force->SetTuple1(forceIdx++, forceMag);
+			}
+			vtkSmartPointer<vtkPolyData> out = vtkSmartPointer<vtkPolyData>::New();
+			out->SetPoints(mesh->GetPoints());
+			out->SetLines(bonds);
+			out->GetCellData()->AddArray(force);
+			out->GetPointData()->AddArray(displacements);
+			vtkSmartPointer<vtkPolyDataWriter> writer =
+				vtkSmartPointer<vtkPolyDataWriter>::New();
+			writer->SetInputData(out);
+			sstm << fname <<"-MorseBonds-" << z << ".vtk";
+			fileName = sstm.str();
+			sstm.str("");
+			sstm.clear();
+			writer->SetFileName(fileName.c_str());
+			writer->Write();
+		}
 	}
 
 	/*

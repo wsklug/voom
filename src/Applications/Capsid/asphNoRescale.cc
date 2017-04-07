@@ -52,15 +52,17 @@ int main(int argc, char* argv[])
 
 	string inputFileName = argv[1];
 
-	//For Morse material
-	bool remesh = true;
+	//For Morse material 
 	double epsilon;
-	double percentStrain;
 	double Rshift;
+	double percentStrain = 10;
 	bool harmonicRelaxNeeded;
-	bool useLargeSearchRadius = false;
+	double searchRadFactor = 1.2;
 	bool projectOnSphere = true;
 	double ARtol = 1.5;
+	bool remesh = true;
+	bool useOldRemeshTechnicque = false;
+
 
 	//Read epsilon and percentStrain from input file. percentStrain is
 	//calculated so as to set the inflection point of Morse potential
@@ -72,16 +74,22 @@ int main(int argc, char* argv[])
 	miscInpFile >> temp >> epsilon
 		>> temp >> percentStrain
 		>> temp >> ARtol
+		>> temp >> searchRadFactor
 		>> temp >> harmonicRelaxNeeded
-		>> temp >> useLargeSearchRadius
-		>> temp >> remesh;
+		>> temp >> projectOnSphere
+		>> temp >> remesh
+		>> temp >> useOldRemeshTechnicque;
 
 	miscInpFile.close();
 
 	vtkSmartPointer<vtkDataSetReader> reader =
 		vtkSmartPointer<vtkDataSetReader>::New();
+
 	vtkSmartPointer<vtkPolyData> mesh;
-	
+
+	std::stringstream sstm;
+
+
 	reader->SetFileName(inputFileName.c_str());
 	//We will use this object, shortly, to ensure consistent triangle
 	//orientations
@@ -106,7 +114,10 @@ int main(int argc, char* argv[])
 	std::cout << "mesh->GetNumberOfPoints() = " << mesh->GetNumberOfPoints()
 		<< std::endl;
 
+	vtkSmartPointer<vtkDataArray> displacements;
+
 	// create vector of nodes
+
 	int dof = 0;
 	std::vector< NodeBase* > nodes;
 	std::vector< DeformationNode<3>* > defNodes;
@@ -185,6 +196,32 @@ int main(int argc, char* argv[])
 
 	std::cout << "Radius of capsid after rescaling = " << Ravg << endl;
 
+	if (projectOnSphere) {
+
+		//Project points to a sphere of radius Ravg
+		for (int i = 0; i < defNodes.size(); i++) {
+			DeformationNode<3>::Point X;
+			X = defNodes[i]->position();
+			X *= Ravg / (tvmet::norm2(X));
+			defNodes[i]->setPoint(X);
+			defNodes[i]->setPosition(X);
+		}
+
+		//Recalculate edge lengths and capsid radius
+		lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);
+		EdgeLength = lengthStat[0];
+
+		Ravg = 0.0;
+		for (int i = 0; i < defNodes.size(); i++) {
+			DeformationNode<3>::Point x;
+			x = defNodes[i]->point();
+			double tempRadius = tvmet::norm2(x);
+			Ravg += tempRadius;
+		}
+		Ravg /= defNodes.size();
+
+		std::cout << "Radius of capsid after projecting on a sphere = " << Ravg << endl;
+	}
 	//******************* READ FVK DATA FROM FILE **********************
 
 	// We want variable number of FVK increments in different ranges. So
@@ -205,26 +242,36 @@ int main(int argc, char* argv[])
 	string fname = inputFileName.substr(0, inputFileName.find("."));
 	string iName;
 	string rName;
+	string actualFile;
+
 	ofstream myfile;
 	std::string dataOutputFile = "asphVsFVKMorse.dat";
 
 	myfile.open(dataOutputFile.c_str());
 	myfile << setw(5) << "#Step" << "\t" << setw(9) << "Ravg" << "\t"
 		<< setw(8) << "Y" << "\t" << "asphericity" << "\t"
-		<< setw(8) << "FVKin" << "\t" << setw(8) << "LSBStrainEnergy" << "\t" 
-		<< setw(8) << "MorseEnergy" <<"\t"
-		<< setw(8) << "TotalFunctional" <<"\t"
-		<< setw(8) << "RemeshOccured" <<"\t"
-		<< setw(8) << "LargestAR" << std::endl;
+		<< setw(8) << "FVKin" << "\t" << setw(8) << "LSBStrainEnergy" << "\t"
+		<< setw(8) << "MorseEnergy" << "\t"
+		<< setw(8) << "TotalFunctional" << "\t"
+		<< setw(8) << "RemeshOccured" << "\t"
+		<< setw(8) << "LargestARtol" << "\t"
+		<< setw(8) << "EnergyBeforeRemesh" << "\t"
+		<< setw(8) << "EnergyAfterRemesh" << std::endl;
 	myfile << showpoint;
+
 
 	//Parameters for the l-BFGS solver
 	int m = 5;
+
+	//int maxIter = 1e6;
 	int maxIter1 = 1e5;
-	double factr = 1.0e+1;
+	int maxIter2 = 1e5;
+
+	double factr = 1.0;
 	double pgtol = 1e-7;
 	int iprint = 1000;
 	Lbfgsb solver1(3 * nodes.size(), m, factr, pgtol, iprint, maxIter1);
+	Lbfgsb solver2(3 * nodes.size(), m, factr, pgtol, iprint, maxIter2);
 
 	typedef FVK MaterialType;
 	typedef LoopShellBody<MaterialType> LSB;
@@ -234,7 +281,8 @@ int main(int argc, char* argv[])
 
 	Rshift = EdgeLength;
 	double sigma = (100 / (Rshift*percentStrain))*log(2.0);
-	double PotentialSearchRF;	
+
+	double PotentialSearchRF;
 	double springConstant = 2 * sigma*sigma*epsilon;
 	double gamma = gammaVec[0][0];
 	double Y = 2.0 / sqrt(3)*springConstant; // Young's modulus
@@ -243,17 +291,16 @@ int main(int argc, char* argv[])
 	double KG = -2 * (1 - nu)*KC; // Gaussian modulus
 	double C0 = 0.0;
 	int quadOrder = 2;
-	std::stringstream sstm;
+
 	if (harmonicRelaxNeeded) {
+
 		//****** Relax the initial mesh using harmonic potential ****** //
 
 		MaterialType bending(KC, KG, C0, 0.0, 0.0);
 		LSB * bd1 = new LSB(bending, connectivities, nodes, quadOrder);
 		bd1->setOutput(paraview);
-		//We MUST you use a small PotentialSearchRF for SpringBody otherwise
-		//the whole shell will shrink
-		PotentialSearchRF = 1.2*Rshift;
 		SpringPotential SpringMat(springConstant, Rshift);
+		PotentialSearchRF = 1.2*Rshift;
 		PotentialBody * SpringBody = new
 			PotentialBody(&SpringMat, defNodes, PotentialSearchRF);
 
@@ -265,7 +312,7 @@ int main(int argc, char* argv[])
 
 		std::cout << "Spring constant: " << springConstant << endl;
 		std::cout << "Relaxing the mesh using harmonic potential..." << endl;
-		solver1.solve(&model1);
+		solver2.solve(&model1);
 
 		std::cout << "Harmonic potential relaxation complete." << endl;
 
@@ -298,10 +345,36 @@ int main(int argc, char* argv[])
 
 	//Loop over all values of gamma and relax the shapes to get
 	//asphericity
+	std::cout << "Morse potential parameters:" << endl
+		<< "sigma = " << sigma << " epsilon = " << epsilon
+		<< " Rshift = " << Rshift << endl;
 
+	PotentialSearchRF = searchRadFactor*Rshift;
+	std::cout << "PotentialSearchRF = " << PotentialSearchRF
+		<< std::endl;
+	//Morse parameters do not change with FvK
+	Morse Mat(epsilon, sigma, Rshift);
+	PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);
+	//Assign the MorseBond structure from the initial neighbor information
+	vtkSmartPointer<vtkCellArray> bonds = vtkSmartPointer<vtkCellArray>::New();
+	vtkIdType bond[2] = { 0, 0 };
+	for (int i = 0; i < defNodes.size(); i++) {
+		tvmet::Vector<double, 3> centerNode = defNodes[i]->point();
+		for (int a = i + 1; a < defNodes.size(); a++) {
+			tvmet::Vector<double, 3> currNode = defNodes[a]->point();
+			double r = tvmet::norm2(centerNode - currNode);
+			if (r <= PotentialSearchRF) {
+				bond[0] = i;
+				bond[1] = a;
+				bonds->InsertNextCell(2, bond);
+			}
+		}
+	}
 	for (int q = 0; q < gammaVec.size(); q++) {
 
 		gamma = gammaVec[q][0];
+		std::cout << "########### Gamma = " << gamma << "###########"
+			<< std::endl;
 		double currPrintFlag = gammaVec[q][1];
 
 		// Bending body parameters
@@ -313,10 +386,6 @@ int main(int argc, char* argv[])
 		MaterialType bending(KC, KG, C0, 0.0, 0.0);
 		LSB * bd = new LSB(bending, connectivities, nodes, quadOrder);
 		bd->setOutput(paraview);
-		useLargeSearchRadius ? PotentialSearchRF = 1.5*Ravg :
-			PotentialSearchRF = 1.2*Rshift;
-		Morse Mat(epsilon, sigma, Rshift);
-		PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);
 
 		//Create Model
 		Model::BodyContainer bdc;
@@ -326,70 +395,57 @@ int main(int argc, char* argv[])
 
 		double energy = 0;
 
-		std::cout << "Morse potential parameters:" << endl
-			<< "sigma = " << sigma << " epsilon = " << epsilon
-			<< " Rshift = " << Rshift << endl;
-		std::cout << "Capsid radius = " << Ravg << endl;
-
-		PrBody->compute(true, false, false);
-		std::cout << "Initial protein body energy = " << PrBody->energy() << endl;
-		std::cout << "Relaxing shape for gamma = " << gamma << std::endl;
-
 		solver1.solve(&model);
 		energy = solver1.function();
 
 		// REMESHING
-			
-		bool remeshEventFound = false;
-		//uint elementsChanged = 0;
+		uint elementsChanged = 0;
+		bool remeshEventFlag = false;
 		int numAttempts = 0;
 		double energy_prev = energy;
-		std::vector<double> meshQuality;
+		std::vector<double> meshQuality = { 0.0,0.0,0.0 };
 		if (remesh) {
-			//elementsChanged = bd->Remesh(ARtol, bending, quadOrder);
-			meshQuality = getMeshQualityInfo(defNodes,connectivities);
-			while ( meshQuality[2] > ARtol && numAttempts < 2) {
-				remeshEventFound = true;
-				std::cout << "***** Skewed triangles detected in the mesh. *****" <<std::endl
-					<< "\tLargest aspect ratio before remeshing = " 
-					<< meshQuality[2] << std::endl;
-				std::cout << "Remeshing Attempt # " << numAttempts << std::endl;
-				//Try remeshing
-				connectivities = delaunay3DSurf(defNodes);
-				meshQuality = getMeshQualityInfo(defNodes, connectivities);
-				std::cout << "\tLargest aspect ratio after remeshing = "
-					<< meshQuality[2] << std::endl;
-				bd->CreateLoopFE(connectivities, bending, quadOrder, true);
-				solver1.solve(&model);
-				std::cout << "Energy before remeshing = " << energy << std::endl;
-				energy_prev = energy;
-				energy = solver1.function();
-				std::cout << "Energy after remeshing  = " << energy << std::endl;
-				meshQuality = getMeshQualityInfo(defNodes, connectivities);
-				std::cout << "\tLargest aspect ratio after re-solving = "
-					<< meshQuality[2] << std::endl;
-				/*
-				if (std::abs(energy_prev - energy) < 1.0e-6) {
-					break;
-				}*/
-				numAttempts++;
+			meshQuality = getMeshQualityInfo(defNodes, connectivities);
+			if (useOldRemeshTechnicque) {
+				elementsChanged = bd->Remesh(ARtol, bending, quadOrder);
+				//Print out the number of elements that changed due to remeshing
+				if (elementsChanged > 0) {
+					remeshEventFlag = true;
+					std::cout << "Number of elements that changed after remeshing = "
+						<< elementsChanged << "." << std::endl;
+					//Relax again after remeshing
+					solver2.solve(&model);
+					meshQuality = getMeshQualityInfo(defNodes, connectivities);
+					std::cout << "\tLargest aspect ratio after re-solving = "
+						<< meshQuality[2] << std::endl;
+					std::cout << "Energy before remeshing = " << energy << std::endl;
+					energy = solver2.function();
+					std::cout << "Energy after remeshing  = " << energy << std::endl;
+				}
 			}
-			/*
-			//Print out the number of elements that changed due to remeshing
-			if (elementsChanged > 0) {
-				std::cout << "Number of elements that changed after remeshing = "
-					<< elementsChanged << "." << std::endl;
-
-				//If some elements have changed then we need to reset the
-				//reference configuration with average side lengths
-				//bd->SetRefConfiguration(EdgeLength);
-
-				//We also need to recompute the neighbors for PotentialBody
-				//PrBody->recomputeNeighbors(PotentialSearchRF);
-
-				//Relax again after remeshing				
-			}*/
-
+			else {				
+				while (meshQuality[2] > ARtol && numAttempts < 1) {
+					remeshEventFlag = true;
+					std::cout << "***** Skewed triangles detected in the mesh. *****" << std::endl
+						<< "\tLargest aspect ratio before remeshing = "
+						<< meshQuality[2] << std::endl;
+					std::cout << "Remeshing Attempt # " << numAttempts << std::endl;
+					//Try remeshing
+					connectivities = delaunay3DSurf(defNodes);
+					meshQuality = getMeshQualityInfo(defNodes, connectivities);
+					std::cout << "\tLargest aspect ratio after remeshing = "
+						<< meshQuality[2] << std::endl;
+					bd->CreateLoopFE(connectivities, bending, quadOrder, true);
+					solver1.solve(&model);
+					std::cout << "Energy before remeshing = " << energy << std::endl;
+					energy = solver1.function();
+					std::cout << "Energy after remeshing  = " << energy << std::endl;
+					meshQuality = getMeshQualityInfo(defNodes, connectivities);
+					std::cout << "\tLargest aspect ratio after re-solving = "
+						<< meshQuality[2] << std::endl;					
+					numAttempts++;
+				}
+			}
 		}// Remeshing ends here
 
 		//Calculate maximum principal strains in all elements
@@ -436,16 +492,16 @@ int main(int argc, char* argv[])
 
 		myfile << q << "\t\t" << Ravg << "\t\t" << Y << "\t\t" << asphericity
 			<< "\t\t" << gamma << "\t\t" << bd->totalStrainEnergy()
-			<< "\t\t" << PrBody->energy()<< "\t\t" << energy 
-			<< "\t\t" << remeshEventFound << "\t\t" 
-			<< meshQuality[2] << std::endl;
+			<< "\t\t" << PrBody->energy() << "\t\t" << energy
+			<< "\t\t" << remeshEventFlag << "\t\t"
+			<< meshQuality[2] << "\t\t" << energy_prev << "\t\t" 
+			<< "\t\t" << energy << std::endl;
 
 
 		//Release the dynamically allocated memory
 		delete bd;
-		delete PrBody;
 	}
-
+	delete PrBody;
 	myfile.close();
 	t2 = clock();
 	float diff((float)t2 - (float)t1);
@@ -466,6 +522,7 @@ int main(int argc, char* argv[])
 
 	insertValenceInVtk(allVTKFiles);
 	//writeEdgeStrainVtk(allVTKFiles, Rshift, percentStrain);
+	plotMorseBonds(allVTKFiles, fname, epsilon, Rshift, sigma, bonds);
 	t3 = clock();
 	diff = ((float)t3 - (float)t2);
 	std::cout << "Post-processing execution time: " << diff / CLOCKS_PER_SEC

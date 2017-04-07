@@ -87,7 +87,7 @@ namespace voom
 		//! General printing of a Paraview file
 		void printParaview(const string name) const;
 
-		//! General printing of a Paraview file
+		//! Printing of a Paraview file after applying Kabsch algorithm
 		void printParaview(const string name, 
 			Eigen::Matrix3Xd, 
 			vector< tvmet::Vector<int, 3> > connectivities) const;

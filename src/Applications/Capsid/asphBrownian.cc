@@ -162,7 +162,7 @@ int main(int argc, char* argv[])
   std::vector< DeformationNode<3>* > defNodes;
   double Ravg = 0.0;
 
-  // read in points
+  // read in points. DON'T FORGET TO ADD DISPLACEMENTS FROM INPUT FILE IF ANY
   for(int a=0; a<mesh->GetNumberOfPoints(); a++) {
     int id=a;
     DeformationNode<3>::Point x;
