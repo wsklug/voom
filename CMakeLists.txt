@@ -32,17 +32,6 @@ ENDIF(USE_MULTIPRECISION)
 
 include(${VTK_USE_FILE})
 
-if(VTK_BUILD_SHARED_LIBS STREQUAL ON)
-		if(MINGW)
-			
-			foreach(vtk_lib ${VTK_LIBRARIES})
-				MESSAGE(STATUS "Found VTK library ${vtk_lib}")
-			endforeach(vtk_lib)
-			
-		endif(MINGW)
-		
-endif(VTK_BUILD_SHARED_LIBS STREQUAL ON)
-
 if(WIN32)
 	include_directories(${CMAKE_SOURCE_DIR}/cmake/Windows)
 	add_definitions(-DNOMINMAX)

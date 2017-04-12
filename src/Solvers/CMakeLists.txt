@@ -1,18 +1,20 @@
 project(Solvers C CXX Fortran)
 
-set(SRCS DirectLinearSolver.cc 	
-	ConjugateGradientWSK.cc 
-	ViscousRelaxation.cc 	
-	Lbfgsb.cc
-	CGfast.cc 		
-	SimulatedAnnealing.cc	
-	MontecarloTwoStages.cc	
-	CgDescent.cc		
-	cg_descent.c		
-	BrownianDynamics.cc	
-	BrownianDynamics3D.cc	
-	MontecarloProtein.cc    
-        KMCprotein.cc)
+#set(SRCS DirectLinearSolver.cc 	
+#	ConjugateGradientWSK.cc 
+#	ViscousRelaxation.cc 	
+#	Lbfgsb.cc
+#	CGfast.cc 		
+#	SimulatedAnnealing.cc	
+#	MontecarloTwoStages.cc	
+#	CgDescent.cc		
+#	cg_descent.c		
+#	BrownianDynamics.cc	
+#	BrownianDynamics3D.cc	
+#	MontecarloProtein.cc    
+#    KMCprotein.cc)
+
+set(SRCS Lbfgsb.cc)
 set(INCDIRS Geometry Node Materials Model Elements Shape Quadrature VoomMath Body Elements)
 
 add_library(Solvers ${SRCS})
