@@ -272,12 +272,12 @@ namespace voom
 		return result;
 	}
 	/*
-		This function returns does Delaunay3D triangulation of a cloud of points which 
-		form a closed shell by first projecting it to a unit sphere. We extract the 
+		This function returns does Delaunay3D triangulation of a cloud of points which
+		form a closed shell by first projecting it to a unit sphere. We extract the
 		surface polydata connectivity from the resulting shell. We return the connectivity
-		after mapping them back to the original point ids		
+		after mapping them back to the original point ids
 	*/
-	vector<tvmet::Vector<int, 3> > delaunay3DSurf(const std::vector<DeformationNode<3>*> 
+	vector<tvmet::Vector<int, 3> > delaunay3DSurf(const std::vector<DeformationNode<3>*>
 		&nodes)
 	{
 		clock_t t1, t2;
@@ -291,15 +291,15 @@ namespace voom
 			pts->InsertNextPoint(cp(0), cp(1), cp(2));
 		}
 		//We need to insert a point at origin for 3D Delaunay triangulation
-		pts->InsertNextPoint(0.0,0.0,0.0);		
+		pts->InsertNextPoint(0.0, 0.0, 0.0);
 		pd->SetPoints(pts);
 		//Now we will do the Delaunay triangulation
-		vtkSmartPointer<vtkDelaunay3D> d3D = 
+		vtkSmartPointer<vtkDelaunay3D> d3D =
 			vtkSmartPointer<vtkDelaunay3D>::New();
 		d3D->SetInputData(pd);
 		d3D->Update();
 		//Extract the surface from convex hull obtained after Delaunay3D
-		vtkSmartPointer<vtkDataSetSurfaceFilter> dss = 
+		vtkSmartPointer<vtkDataSetSurfaceFilter> dss =
 			vtkSmartPointer<vtkDataSetSurfaceFilter>::New();
 		dss->SetInputConnection(d3D->GetOutputPort());
 		vtkSmartPointer<vtkPolyData> surf = dss->GetOutput();
@@ -347,10 +347,117 @@ namespace voom
 	}
 
 	/*
-		This method creates a 3D surface from unorganized points using 
+		Overloaded version of delaunay3DSurf(). It prints surface to a file and uses a
+		vtkPolyData as an input.
+	*/
+	void meshSphericalPointCloud(const vtkSmartPointer<vtkPolyData> input, double searchRad,
+		const std::string fileName) {
+		vtkSmartPointer<vtkPolyDataWriter> writer =
+			vtkSmartPointer<vtkPolyDataWriter>::New();
+		writer->SetFileName("OrigInput.vtk");
+		writer->SetInputData(input);
+		writer->Write();
+		//Project points to sphere
+		vtkSmartPointer<vtkPolyData> pd = vtkSmartPointer<vtkPolyData>::New();
+		vtkSmartPointer<vtkPoints> pts = vtkSmartPointer<vtkPoints>::New();
+		double Ravg = 0.0;
+		for (int i = 0; i < input->GetNumberOfPoints(); i++) {
+			tvmet::Vector<double, 3> cp(0.0);
+			input->GetPoint(i, &cp[0]);
+			Ravg += norm2(cp);
+		}
+		Ravg /= input->GetNumberOfPoints();
+		for (int i = 0; i < input->GetNumberOfPoints(); i++) {
+			tvmet::Vector<double, 3> cp(0.0);
+			input->GetPoint(i, &cp[0]);
+			cp /= norm2(cp);
+			cp *= Ravg;
+			pts->InsertNextPoint(cp(0), cp(1), cp(2));
+		}
+		pd->SetPoints(pts);
+		std::vector < std::vector<vtkIdType> > capsomers;
+		for (int i = 0; i < pd->GetNumberOfPoints(); i++) {
+			tvmet::Vector<double, 3> centerNode(0.0);
+			pd->GetPoint(i, &centerNode[0]);
+			std::vector<vtkIdType> currCapso;
+			currCapso.push_back(i);
+			for (int j = 0; j < pd->GetNumberOfPoints(); j++) {
+				if (j != i) {
+					tvmet::Vector<double, 3> currNode(0.0);
+					pd->GetPoint(j, &currNode[0]);
+					double r = tvmet::norm2(centerNode - currNode);
+					if (r <= searchRad) {
+						currCapso.push_back(j);
+					}
+				}
+			}
+			capsomers.push_back(currCapso);
+		}
+		//Now we have all neighbors. We need to convert them into triangles
+		vtkSmartPointer<vtkCellArray> cells = vtkSmartPointer<vtkCellArray>::New();
+		for (int i = 0; i < capsomers.size(); i++) {
+			std::vector<vtkIdType> currCapso = capsomers[i];
+			vtkIdType vert0 = currCapso[0];
+			for (int j = 1; j < currCapso.size(); j++) {
+				vtkIdType vert1 = currCapso[j];
+				tvmet::Vector<double, 3> x1(0.0);
+				pd->GetPoint(vert1, &x1[0]);
+				std::vector<neighbors> neighDist;
+				for (int k = 1; k < currCapso.size(); k++) {
+					if ( k != j) {
+						vtkIdType vert2 = currCapso[k];
+						tvmet::Vector<double, 3> x2(0.0);
+						pd->GetPoint(vert2, &x2[0]);
+						neighbors n(vert2, tvmet::norm2(x2-x1));
+						neighDist.push_back(n);
+					}
+				}
+				//Sorts by the distance values which are 
+				std::sort (neighDist.begin(), neighDist.end());
+				vtkIdType cell1[3] = { vert0, vert1, neighDist[0]._id };
+				cells->InsertNextCell(3, cell1);
+				vtkIdType cell2[3] = {vert0, neighDist[1]._id, vert1};
+				cells->InsertNextCell(3, cell1);
+			}
+		}
+		input->SetPolys(cells);
+		writer->SetFileName("BeforeCleaning.vtk");
+		writer->SetInputData(input);
+		writer->Write();
+		vtkSmartPointer<vtkCleanPolyData> cpd =
+			vtkSmartPointer<vtkCleanPolyData>::New();
+		cpd->SetInputData(input);
+		cpd->Update();
+		vtkSmartPointer<vtkPolyData> surf = cpd->GetOutput();
+		writer->SetFileName("AfterCleaning.vtk");
+		writer->SetInputData(surf);
+		writer->Write();
+
+		//Sanity check: Number of points in 'surf' should be equal to number 
+		//of points in 'surf'
+		if (surf->GetNumberOfPoints() != input->GetNumberOfPoints()) {
+			std::cout << "surf->GetNumberOfPoints() = "
+				<< surf->GetNumberOfPoints() << std::endl;
+			std::cout << "input->GetNumberOfPoints() = "
+				<< input->GetNumberOfPoints() << std::endl;
+			std::cout << "Lost some points in Delaunay3D step!" << std::endl;
+			exit(EXIT_FAILURE);
+		}		
+		//Clear the vertices from 'input'
+		vtkSmartPointer<vtkCellArray> emptyVertices =
+			vtkSmartPointer<vtkCellArray>::New();
+		input->SetVerts(emptyVertices);
+		//Finally, print the 'input' with triangles		
+		writer->SetFileName(fileName.c_str());
+		writer->SetInputData(input);
+		writer->Write();
+	}
+
+	/*
+		This method creates a 3D surface from unorganized points using
 		Poisson surface reconstruction. It returns a connectivity matrix
 	*/
-	vector<tvmet::Vector<int, 3> > Poisson3DSurf(const std::vector<DeformationNode<3>*> 
+	vector<tvmet::Vector<int, 3> > Poisson3DSurf(const std::vector<DeformationNode<3>*>
 		&nodes)
 	{
 		vtkSmartPointer<vtkPoints> pts = vtkSmartPointer<vtkPoints>::New();
@@ -358,12 +465,12 @@ namespace voom
 			tvmet::Vector<double, 3> cp = nodes[i]->point();
 			pts->InsertNextPoint(cp(0), cp(1), cp(2));
 		}
-		vtkSmartPointer<vtkPolyDataWriter> pdWriter = 
+		vtkSmartPointer<vtkPolyDataWriter> pdWriter =
 			vtkSmartPointer<vtkPolyDataWriter>::New();
 		vtkSmartPointer<vtkPolyData> pd = vtkSmartPointer<vtkPolyData>::New();
 		pd->SetPoints(pts);
 
-		vtkSmartPointer<vtkSurfaceReconstructionFilter> surf = 
+		vtkSmartPointer<vtkSurfaceReconstructionFilter> surf =
 			vtkSmartPointer<vtkSurfaceReconstructionFilter>::New();
 		surf->SetInputData(pd);
 
@@ -386,7 +493,7 @@ namespace voom
 		pdWriter->SetFileName("PoissonSurface.vtk");
 		pdWriter->Write();
 
-		vtkSmartPointer<vtkDataSetSurfaceFilter> sf 
+		vtkSmartPointer<vtkDataSetSurfaceFilter> sf
 			= vtkSmartPointer<vtkDataSetSurfaceFilter>::New();
 		sf->SetInputConnection(reverse->GetOutputPort());
 		sf->Update();
@@ -427,7 +534,7 @@ namespace voom
 	}
 
 	/*
-		This method returns mesh quality from a vector of DeformationNodes and a 
+		This method returns mesh quality from a vector of DeformationNodes and a
 		connectivity vector
 	*/
 	std::vector<double> getMeshQualityInfo(const std::vector<DeformationNode<3>*> &nodes,
@@ -439,9 +546,9 @@ namespace voom
 			pts->InsertNextPoint(cp(0), cp(1), cp(2));
 		}
 		//Convert connectivity information to a vtkCellArray
-		vtkSmartPointer<vtkCellArray> cellArray = 
+		vtkSmartPointer<vtkCellArray> cellArray =
 			vtkSmartPointer<vtkCellArray>::New();
-		vtkIdType cell[3] = {0,0,0};
+		vtkIdType cell[3] = { 0,0,0 };
 		for (int i = 0; i < connectivities.size(); i++) {
 			cell[0] = connectivities[i](0);
 			cell[1] = connectivities[i](1);
@@ -463,10 +570,12 @@ namespace voom
 			GetArray("Mesh Triangle Quality")->GetComponent(0, 0);
 		double maxQuality = mq->GetOutput()->GetFieldData()->
 			GetArray("Mesh Triangle Quality")->GetComponent(0, 2);
-		std::vector<double> quality = {minQuality, avgQuality, maxQuality};
+		std::vector<double> quality = { minQuality, avgQuality, maxQuality };
 		return quality;
 	}
-
+	/*
+		The following function plots MorseBonds
+	*/
 	void plotMorseBonds(const std::vector<std::string> &fileNames, std::string fname,
 		double epsilon, double Rshift, double sigma, vtkSmartPointer<vtkCellArray> bonds)
 	{
@@ -478,21 +587,21 @@ namespace voom
 			assert(ifstream(fileName.c_str()));
 			vtkSmartPointer<vtkPolyDataReader> reader =
 				vtkSmartPointer<vtkPolyDataReader>::New();
-			reader->SetFileName(fileName.c_str());			
+			reader->SetFileName(fileName.c_str());
 			vtkSmartPointer<vtkPolyData> mesh = reader->GetOutput();
-			reader->Update(); 
+			reader->Update();
 			vtkSmartPointer<vtkDataArray> displacements = mesh->GetPointData()->
-				GetVectors("displacements");			
+				GetVectors("displacements");
 			vtkSmartPointer<vtkDoubleArray> force = vtkSmartPointer<vtkDoubleArray>::New();
 			force->SetNumberOfTuples(bonds->GetNumberOfCells());
 			force->SetNumberOfComponents(1);
 			force->SetName("MutualForce");
-			
+
 			//Iterate over cells (lines) in bonds and calculate forces						
-			vtkSmartPointer<vtkIdList> points = vtkSmartPointer<vtkIdList>::New();	
+			vtkSmartPointer<vtkIdList> points = vtkSmartPointer<vtkIdList>::New();
 			int forceIdx = 0;
 			bonds->InitTraversal();
-			while (bonds->GetNextCell(points)) {				
+			while (bonds->GetNextCell(points)) {
 				tvmet::Vector<double, 3> r1(0.0), r2(0.0), d1(0.0), d2(0.0);
 				vtkIdType a, b;
 				a = points->GetId(0);
@@ -514,7 +623,7 @@ namespace voom
 			vtkSmartPointer<vtkPolyDataWriter> writer =
 				vtkSmartPointer<vtkPolyDataWriter>::New();
 			writer->SetInputData(out);
-			sstm << fname <<"-MorseBonds-" << z << ".vtk";
+			sstm << fname << "-MorseBonds-" << z << ".vtk";
 			fileName = sstm.str();
 			sstm.str("");
 			sstm.clear();
@@ -522,6 +631,53 @@ namespace voom
 			writer->Write();
 		}
 	}
+
+	/*
+		The next function is an overloaded version of getRadialStats(). It uses many more
+		points from LoopShellSurface to calculate asphericity etc.
+	*/
+	std::vector<double> getRadialStats(vtkSmartPointer<vtkPolyData> pd,
+		tvmet::Vector<double, 3> Xavg) {
+		std::vector<double> qpRadius(pd->GetNumberOfPoints(), 0.0);
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
+		for (int e = 0; e < pd->GetNumberOfPoints(); e++) {
+			tvmet::Vector<double, 3> Xq(0.0);
+			pd->GetPoint(e, &Xq[0]);
+			double qpR = tvmet::norm2(Xq - Xavg);
+			qpRadius[e] = qpR;
+		}
+		double Ravg = 0.0;
+		for (int i = 0; i < qpRadius.size(); i++) {
+			Ravg += qpRadius[i];
+		}
+		Ravg /= qpRadius.size();
+
+		double dRavg2 = 0.0;
+		for (int i = 0; i < qpRadius.size(); i++) {
+			double dR = qpRadius[i] - Ravg;
+			dRavg2 += dR*dR;
+		}
+		dRavg2 /= qpRadius.size();
+
+		double asphericity = dRavg2 / (Ravg*Ravg);
+
+		tvmet::Vector<double, 3> X0(0.0), X1(0.0);
+		pd->GetPoint(0, &X0[0]);
+		double closestNeighDist = 1e16;
+		for (int j = 1; j < pd->GetNumberOfPoints(); j++) {
+			pd->GetPoint(j, &X1[0]);
+			double dist = tvmet::norm2(X1 - X0);
+			if ( dist < closestNeighDist) {
+				closestNeighDist = dist;
+			}
+		}
+		std::vector<double> output = { Ravg, asphericity, 
+			closestNeighDist };
+		return output;
+	}
+
 
 	/*
 		This function is meant to calculate theta and phi limits for bins on
@@ -766,4 +922,4 @@ namespace voom
 		}
 	}
 
-}
+	}

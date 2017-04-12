@@ -11,8 +11,9 @@
 // LAPACK subroutine for computing eigenvalues and eigenvectors
 //
 // define prototype of LAPACK functions
-extern "C" void dsyev_(char *jobz, char *uplo, int *n, double *a, int *lda,
-		       double *w, double *work, int *lwork, int *info);
+//extern "C" void dsyev_(char *jobz, char *uplo, int *n, double *a, int *lda,
+//	double *w, double *work, int *lwork, int *info);
+
 //#define _DEBUG_
 
 namespace voom

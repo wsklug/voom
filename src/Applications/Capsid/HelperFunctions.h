@@ -37,6 +37,7 @@
 #include <vtkContourFilter.h>
 #include <vtkReverseSense.h>
 #include <vtkUnstructuredGrid.h>
+#include <vtkCleanPolyData.h>
 
 #if defined(_OPENMP)
 #include <omp.h>
@@ -48,6 +49,13 @@
 
 namespace voom
 {
+	//Structure declaration
+	struct neighbors {
+		vtkIdType _id;
+		double _distance;
+		neighbors(vtkIdType id, double dist) :_id(id), _distance(dist) {}
+		bool operator<(const neighbors& e)const { return _distance < e._distance; }
+	};
 
 // Function declarations
 void writeEdgeStrainVtk(std::vector<std::string> &fileNames, \
@@ -60,6 +68,9 @@ std::vector<double> calcEdgeLenAndStdDev(const std::vector<DeformationNode<3>*> 
 	const std::vector< tvmet::Vector<int,3> > &b);
 
 std::vector<tvmet::Vector<int, 3> > delaunay3DSurf(const std::vector<DeformationNode<3>*> &a);
+
+void meshSphericalPointCloud(const vtkSmartPointer<vtkPolyData> pd, double searchRad, 
+	const std::string fileName);
 
 std::vector<tvmet::Vector<int, 3> > Poisson3DSurf(const std::vector<DeformationNode<3>*> &a);
 
@@ -74,6 +85,9 @@ std::vector<double> getMeshQualityInfo(const std::vector<DeformationNode<3>*> &a
 
 void plotMorseBonds(const std::vector<std::string> &fileNames, std::string fname, 
 	double epsilon, double Rshift, double sigma, vtkSmartPointer<vtkCellArray> bonds);
+
+std::vector<double> getRadialStats(vtkSmartPointer<vtkPolyData> pd,
+	tvmet::Vector<double, 3> Xavg);
 
 /*
 This function calculates radius of a LoopShellBody shell using

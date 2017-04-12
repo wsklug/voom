@@ -16,8 +16,9 @@ foreach(CURRL ${voom_LIBRARIES})
 endforeach(CURRL)
 
 #set(ENV{LIB} $ENV{LIB} "C:/Software/OpenBLAS/lib" PATH)
-find_package(BLAS REQUIRED)
-
+if(NOT BLAS_FOUND)
+	find_package(BLAS REQUIRED)
+endif()
 #OpenBLAS library provides some lapack functions as well. Otherwise we need to link
 # lapack separately
 set(LINK_LAPACK TRUE)
@@ -31,7 +32,7 @@ if(LINK_LAPACK)
 	find_package(LAPACK)
 endif(LINK_LAPACK)
 
-find_package(Threads)
+#find_package(Threads)
 
 set(voom_LIBRARIES Body Solvers Materials Elements Quadrature Shape VoomMath Geometry Mesh Model)
 
@@ -41,17 +42,22 @@ set(capsid_targets asphNoRescale annealing asphBrownian asphHarmonic dual relaxM
 
 foreach(curr_target ${capsid_targets})
 	add_executable(${curr_target} $<TARGET_OBJECTS:HelperFunctions> ${curr_target}.cc)
-	target_link_libraries(${curr_target} ${blitz_LIBRARIES})
+	target_link_libraries(${curr_target} PRIVATE ${blitz_LIBRARIES})
 	
 	foreach(CURRL ${voom_LIBRARIES})
 		target_include_directories(${curr_target} PRIVATE $<TARGET_PROPERTY:${CURRL},INTERFACE_INCLUDE_DIRECTORIES>)
 		if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
 			target_include_directories(${curr_target} PRIVATE ${PROJECT_BINARY_DIR})
 		endif()
-		target_link_libraries(${curr_target} ${CURRL})
+		target_link_libraries(${curr_target} PRIVATE ${CURRL})
 	endforeach(CURRL)
-	
-	target_link_libraries(${curr_target} ${VTK_LIBRARIES} ${LAPACK_LIBRARIES} ${BLAS_LIBRARIES})
+	IF(WIN32 AND BLA_VENDOR MATCHES "Intel[0-9]*_64lp_seq")
+		target_compile_options(${curr_target} PRIVATE "/D MKL_ILP64 -I ${MKL_ROOT}/include")
+		target_link_libraries(${curr_target} PRIVATE mkl_intel_ilp64.lib mkl_sequential.lib mkl_core.lib)		
+	ELSE()
+		target_link_libraries(${curr_target} PUBLIC ${LAPACK_LIBRARIES} PUBLIC ${BLAS_LIBRARIES})
+	ENDIF()
+	target_link_libraries(${curr_target} PRIVATE ${VTK_LIBRARIES})
 	
 endforeach(curr_target)
 

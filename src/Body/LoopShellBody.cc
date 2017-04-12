@@ -1546,4 +1546,73 @@ namespace voom
 		writer->Write();
 	}
 
+	//!The following function generates many points on every LoopShellBody element
+	// so that we can generate the actual surface for which bending energy is 
+	// calculated
+	template<class Material_t>
+	vtkSmartPointer<vtkPolyData> 
+		LoopShellBody<Material_t>::getLoopShellSurfPoints(double cleanTol) {
+		FeElementContainer elements = _shells;
+		vtkSmartPointer<vtkPoints> newPointSet = 
+			vtkSmartPointer<vtkPoints>::New();
+		TriangleQuadrature quadPoints(1);
+		std::vector<TriangleQuadrature::Point> pts = quadPoints.points();
+
+		//We will manually introduce the 'quadPoints'
+		pts.resize(15);
+		pts[0].coords = 0.00, 0.00; pts[0].weight = 0.0;
+		pts[1].coords = 0.25, 0.00; pts[1].weight = 0.0;
+		pts[2].coords = 0.50, 0.00; pts[2].weight = 0.0;
+		pts[3].coords = 0.75, 0.00; pts[3].weight = 0.0;
+		pts[4].coords = 1.00, 0.00; pts[4].weight = 0.0;
+
+		pts[5].coords = 0.00, 0.25; pts[5].weight = 0.0;
+		pts[6].coords = 0.25, 0.25; pts[6].weight = 0.0;
+		pts[7].coords = 0.50, 0.25; pts[7].weight = 0.0;
+		pts[8].coords = 0.75, 0.25; pts[8].weight = 0.0;
+		
+		pts[9].coords = 0.00, 0.50; pts[9].weight = 0.0;
+		pts[10].coords = 0.25, 0.50; pts[10].weight = 0.0;
+		pts[11].coords = 0.50, 0.50; pts[11].weight = 0.0;
+
+		pts[12].coords = 0.00, 0.75; pts[12].weight = 0.0;
+		pts[13].coords = 0.25, 0.75; pts[13].weight = 0.0;
+
+		pts[14].coords = 0.00, 1.00; pts[14].weight = 0.0;
+
+		vtkSmartPointer<vtkCellArray> cells = 
+			vtkSmartPointer<vtkCellArray>::New();
+		int pointId = 0;
+		for (int e = 0; e < elements.size(); e++) {
+			const typename FeElement_t::NodeContainer 
+				eleNodes = elements[e]->nodes();
+			for (int j = 0; j < pts.size(); j++) {
+			LoopShellShape shapeObj(eleNodes.size(), 
+				elements[e]->getCornerValences(), pts[j].coords);
+				const LoopShellShape::FunctionArray fn = shapeObj.functions();
+				tvmet::Vector<double, 3> Xq(0.0);
+				for (int i = 0; i < fn.size(); i++) {
+					Xq += tvmet::mul(eleNodes[i]->point(), fn(i));
+				}
+				double currSurfPoint[] = { Xq(0), Xq(1), Xq(2) };
+				newPointSet->InsertNextPoint(currSurfPoint);
+				vtkVertex *currVertex = vtkVertex::New();
+				currVertex->GetPointIds()->SetId(0, pointId++);
+				cells->InsertNextCell(currVertex);
+			}
+		}
+		vtkSmartPointer<vtkPolyData> poly
+			= vtkSmartPointer<vtkPolyData>::New();
+		poly->SetPoints(newPointSet);
+		poly->SetVerts(cells);
+		//Remove duplicate points if any and return
+		vtkSmartPointer<vtkCleanPolyData> cpd
+			= vtkSmartPointer<vtkCleanPolyData>::New();
+		cpd->SetInputData(poly);
+		cpd->SetTolerance(cleanTol);
+		cpd->Update();
+		vtkSmartPointer<vtkPolyData> output = cpd->GetOutput();
+		return output;
+	}
+
 } // namespace voom

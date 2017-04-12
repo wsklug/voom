@@ -62,6 +62,7 @@ int main(int argc, char* argv[])
 	double ARtol = 1.5;
 	bool remesh = true;
 	bool useOldRemeshTechnicque = false;
+	double cleanTol = 0.0;
 
 
 	//Read epsilon and percentStrain from input file. percentStrain is
@@ -75,6 +76,7 @@ int main(int argc, char* argv[])
 		>> temp >> percentStrain
 		>> temp >> ARtol
 		>> temp >> searchRadFactor
+		>> temp >> cleanTol
 		>> temp >> harmonicRelaxNeeded
 		>> temp >> projectOnSphere
 		>> temp >> remesh
@@ -109,8 +111,7 @@ int main(int argc, char* argv[])
 	normals->AutoOrientNormalsOn();
 	mesh = normals->GetOutput();
 	normals->Update();
-
-
+	
 	std::cout << "mesh->GetNumberOfPoints() = " << mesh->GetNumberOfPoints()
 		<< std::endl;
 
@@ -166,12 +167,8 @@ int main(int argc, char* argv[])
 	double EdgeLength = lengthStat[0];
 	double stdDevEdgeLen = lengthStat[1];
 	std::cout << "Before any relaxation :" << endl
-		<< "   Average triangle edge length = " << std::setprecision(10)
-		<< EdgeLength << endl
-		<< "   Standard deviation = " << std::setprecision(10)
-		<< stdDevEdgeLen << endl;
-	std::cout.precision(6);
-
+		<< "   Average triangle edge length = "	<< EdgeLength << endl
+		<< "   Standard deviation = " << stdDevEdgeLen << endl;
 	// Rescale size of the capsid by the average equilateral edge length
 	for (int i = 0; i < defNodes.size(); i++) {
 		DeformationNode<3>::Point X;
@@ -248,15 +245,15 @@ int main(int argc, char* argv[])
 	std::string dataOutputFile = "asphVsFVKMorse.dat";
 
 	myfile.open(dataOutputFile.c_str());
-	myfile << setw(5) << "#Step" << "\t" << setw(9) << "Ravg" << "\t"
-		<< setw(8) << "Y" << "\t" << "asphericity" << "\t"
-		<< setw(8) << "FVKin" << "\t" << setw(8) << "LSBStrainEnergy" << "\t"
-		<< setw(8) << "MorseEnergy" << "\t"
-		<< setw(8) << "TotalFunctional" << "\t"
-		<< setw(8) << "RemeshOccured" << "\t"
-		<< setw(8) << "LargestARtol" << "\t"
-		<< setw(8) << "EnergyBeforeRemesh" << "\t"
-		<< setw(8) << "EnergyAfterRemesh" << std::endl;
+	myfile << "#Step" << "\t" << "Ravg" << "\t"
+		<< "Y" << "\t" << "FVKin" << "\t"
+		<< "asphericity" << "\t" << setw(8) << "LSBStrainEnergy" << "\t"
+		<< "MorseEnergy" << "\t"
+		<< "TotalFunctional" << "\t"
+		<< "RemeshOccured" << "\t"
+		<< "LargestARtol" << "\t"
+		<< "EnergyBeforeRemesh" << "\t"
+		<< "EnergyAfterRemesh" << std::endl;
 	myfile << showpoint;
 
 
@@ -267,11 +264,10 @@ int main(int argc, char* argv[])
 	int maxIter1 = 1e5;
 	int maxIter2 = 1e5;
 
-	double factr = 1.0;
+	double factr = 10.0;
 	double pgtol = 1e-7;
 	int iprint = 1000;
-	Lbfgsb solver1(3 * nodes.size(), m, factr, pgtol, iprint, maxIter1);
-	Lbfgsb solver2(3 * nodes.size(), m, factr, pgtol, iprint, maxIter2);
+	Lbfgsb solver1(3 * nodes.size(), m, factr, pgtol, iprint, maxIter1, true);
 
 	typedef FVK MaterialType;
 	typedef LoopShellBody<MaterialType> LSB;
@@ -312,17 +308,18 @@ int main(int argc, char* argv[])
 
 		std::cout << "Spring constant: " << springConstant << endl;
 		std::cout << "Relaxing the mesh using harmonic potential..." << endl;
-		solver2.solve(&model1);
+		solver1.solve(&model1);
 
 		std::cout << "Harmonic potential relaxation complete." << endl;
 
 		//Print to VTK file
+		/*
 		sstm << fname << "-relaxed-harmonic";
 		rName = sstm.str();
 		bd1->printParaview(rName);
 		sstm.str("");
 		sstm.clear();
-
+		*/
 		//Release allocated memory
 		delete bd1;
 		delete SpringBody;
@@ -334,11 +331,8 @@ int main(int argc, char* argv[])
 		sigma = (100 / (Rshift*percentStrain))*log(2.0);
 		springConstant = 2 * sigma*sigma*epsilon;
 		std::cout << "After relaxing with harmonic potential: " << endl
-			<< "   Average triangle edge length = " << std::setprecision(10)
-			<< EdgeLength << endl
-			<< "   Standard deviation = " << std::setprecision(10)
-			<< stdDevEdgeLen << endl;
-		std::cout.precision(6);
+			<< "   Average triangle edge length = "	<< EdgeLength << endl
+			<< "   Standard deviation = " << stdDevEdgeLen << endl;		
 	}
 
 	//***************************  SOLUTION LOOP ***************************
@@ -414,12 +408,12 @@ int main(int argc, char* argv[])
 					std::cout << "Number of elements that changed after remeshing = "
 						<< elementsChanged << "." << std::endl;
 					//Relax again after remeshing
-					solver2.solve(&model);
+					solver1.solve(&model);
 					meshQuality = getMeshQualityInfo(defNodes, connectivities);
 					std::cout << "\tLargest aspect ratio after re-solving = "
 						<< meshQuality[2] << std::endl;
 					std::cout << "Energy before remeshing = " << energy << std::endl;
-					energy = solver2.function();
+					energy = solver1.function();
 					std::cout << "Energy after remeshing  = " << energy << std::endl;
 				}
 			}
@@ -452,27 +446,15 @@ int main(int argc, char* argv[])
 		//bd->calcMaxPrincipalStrains();
 
 		std::cout << "Shape relaxed." << std::endl
-			<< "Energy = " << energy << std::endl;
-
-		//Selectively print the relaxed shapes
-		if (currPrintFlag) {
-			sstm << fname << "-relaxed-" << q;
-			rName = sstm.str();
-			bd->printParaview(rName);
-			sstm.str("");
-			sstm.clear(); // Clear state flags    
-		}
+			<< "Energy = " << energy << std::endl;		
 
 		//Re-calculate triangle edge length mean and deviation
 		lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);
 		EdgeLength = lengthStat[0];
 		stdDevEdgeLen = lengthStat[1];
 		std::cout << "After relaxing with Morse potential: " << endl
-			<< "   Average triangle edge length = " << std::setprecision(10)
-			<< EdgeLength << endl
-			<< "   Standard deviation = " << std::setprecision(10)
-			<< stdDevEdgeLen << endl;
-		std::cout.precision(6);
+			<< "   Average triangle edge length = " << EdgeLength << endl
+			<< "   Standard deviation = " << stdDevEdgeLen << endl;
 
 		//Calculate centre of sphere as average of position vectors of all nodes.
 		tvmet::Vector<double, 3> Xavg(0.0);
@@ -482,21 +464,37 @@ int main(int argc, char* argv[])
 		Xavg /= defNodes.size();
 
 		//We will calculate radius using the quadrature points
-		std::vector<double> radialStats = getRadialStats(bd, Xavg);
+		//The value 0.008 is obtained from trials in Paraview
+		vtkSmartPointer<vtkPolyData> lssPd = bd->getLoopShellSurfPoints(cleanTol);
+		std::vector<double> radialStats = getRadialStats(lssPd, Xavg);
 		Ravg = radialStats[0];
 		std::cout << "Radius of capsid after relaxation = " << Ravg << endl;
 		double asphericity = radialStats[1];
-		double gammaCalc = Y*Ravg*Ravg / KC;
-
-		//Calculate Average Principal Strain
-
-		myfile << q << "\t\t" << Ravg << "\t\t" << Y << "\t\t" << asphericity
-			<< "\t\t" << gamma << "\t\t" << bd->totalStrainEnergy()
-			<< "\t\t" << PrBody->energy() << "\t\t" << energy
-			<< "\t\t" << remeshEventFlag << "\t\t"
-			<< meshQuality[2] << "\t\t" << energy_prev << "\t\t" 
-			<< "\t\t" << energy << std::endl;
-
+		double capsomerSearchRad = radialStats[2];		
+		//Selectively print the relaxed shapes
+		if (currPrintFlag) {
+			sstm << fname << "-relaxed-" << q;
+			rName = sstm.str();
+			bd->printParaview(rName);
+			sstm.str("");
+			sstm.clear();
+			//Now we will print the LoopShellSurface
+			sstm << fname << "-LoopShellSurf-"
+				<< q << ".vtk";
+			rName = sstm.str();			
+			meshSphericalPointCloud(lssPd, 1.1*capsomerSearchRad, rName);
+			std::cout << "\tCapsomer Search Radius = " << capsomerSearchRad
+				<< std::endl;
+			sstm.str("");
+			sstm.clear();
+		}
+		int old_precision = std::cout.precision(16);
+		myfile << q << "\t" << Ravg << "\t" << Y << "\t" << gamma
+			<< "\t" << asphericity << "\t" 
+			<< bd->totalStrainEnergy() << "\t" << PrBody->energy() << "\t" 
+			<< energy << "\t" << remeshEventFlag << "\t" << meshQuality[2] 
+			<< "\t" << energy_prev << "\t" << "\t" << energy << std::endl;
+		std::cout.precision(old_precision);
 
 		//Release the dynamically allocated memory
 		delete bd;
@@ -520,7 +518,7 @@ int main(int argc, char* argv[])
 		sstm.clear();
 	}
 
-	insertValenceInVtk(allVTKFiles);
+	//insertValenceInVtk(allVTKFiles);
 	//writeEdgeStrainVtk(allVTKFiles, Rshift, percentStrain);
 	plotMorseBonds(allVTKFiles, fname, epsilon, Rshift, sigma, bonds);
 	t3 = clock();

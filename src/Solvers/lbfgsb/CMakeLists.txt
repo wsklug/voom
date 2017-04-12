@@ -47,3 +47,30 @@ IF(USE_MULTIPRECISION)
 	ENDIF()
 	target_link_libraries(lbfgsb PUBLIC ${MPFR_LIBRARIES} ${GMP_LIBRARIES})
 ENDIF()
+
+#set(ENV{LIB} $ENV{LIB} "C:/Software/OpenBLAS/lib" PATH)
+find_package(BLAS REQUIRED)
+
+#OpenBLAS library provides some lapack functions as well. Otherwise we need to link
+# lapack separately
+set(LINK_LAPACK TRUE)
+if(BLAS_FOUND)
+	if(BLAS_openblas_LIBRARY)
+		set(LINK_LAPACK FALSE)
+	endif(BLAS_openblas_LIBRARY)
+endif(BLAS_FOUND)
+
+if(LINK_LAPACK)
+	find_package(LAPACK)
+endif(LINK_LAPACK)
+
+find_package(Threads)
+
+IF(WIN32)
+	IF(BLA_VENDOR MATCHES "Intel[0-9]*_64lp_seq")
+		MESSAGE("Please ensure that CMake Cache variable MKL_ROOT is set correctly.")
+		MESSAGE("Using MKL_ROOT = ${MKL_ROOT}")
+		target_compile_options(lbfgsb PRIVATE "/4I8 /module:${MKL_ROOT}/include/intel64/ilp64 -I${MKL_ROOT}/include")
+		target_link_libraries(lbfgsb PRIVATE mkl_blas95_ilp64.lib mkl_lapack95_ilp64.lib mkl_intel_ilp64.lib mkl_sequential.lib mkl_core.lib)
+	ENDIF()
+ENDIF()

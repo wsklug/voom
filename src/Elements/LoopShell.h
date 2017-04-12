@@ -84,7 +84,8 @@ namespace voom
       unsigned nNodes = nodes.size();
       assert(nNodes == V(0)+V(1)+V(2) - 6);
       _nodes = nodes;
-
+	  //Store CornerValences for plotting surface
+	  _V = V;
       for(ConstNodeIterator n=_nodes.begin(); n!=_nodes.end(); n++) 
 	_baseNodes.push_back(*n);
       
@@ -167,6 +168,9 @@ namespace voom
 
     Vector3D PushForwardOperator(Vector3D & Nbar);
 
+	//! Return CornerValences of the element
+	LoopShellShape::CornerValences getCornerValences() { return _V; }
+
 //     void setCytoSpring(double new_mu, double new_kS, double new_kSpring){
 //       for(QuadPointIterator p=_quadPoints.begin(); p!=_quadPoints.end(); p++){
 // 	Material_t& material = p->material;
@@ -197,6 +201,9 @@ namespace voom
     GlobalConstraint _volumeConstraint;
 
     GlobalConstraint _totalCurvatureConstraint;
+
+	//!Store CornerValences for plotting points
+	LoopShellShape::CornerValences _V;
 
     //! strain energy
     double _strainEnergy;

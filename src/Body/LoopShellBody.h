@@ -43,6 +43,8 @@
 #include <vtkPolyDataWriter.h>
 #include <vtkDoubleArray.h>
 #include <vtkPointData.h>
+#include <vtkCleanPolyData.h>
+#include <vtkVertex.h>
 
 #ifdef WITH_MPI
 #include <mpi.h>
@@ -299,6 +301,9 @@ namespace voom
 
 	//! Print Quad Points
 	void printQuadPoints(std::string fileName);
+
+	//! Print point cloud on LoopShell surface
+	vtkSmartPointer<vtkPolyData> getLoopShellSurfPoints(double cleanTol);
 
     //Get Maximum Principal Strains
     std::vector<double> getMaxPrincipalStrains() {return _maxPrincipalStrain;};
