@@ -488,13 +488,12 @@ int main(int argc, char* argv[])
 			sstm.str("");
 			sstm.clear();
 		}
-		int old_precision = std::cout.precision(16);
-		myfile << q << "\t" << Ravg << "\t" << Y << "\t" << gamma
-			<< "\t" << asphericity << "\t" 
+
+		myfile << setprecision(16) << q << "\t" << Ravg << "\t" << Y
+			<< "\t" << gamma << "\t" << asphericity << "\t" 
 			<< bd->totalStrainEnergy() << "\t" << PrBody->energy() << "\t" 
 			<< energy << "\t" << remeshEventFlag << "\t" << meshQuality[2] 
-			<< "\t" << energy_prev << "\t" << "\t" << energy << std::endl;
-		std::cout.precision(old_precision);
+			<< "\t" << energy_prev << "\t" << "\t" << energy << std::endl;		
 
 		//Release the dynamically allocated memory
 		delete bd;

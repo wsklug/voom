@@ -1605,6 +1605,11 @@ namespace voom
 			= vtkSmartPointer<vtkPolyData>::New();
 		poly->SetPoints(newPointSet);
 		poly->SetVerts(cells);
+		vtkSmartPointer<vtkPolyDataWriter> writer =
+			vtkSmartPointer<vtkPolyDataWriter>::New();
+		writer->SetInputData(poly);
+		writer->SetFileName("LSSBeforeClean.vtk");
+		writer->Write();
 		//Remove duplicate points if any and return
 		vtkSmartPointer<vtkCleanPolyData> cpd
 			= vtkSmartPointer<vtkCleanPolyData>::New();
@@ -1612,6 +1617,9 @@ namespace voom
 		cpd->SetTolerance(cleanTol);
 		cpd->Update();
 		vtkSmartPointer<vtkPolyData> output = cpd->GetOutput();
+		writer->SetInputData(poly);
+		writer->SetFileName("LSSAfterClean.vtk");
+		writer->Write();
 		return output;
 	}
 

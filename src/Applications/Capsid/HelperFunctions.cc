@@ -360,18 +360,18 @@ namespace voom
 		//Project points to sphere
 		vtkSmartPointer<vtkPolyData> pd = vtkSmartPointer<vtkPolyData>::New();
 		vtkSmartPointer<vtkPoints> pts = vtkSmartPointer<vtkPoints>::New();
-		double Ravg = 0.0;
+		/*double Ravg = 0.0;
 		for (int i = 0; i < input->GetNumberOfPoints(); i++) {
 			tvmet::Vector<double, 3> cp(0.0);
 			input->GetPoint(i, &cp[0]);
 			Ravg += norm2(cp);
 		}
-		Ravg /= input->GetNumberOfPoints();
+		Ravg /= input->GetNumberOfPoints();*/
 		for (int i = 0; i < input->GetNumberOfPoints(); i++) {
 			tvmet::Vector<double, 3> cp(0.0);
 			input->GetPoint(i, &cp[0]);
-			cp /= norm2(cp);
-			cp *= Ravg;
+			//cp /= norm2(cp);
+			//cp *= Ravg;
 			pts->InsertNextPoint(cp(0), cp(1), cp(2));
 		}
 		pd->SetPoints(pts);
@@ -394,7 +394,8 @@ namespace voom
 			capsomers.push_back(currCapso);
 		}
 		//Now we have all neighbors. We need to convert them into triangles
-		vtkSmartPointer<vtkCellArray> cells = vtkSmartPointer<vtkCellArray>::New();
+		vtkSmartPointer<vtkCellArray> cells 
+			= vtkSmartPointer<vtkCellArray>::New();
 		for (int i = 0; i < capsomers.size(); i++) {
 			std::vector<vtkIdType> currCapso = capsomers[i];
 			vtkIdType vert0 = currCapso[0];
@@ -416,23 +417,16 @@ namespace voom
 				std::sort (neighDist.begin(), neighDist.end());
 				vtkIdType cell1[3] = { vert0, vert1, neighDist[0]._id };
 				cells->InsertNextCell(3, cell1);
-				vtkIdType cell2[3] = {vert0, neighDist[1]._id, vert1};
-				cells->InsertNextCell(3, cell1);
+				vtkIdType cell2[3] = {vert0, neighDist[1]._id ,vert1};
+				cells->InsertNextCell(3, cell2);
 			}
 		}
-		input->SetPolys(cells);
-		writer->SetFileName("BeforeCleaning.vtk");
-		writer->SetInputData(input);
-		writer->Write();
+		input->SetPolys(cells);		
 		vtkSmartPointer<vtkCleanPolyData> cpd =
 			vtkSmartPointer<vtkCleanPolyData>::New();
 		cpd->SetInputData(input);
 		cpd->Update();
-		vtkSmartPointer<vtkPolyData> surf = cpd->GetOutput();
-		writer->SetFileName("AfterCleaning.vtk");
-		writer->SetInputData(surf);
-		writer->Write();
-
+		vtkSmartPointer<vtkPolyData> surf = cpd->GetOutput();		
 		//Sanity check: Number of points in 'surf' should be equal to number 
 		//of points in 'surf'
 		if (surf->GetNumberOfPoints() != input->GetNumberOfPoints()) {
