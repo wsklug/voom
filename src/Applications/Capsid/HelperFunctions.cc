@@ -353,40 +353,20 @@ namespace voom
 	void meshSphericalPointCloud(const vtkSmartPointer<vtkPolyData> input, double searchRad,
 		const std::string fileName) {
 		vtkSmartPointer<vtkPolyDataWriter> writer =
-			vtkSmartPointer<vtkPolyDataWriter>::New();
-		writer->SetFileName("OrigInput.vtk");
-		writer->SetInputData(input);
-		writer->Write();
-		//Project points to sphere
-		vtkSmartPointer<vtkPolyData> pd = vtkSmartPointer<vtkPolyData>::New();
-		vtkSmartPointer<vtkPoints> pts = vtkSmartPointer<vtkPoints>::New();
-		/*double Ravg = 0.0;
-		for (int i = 0; i < input->GetNumberOfPoints(); i++) {
-			tvmet::Vector<double, 3> cp(0.0);
-			input->GetPoint(i, &cp[0]);
-			Ravg += norm2(cp);
-		}
-		Ravg /= input->GetNumberOfPoints();*/
-		for (int i = 0; i < input->GetNumberOfPoints(); i++) {
-			tvmet::Vector<double, 3> cp(0.0);
-			input->GetPoint(i, &cp[0]);
-			//cp /= norm2(cp);
-			//cp *= Ravg;
-			pts->InsertNextPoint(cp(0), cp(1), cp(2));
-		}
-		pd->SetPoints(pts);
+			vtkSmartPointer<vtkPolyDataWriter>::New();	
+				
 		std::vector < std::vector<vtkIdType> > capsomers;
-		for (int i = 0; i < pd->GetNumberOfPoints(); i++) {
+		for (int i = 0; i < input->GetNumberOfPoints(); i++) {
 			tvmet::Vector<double, 3> centerNode(0.0);
-			pd->GetPoint(i, &centerNode[0]);
+			input->GetPoint(i, &centerNode[0]);
 			std::vector<vtkIdType> currCapso;
 			currCapso.push_back(i);
-			for (int j = 0; j < pd->GetNumberOfPoints(); j++) {
+			for (int j = 0; j < input->GetNumberOfPoints(); j++) {
 				if (j != i) {
 					tvmet::Vector<double, 3> currNode(0.0);
-					pd->GetPoint(j, &currNode[0]);
+					input->GetPoint(j, &currNode[0]);
 					double r = tvmet::norm2(centerNode - currNode);
-					if (r <= searchRad) {
+					if (r <= searchRad) {												
 						currCapso.push_back(j);
 					}
 				}
@@ -394,49 +374,42 @@ namespace voom
 			capsomers.push_back(currCapso);
 		}
 		//Now we have all neighbors. We need to convert them into triangles
-		vtkSmartPointer<vtkCellArray> cells 
-			= vtkSmartPointer<vtkCellArray>::New();
+		std::set<uniqueTriangle> uniqueCells;
 		for (int i = 0; i < capsomers.size(); i++) {
 			std::vector<vtkIdType> currCapso = capsomers[i];
 			vtkIdType vert0 = currCapso[0];
 			for (int j = 1; j < currCapso.size(); j++) {
 				vtkIdType vert1 = currCapso[j];
 				tvmet::Vector<double, 3> x1(0.0);
-				pd->GetPoint(vert1, &x1[0]);
+				input->GetPoint(vert1, &x1[0]);
 				std::vector<neighbors> neighDist;
 				for (int k = 1; k < currCapso.size(); k++) {
 					if ( k != j) {
 						vtkIdType vert2 = currCapso[k];
 						tvmet::Vector<double, 3> x2(0.0);
-						pd->GetPoint(vert2, &x2[0]);
+						input->GetPoint(vert2, &x2[0]);
 						neighbors n(vert2, tvmet::norm2(x2-x1));
 						neighDist.push_back(n);
 					}
 				}
 				//Sorts by the distance values which are 
 				std::sort (neighDist.begin(), neighDist.end());
-				vtkIdType cell1[3] = { vert0, vert1, neighDist[0]._id };
-				cells->InsertNextCell(3, cell1);
-				vtkIdType cell2[3] = {vert0, neighDist[1]._id ,vert1};
-				cells->InsertNextCell(3, cell2);
+				for (int m = 0; m < 2; m++) {					
+						uniqueTriangle cell1(vert0, 
+							neighDist[m]._id, vert1);
+						uniqueCells.insert(cell1);
+				}				
 			}
 		}
-		input->SetPolys(cells);		
-		vtkSmartPointer<vtkCleanPolyData> cpd =
-			vtkSmartPointer<vtkCleanPolyData>::New();
-		cpd->SetInputData(input);
-		cpd->Update();
-		vtkSmartPointer<vtkPolyData> surf = cpd->GetOutput();		
-		//Sanity check: Number of points in 'surf' should be equal to number 
-		//of points in 'surf'
-		if (surf->GetNumberOfPoints() != input->GetNumberOfPoints()) {
-			std::cout << "surf->GetNumberOfPoints() = "
-				<< surf->GetNumberOfPoints() << std::endl;
-			std::cout << "input->GetNumberOfPoints() = "
-				<< input->GetNumberOfPoints() << std::endl;
-			std::cout << "Lost some points in Delaunay3D step!" << std::endl;
-			exit(EXIT_FAILURE);
-		}		
+		vtkSmartPointer<vtkCellArray> cells
+			= vtkSmartPointer<vtkCellArray>::New();
+		std::set<uniqueTriangle>::iterator it;
+		for (it = uniqueCells.begin(); it != uniqueCells.end(); it++) {
+			uniqueTriangle currTri = *it;
+			vtkIdType cell[3] = { currTri._id1, currTri._id2, currTri._id3 };
+			cells->InsertNextCell(3, cell);
+		}
+		input->SetPolys(cells);
 		//Clear the vertices from 'input'
 		vtkSmartPointer<vtkCellArray> emptyVertices =
 			vtkSmartPointer<vtkCellArray>::New();

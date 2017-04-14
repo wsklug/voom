@@ -58,6 +58,7 @@ int main(int argc, char* argv[])
 	double percentStrain = 10;
 	bool harmonicRelaxNeeded;
 	double searchRadFactor = 1.2;
+	double capsoSearchRadFactor = 1.2;
 	bool projectOnSphere = true;
 	double ARtol = 1.5;
 	bool remesh = true;
@@ -77,6 +78,7 @@ int main(int argc, char* argv[])
 		>> temp >> ARtol
 		>> temp >> searchRadFactor
 		>> temp >> cleanTol
+		>> temp >> capsoSearchRadFactor
 		>> temp >> harmonicRelaxNeeded
 		>> temp >> projectOnSphere
 		>> temp >> remesh
@@ -482,7 +484,8 @@ int main(int argc, char* argv[])
 			sstm << fname << "-LoopShellSurf-"
 				<< q << ".vtk";
 			rName = sstm.str();			
-			meshSphericalPointCloud(lssPd, 1.1*capsomerSearchRad, rName);
+			meshSphericalPointCloud(lssPd, capsoSearchRadFactor*capsomerSearchRad,
+				rName);
 			std::cout << "\tCapsomer Search Radius = " << capsomerSearchRad
 				<< std::endl;
 			sstm.str("");
