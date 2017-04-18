@@ -185,21 +185,24 @@ namespace voom
 
       else if( strncmp(task,"CONV",4)==0 ) {
 	_computeAll();
-	cout << task << endl;
-	_model->print("lbfgsbconv");
+	//cout << task << endl;
+	std::cout.write(task,49) << std::endl;
+	//_model->print("lbfgsbconv");
 	break;
       }
 
       else if( strncmp(task,"ABNORM",6)==0 ) {
 	_computeAll();
-	cout << task << endl;
-	_model->print("abnormal");
+	std::cout.write(task,49) << std::endl;
+	//cout << task << endl;
+	//_model->print("abnormal");
 	break;
       }
 
       // If task is neither FG nor NEW_X we terminate execution.
       else {
-	cout << task << endl;
+	//cout << task << endl;
+	std::cout.write(task,49) << std::endl;
 	break;
       }
 

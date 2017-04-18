@@ -1596,7 +1596,8 @@ namespace voom
 				}
 				double currSurfPoint[] = { Xq(0), Xq(1), Xq(2) };
 				newPointSet->InsertNextPoint(currSurfPoint);
-				vtkVertex *currVertex = vtkVertex::New();
+				vtkSmartPointer<vtkVertex> currVertex =
+				  vtkSmartPointer<vtkVertex>::New();
 				currVertex->GetPointIds()->SetId(0, pointId++);
 				cells->InsertNextCell(currVertex);
 			}

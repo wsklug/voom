@@ -424,6 +424,7 @@ namespace voom
 		This method creates a 3D surface from unorganized points using
 		Poisson surface reconstruction. It returns a connectivity matrix
 	*/
+/*
 	vector<tvmet::Vector<int, 3> > Poisson3DSurf(const std::vector<DeformationNode<3>*>
 		&nodes)
 	{
@@ -499,7 +500,7 @@ namespace voom
 		}
 		return connectivities;
 	}
-
+*/
 	/*
 		This method returns mesh quality from a vector of DeformationNodes and a
 		connectivity vector
