@@ -16,9 +16,7 @@ foreach(CURRL ${voom_LIBRARIES})
 endforeach(CURRL)
 
 #set(ENV{LIB} $ENV{LIB} "C:/Software/OpenBLAS/lib" PATH)
-if(NOT BLAS_FOUND)
-	find_package(BLAS REQUIRED)
-endif()
+find_package(BLAS REQUIRED)
 #OpenBLAS library provides some lapack functions as well. Otherwise we need to link
 # lapack separately
 set(LINK_LAPACK TRUE)
@@ -39,7 +37,11 @@ set(voom_LIBRARIES Body Solvers Materials Elements Quadrature Shape VoomMath Geo
 set(capsid_targets asphNoRescale annealing asphBrownian asphHarmonic dual relaxMorse 
     asphmodVsFVKcont indentWparticles edgeStrainAndValence harmonic2D Morse2D Morse2DPeriodic reOrient
     twinMeshModel unstableBonds indentContinuum)
-
+	
+IF(WIN32 AND BLA_VENDOR MATCHES "Intel[0-9]*_64lp_seq")
+	link_directories("${MKL_ROOT}/lib/intel64")
+ENDIF()
+	
 foreach(curr_target ${capsid_targets})
 	add_executable(${curr_target} $<TARGET_OBJECTS:HelperFunctions> ${curr_target}.cc)
 	target_link_libraries(${curr_target} PRIVATE ${blitz_LIBRARIES})
@@ -51,9 +53,10 @@ foreach(curr_target ${capsid_targets})
 		endif()
 		target_link_libraries(${curr_target} PRIVATE ${CURRL})
 	endforeach(CURRL)
-	IF(WIN32 AND BLA_VENDOR MATCHES "Intel[0-9]*_64lp_seq")
-		target_compile_options(${curr_target} PRIVATE "/D MKL_ILP64 -I ${MKL_ROOT}/include")
-		target_link_libraries(${curr_target} PRIVATE mkl_intel_ilp64.lib mkl_sequential.lib mkl_core.lib)		
+	IF(WIN32 AND BLA_VENDOR MATCHES "Intel[0-9]*_64lp_seq")		
+		target_include_directories(${curr_target} PRIVATE "${MKL_ROOT}/include")
+		target_compile_options(${curr_target} PRIVATE "/D MKL_ILP64")
+		target_link_libraries(${curr_target} PRIVATE mkl_intel_ilp64 mkl_sequential mkl_core)		
 	ELSE()
 		target_link_libraries(${curr_target} PUBLIC ${LAPACK_LIBRARIES} PUBLIC ${BLAS_LIBRARIES})
 	ENDIF()

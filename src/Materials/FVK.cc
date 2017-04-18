@@ -104,7 +104,7 @@ namespace voom
 			L1 = (T - sqrt(T*T - 4 * D)) / 2.0;
 			L2 = 2.0*D / (T - sqrt(T*T - 4 * D));
 		}
-		if (isnan(L1) || isnan(L2)) {
+		if (std::isnan(L1) || std::isnan(L2)) {
 			std::cout << "~~~~~~~~~~ NaN EigenValue Found ~~~~~~~~~~~"
 				<< std::endl;
 		}

@@ -510,9 +510,7 @@ if (BLA_VENDOR MATCHES "Intel" OR BLA_VENDOR STREQUAL "All")
           "mkl_blas95${BLAS_mkl_DLL_SUFFIX} mkl_intel_c${BLAS_mkl_DLL_SUFFIX}")
       endif()
       if (BLA_VENDOR MATCHES "^Intel.*_64lp" OR BLA_VENDOR STREQUAL "All")
-	  MESSAGE(STATUS "Looking for Intel MKL BLAS95 64lp libraries on Win32.")
-
-        list(APPEND BLAS_SEARCH_LIBS_WIN_MAIN
+	    list(APPEND BLAS_SEARCH_LIBS_WIN_MAIN
           "mkl_blas95_lp64${BLAS_mkl_DLL_SUFFIX} mkl_intel_lp64${BLAS_mkl_DLL_SUFFIX}")
       endif ()
 

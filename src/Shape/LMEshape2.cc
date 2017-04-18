@@ -55,7 +55,7 @@ namespace voom {
       cout << _lambda[0] << " " << _lambda[1] << endl;
     }
 
-    if (isnan(res) != 0)
+    if (std::isnan(res) != 0)
     {
       Success = false;
       cout << "Error at iteration = " << i << " , position = " << s <<  " res = " << res << endl;

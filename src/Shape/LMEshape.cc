@@ -85,7 +85,7 @@ namespace voom {
       res = r[0]*r[0] + r[1]*r[1] + r[2]*r[2];
     }
 
-    if (isnan(res) != 0 || i > _nItMax)
+    if (std::isnan(res) != 0 || i > _nItMax)
     {
       Success = false;
       cout << "i = " << i << " res = " << res << endl;
