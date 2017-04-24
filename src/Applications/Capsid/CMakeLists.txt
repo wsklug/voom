@@ -40,6 +40,10 @@ set(capsid_targets asphNoRescale annealing asphBrownian asphHarmonic dual relaxM
     asphmodVsFVKcont indentWparticles edgeStrainAndValence harmonic2D Morse2D Morse2DPeriodic reOrient
     twinMeshModel unstableBonds indentContinuum)
 
+IF(WIN32 AND BLA_VENDOR MATCHES "Intel[0-9]*_64lp_seq")
+	link_directories("${MKL_ROOT}/lib/intel64")
+ENDIF()
+	
 foreach(curr_target ${capsid_targets})
 	add_executable(${curr_target} $<TARGET_OBJECTS:HelperFunctions> ${curr_target}.cc)
 	target_link_libraries(${curr_target} PRIVATE ${blitz_LIBRARIES})
@@ -52,7 +56,6 @@ foreach(curr_target ${capsid_targets})
 		target_link_libraries(${curr_target} PRIVATE ${CURRL})
 	endforeach(CURRL)
 	IF(WIN32 AND BLA_VENDOR MATCHES "Intel[0-9]*_64lp_seq")
-		target_compile_options(${curr_target} PRIVATE "/D MKL_ILP64 -I ${MKL_ROOT}/include")
 		target_link_libraries(${curr_target} PRIVATE mkl_intel_ilp64.lib mkl_sequential.lib mkl_core.lib)		
 	ELSE()
 		target_link_libraries(${curr_target} PUBLIC ${LAPACK_LIBRARIES} PUBLIC ${BLAS_LIBRARIES})
