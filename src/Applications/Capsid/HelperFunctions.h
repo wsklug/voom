@@ -93,7 +93,7 @@ std::vector<tvmet::Vector<int, 3> > delaunay3DSurf(const std::vector<Deformation
 void meshSphericalPointCloud(const vtkSmartPointer<vtkPolyData> pd, double searchRad, 
 	const std::string fileName);
 
-std::vector<tvmet::Vector<int, 3> > Poisson3DSurf(const std::vector<DeformationNode<3>*> &a);
+//std::vector<tvmet::Vector<int, 3> > Poisson3DSurf(const std::vector<DeformationNode<3>*> &a);
 
 std::vector<std::vector<double> > getSphCellLimits(const vtkSmartPointer<vtkPolyData> &bins, int long_res);
 

@@ -94,6 +94,7 @@ namespace voom
 		return;
 	}
 
+<<<<<<< HEAD
 
 	int Lbfgsb::solve(Model * m) {
 

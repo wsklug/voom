@@ -260,7 +260,7 @@ int main(int argc, char* argv[])
 
 
 	//Parameters for the l-BFGS solver
-	int m = 5;
+	int m = 7;
 
 	//int maxIter = 1e6;
 	int maxIter1 = 1e5;
@@ -502,6 +502,8 @@ int main(int argc, char* argv[])
 		delete bd;
 	}
 	delete PrBody;
+	std::vector< NodeBase* >().swap(nodes);
+	std::vector< DeformationNode<3>* >().swap(defNodes);
 	myfile.close();
 	t2 = clock();
 	float diff((float)t2 - (float)t1);

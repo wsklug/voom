@@ -84,7 +84,7 @@ asphmodVsFVKcont_SOURCES = asphmodVsFVKcont.cc
 #
 asphVsFVKMorse_SOURCES = asphVsFVKMorse.cc
 #
-asphNoRescale_SOURCES = asphNoRescale.cc
+asphNoRescale_SOURCES = asphNoRescale.cc HelperFunctions.cc HelperFunctions.h
 #
 asphBrownian_SOURCES = asphBrownian.cc
 #
