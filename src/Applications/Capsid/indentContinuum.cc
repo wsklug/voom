@@ -47,12 +47,7 @@ int main(int argc, char* argv[])
 	double step_inp = 0.0;
 	bool remesh = true;
 	bool unload = false;
-	double epsilon;
-	double percentStrain;
-	double pressureFactor;
-	bool harmonicRelaxNeeded;
 	double Ravg = 0;
-	double Rshift = 1.0;
 	double Zmin;
 	double Zmax;
 	double afmR;
@@ -60,6 +55,8 @@ int main(int argc, char* argv[])
 	double Z_glass;
 	double dZ;
 	double ARtol = 1.05;
+	double cleanTol = 0.01;
+	double capsoSearchRadFactor = 1.5;
 
 	//Read epsilon and percentStrain from input file.
 	string temp;
@@ -69,6 +66,8 @@ int main(int argc, char* argv[])
 		>> temp >> indent_inp
 		>> temp >> step_inp
 		>> temp >> friction_inp
+		>> temp >> cleanTol
+		>> temp >> capsoSearchRadFactor
 		>> temp >> unload;
 
 	miscInpFile.close();
@@ -196,12 +195,11 @@ int main(int argc, char* argv[])
 	int maxIter = 1e5;
 	double factr = 1.0e+1;
 	double pgtol = 1.0e-7;
-	int iprint = 1;
+	int iprint = 1000;
 
 	std::stringstream sstm;
 	string fname = modelName;
 	string rName;
-	string actualFile;
 
 	typedef FVK MaterialType;
 	typedef LoopShellBody<MaterialType> LSB;
@@ -236,10 +234,12 @@ int main(int argc, char* argv[])
 	Xavg /= defNodes.size();
 
 	//We will calculate radius using the quadrature points
-	std::vector<double> radialStats = getRadialStats(bd, Xavg);
+	vtkSmartPointer<vtkPolyData> lssPd = bd->getLoopShellSurfPoints(cleanTol);
+	std::vector<double> radialStats = getRadialStats(lssPd, Xavg);
 	Ravg = radialStats[0];
 	std::cout << "Radius of capsid after relaxation = " << Ravg << endl;
 	double asphericity = radialStats[1];
+	double capsomerSearchRad = radialStats[2];
 
 	std::cout << "Effective 2D Young's modulus = " << Y << endl
 		<< "FVK number = " << gamma_inp << endl
@@ -308,6 +308,9 @@ int main(int argc, char* argv[])
 	for (int i = 0; i < model.dof(); i++) x_prev(i) = solver.field(i);
 	u_prev = 0.0;
 
+	//Store all the file names in this vector
+	std::vector<string> allStepFiles;
+
 	// %%%%%%%%%%%%%%%%%%%%%%
 	// Begin indentation loop
 	// %%%%%%%%%%%%%%%%%%%%%%
@@ -345,13 +348,13 @@ int main(int argc, char* argv[])
 		// update contact
 		glass->updateContact();
 		afm->updateContact();
-
+		/*
 		bool checkConsistency = true;
 		if (checkConsistency) {
 			std::cout << "Checking consistency......" << std::endl;
 			model.checkConsistency(true, false);
 		}
-
+		*/
 		model.computeAndAssemble(solver, false, true, false);
 		bd->printParaview("contact");
 
@@ -428,11 +431,22 @@ int main(int argc, char* argv[])
 		rName = sstm.str();
 		sstm.str("");
 		sstm.clear();
-		if (ifstream(rName.c_str())) {
-			std::vector<string> fakeVec;
-			fakeVec.push_back(rName);
-			insertValenceInVtk(fakeVec);
-		}
+		allStepFiles.push_back(rName);
+
+		//Now we will print the LoopShellSurface
+		//We will calculate radius using the quadrature points
+		lssPd = bd->getLoopShellSurfPoints(cleanTol);
+		radialStats = getRadialStats(lssPd, Xavg);
+		capsomerSearchRad = radialStats[2];
+		sstm << modelName << "-LoopShellSurf-"
+			<< step << ".vtk";
+		rName = sstm.str();
+		meshSphericalPointCloud(lssPd, capsoSearchRadFactor*capsomerSearchRad,
+			rName);
+		std::cout << "\tCapsomer Search Radius = " << capsomerSearchRad
+			<< std::endl;
+		sstm.str("");
+		sstm.clear();
 		//************* END PRINTING OUTPUT FILES **************//
 
 		// check if we are done
@@ -442,7 +456,7 @@ int main(int argc, char* argv[])
 			break;
 
 	}// Indentation Loop Ends
-
+	insertValenceInVtk(allStepFiles);
 	FvsZ.close();
 
 	std::cout << "Indentation complete." << std::endl;

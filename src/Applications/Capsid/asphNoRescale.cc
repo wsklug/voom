@@ -466,7 +466,6 @@ int main(int argc, char* argv[])
 		Xavg /= defNodes.size();
 
 		//We will calculate radius using the quadrature points
-		//The value 0.008 is obtained from trials in Paraview
 		vtkSmartPointer<vtkPolyData> lssPd = bd->getLoopShellSurfPoints(cleanTol);
 		std::vector<double> radialStats = getRadialStats(lssPd, Xavg);
 		Ravg = radialStats[0];

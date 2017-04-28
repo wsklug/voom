@@ -66,7 +66,6 @@ int main(int argc, char* argv[])
 	bool unload = false;
 	double epsilon;
 	double percentStrain;
-	double pressureFactor;
 	bool harmonicRelaxNeeded;
 	double Ravg = 0;
 	double Rshift = 1.0;
@@ -76,7 +75,10 @@ int main(int argc, char* argv[])
 	tvmet::Vector<double, 3> xc(0.0);
 	double Z_glass;
 	double dZ;
-	double ARtol = 1.05;
+	double ARtol = 1.50;
+	double searchRadFactor = 1.2;
+	double capsoSearchRadFactor = 1.2;
+	double cleanTol = 0.0;
 
 	//Read epsilon and percentStrain from input file. percentStrain is
 	//calculated so as to set the inflection point of Morse potential
@@ -87,14 +89,16 @@ int main(int argc, char* argv[])
 	assert(miscInpFile);
 	miscInpFile >> temp >> epsilon
 		>> temp >> percentStrain
-		>> temp >> pressureFactor
 		>> temp >> harmonicRelaxNeeded
 		>> temp >> gamma_inp
 		>> temp >> indent_inp
 		>> temp >> step_inp
 		>> temp >> friction_inp
 		>> temp >> unload
-		>> temp >> ARtol;
+		>> temp >> ARtol
+		>> temp >> searchRadFactor
+		>> temp >> capsoSearchRadFactor
+		>> temp >> cleanTol;
 
 	miscInpFile.close();
 
@@ -167,7 +171,6 @@ int main(int argc, char* argv[])
 	std::vector<double> lengthStat;
 	double EdgeLength;
 	double stdDevEdgeLen;
-	double C0 = 0.0;
 
 	// Calculate side lengths average and std dev of the 
 	//equilateral triangles
@@ -211,36 +214,21 @@ int main(int argc, char* argv[])
 	//Material properties
 	Rshift = EdgeLength;
 	double sigma = (100 / (Rshift*percentStrain))*log(2.0);
-	double PotentialSearchRF = 1.2*Rshift;
+	double PotentialSearchRF = searchRadFactor*Rshift;
 	double springConstant = 2 * sigma*sigma*epsilon;
-	double pressure = 12 * sigma*epsilon
-		*(exp(-2 * sigma*Rshift) - exp(-sigma*Rshift)
-			+ exp(-1.46410*sigma*Rshift) - exp(-0.7321*sigma*Rshift))
-		/ (3 * Ravg*Ravg);
-
-	if (pressure < 0.0) {
-		pressure = pressure*(-1);
-	}
-
-	double fracturePressure = (3.82)*sigma*epsilon / (Rshift*Rshift);
-	std::cout << "Fracture Pressure = " << fracturePressure << endl
-		<< "Minimum Pressure = " << pressure << endl;
-	pressure *= pressureFactor;
-	std::cout << "Pressure in use = " << pressure << endl;
-
 	double gamma = gamma_inp;
 	double Y = 2.0 / sqrt(3)*springConstant; //2D Young's modulus
 	double nu = 1.0 / 3.0;
 	double KC = Y*Ravg*Ravg / gamma; //Bending modulus
 	double KG = -2 * (1 - nu)*KC; // Gaussian modulus
-	C0 = 0.0;
+	double C0 = 0.0;
 	int quadOrder = 2;
 
 	int m = 5;
 	int maxIter = 1e5;
 	double factr = 1.0e+1;
 	double pgtol = 1.0e-7;
-	int iprint = 1;
+	int iprint = 1000;
 
 	std::stringstream sstm;
 	string fname = modelName;
@@ -256,9 +244,7 @@ int main(int argc, char* argv[])
 
 		//****** Relax the initial mesh using harmonic potential ****** //
 
-		LSB * bd1 = new LSB(bending, connectivities, nodes, quadOrder,
-			pressure, 0.0, 0.0, 1.0e4, 1.0e6, 1.0e4,
-			multiplier, noConstraint, noConstraint);
+		LSB * bd1 = new LSB(bending, connectivities, nodes, quadOrder);
 		bd1->setOutput(paraview);
 		SpringPotential SpringMat(springConstant, Rshift);
 		PotentialBody * SpringBody = new
@@ -309,11 +295,11 @@ int main(int argc, char* argv[])
 	bd->setOutput(paraview);
 
 	std::cout << "Morse  potential parameters:" << endl
-		<< "sigma = " << sigma << endl
-		<< "PotentialSearchRF = " << PotentialSearchRF << endl
-		<< "epsilon = " << epsilon << endl
-		<< "Is Remesh On? " << remesh << endl
-		<< "ARtol = " << ARtol << endl;
+		<< "\tsigma = " << sigma << endl
+		<< "\tPotentialSearchRF = " << PotentialSearchRF << endl
+		<< "\tepsilon = " << epsilon << endl
+		<< "\tIs Remesh On? " << remesh << endl
+		<< "\tARtol = " << ARtol << endl;
 		
 	// Protein body implemented using Morse potential body
 	Morse Mat(epsilon, sigma, Rshift);
@@ -322,6 +308,21 @@ int main(int argc, char* argv[])
 	PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);
 	PrBody->compute(true, false, false);
 	std::cout << "Initial protein body energy = " << PrBody->energy() << endl;
+	//Assign the MorseBond structure from the initial neighbor information
+	vtkSmartPointer<vtkCellArray> bonds = vtkSmartPointer<vtkCellArray>::New();
+	vtkIdType bond[2] = { 0, 0 };
+	for (int i = 0; i < defNodes.size(); i++) {
+		tvmet::Vector<double, 3> centerNode = defNodes[i]->point();
+		for (int a = i + 1; a < defNodes.size(); a++) {
+			tvmet::Vector<double, 3> currNode = defNodes[a]->point();
+			double r = tvmet::norm2(centerNode - currNode);
+			if (r <= PotentialSearchRF) {
+				bond[0] = i;
+				bond[1] = a;
+				bonds->InsertNextCell(2, bond);
+			}
+		}
+	}
 
 	// create Model
 	Model::BodyContainer bdc;
@@ -347,13 +348,15 @@ int main(int argc, char* argv[])
 	Xavg /= defNodes.size();
 
 	//We will calculate radius using the quadrature points
-	std::vector<double> radialStats = getRadialStats(bd, Xavg);
+	vtkSmartPointer<vtkPolyData> lssPd = bd->getLoopShellSurfPoints(cleanTol);
+	std::vector<double> radialStats = getRadialStats(lssPd, Xavg);
 	Ravg = radialStats[0];
 	std::cout << "Radius of capsid after relaxation = " << Ravg << endl;
 	double asphericity = radialStats[1];
+	double capsomerSearchRad = radialStats[2];
 
 	std::cout << "Effective 2D Young's modulus = " << Y << endl
-		<< "FVK number = " << gamma_inp << endl
+		<< "FVK number = " << gamma << endl
 		<< "Asphericity = " << asphericity << endl;
 
 	// find top and bottom of capsid
@@ -375,7 +378,7 @@ int main(int argc, char* argv[])
 		<< "AFM Indenter center = (" << xc[0] << ","
 		<< xc[1] << "," << xc[2] << ")" << std::endl;
 
-	std::cout << "Compressing capsid." << std::endl;
+	std::cout << "Compressing capsid..........." << std::endl;
 
 	double friction = friction_inp;
 	double k_AL = 1.0e2;
@@ -419,6 +422,9 @@ int main(int argc, char* argv[])
 	for (int i = 0; i < model.dof(); i++) x_prev(i) = solver.field(i);
 	u_prev = 0.0;
 
+	//Store all the file names in this vector
+	std::vector<string> allStepFiles;
+
 	// %%%%%%%%%%%%%%%%%%%%%%
 	// Begin indentation loop
 	// %%%%%%%%%%%%%%%%%%%%%%
@@ -438,9 +444,9 @@ int main(int argc, char* argv[])
 			}
 			model.getField(solver);
 		}
-		else if (std::abs(dZ) > 0) { // 
-									 // add scaled version of previous displacement as an initial
-									 // guess, but only in loading direction
+		else if (std::abs(dZ) > 0) { 
+			// add scaled version of previous displacement as an initial
+			// guess, but only in loading direction
 			for (int i = 0; i < model.dof(); i++) {
 				solver.field(i) = x_prev(i) + 0.99*dZ*u_prev(i);
 			}
@@ -460,27 +466,20 @@ int main(int argc, char* argv[])
 		// update contact
 		glass->updateContact();
 		afm->updateContact();
-
+		/*
 		bool checkConsistency = true;
 		if (checkConsistency) {
 			std::cout << "Checking consistency......" << std::endl;
-			model.checkConsistency(true, false);
-			/*bd->checkConsistency(true,false);
-			PrBody->checkConsistency(true,false);*/
+			model.checkConsistency(true, false);			
+			PrBody->checkConsistency(true,false);
 		}
+		*/
 
 		model.computeAndAssemble(solver, false, true, false);
 		bd->printParaview("contact");
 
 		solver.solve(&model);
-		bdEnergy = bd->energy();
-
-		if (verbose) {
-			std::cout << "ENERGY:" << std::endl
-				<< "   body energy = " << bdEnergy << std::endl
-				<< "  total energy = " << solver.function() << std::endl
-				<< std::endl;
-		}
+		bdEnergy = bd->energy();		
 
 		// update contact
 		if (verbose) {
@@ -512,12 +511,17 @@ int main(int argc, char* argv[])
 		// If displacement was bigger than dZ, some buckling event must
 		// have occurred and it's better not to make a continuation
 		// attempt.
-		if (max(abs(u_prev)) > 1.0) u_prev = 0.0;//????
+		if (max(abs(u_prev)) > 1.0) {
+			std::cout << "??????? Strange Condition Activated ???????"
+				<< std::endl;
+			u_prev = 0.0;//????
+		}
 
-												 // Save current (successful) state as previous
+		// Save current (successful) state as previous
 		for (int i = 0; i < model.dof(); i++) x_prev(i) = solver.field(i);
 
-		if (unload && Z >= Zend) { // reached max indentation, now unload by reversing dZ
+		// reached max indentation, now unload by reversing dZ
+		if (unload && Z >= Zend) { 
 			dZ = -dZ;
 		}
 
@@ -533,10 +537,10 @@ int main(int argc, char* argv[])
 
 				//If some elements have changed then we need to reset the
 				//reference configuration with average side lengths
-				bd->SetRefConfiguration(EdgeLength);
+				//bd->SetRefConfiguration(EdgeLength);
 
 				//We also need to recompute the neighbors for PotentialBody
-				PrBody->recomputeNeighbors(PotentialSearchRF);
+				//PrBody->recomputeNeighbors(PotentialSearchRF);
 
 				//Relax again after remeshing
 				solver.solve(&model);
@@ -559,19 +563,30 @@ int main(int argc, char* argv[])
 
 		sstm << modelName << "-step-" << step;
 		rName = sstm.str();
-		bd->printParaview(rName.c_str());
+		bd->printParaview(rName);
 		//We will append Caspsomer POINT_DATA to the vtk output file
 		//printed by printParaview(), if such a file exists
 		sstm << ".vtk";
 		rName = sstm.str();
 		sstm.str("");
+		sstm.clear();		
+		allStepFiles.push_back(rName);
+			
+		//Now we will print the LoopShellSurface
+		//We will calculate radius using the quadrature points
+		lssPd = bd->getLoopShellSurfPoints(cleanTol);
+		radialStats = getRadialStats(lssPd, Xavg);
+		capsomerSearchRad = radialStats[2];
+
+		sstm << modelName << "-LoopShellSurf-"
+			<< step << ".vtk";
+		rName = sstm.str();
+		meshSphericalPointCloud(lssPd, capsoSearchRadFactor*capsomerSearchRad,
+			rName);
+		std::cout << "\tCapsomer Search Radius = " << capsomerSearchRad
+			<< std::endl;
+		sstm.str("");
 		sstm.clear();
-		if (ifstream(rName.c_str())) {
-			std::vector<string> fakeVec;
-			fakeVec.push_back(rName);
-			insertValenceInVtk(fakeVec);
-			writeEdgeStrainVtk(fakeVec, Rshift, percentStrain);
-		}
 		//************* END PRINTING OUTPUT FILES **************//
 
 		// check if we are done
@@ -581,7 +596,9 @@ int main(int argc, char* argv[])
 			break;
 
 	}// Indentation Loop Ends
-
+	insertValenceInVtk(allStepFiles);
+	//writeEdgeStrainVtk(fakeVec, Rshift, percentStrain);
+	plotMorseBonds(allStepFiles, modelName, epsilon, Rshift, sigma, bonds);
 	FvsZ.close();
 
 	std::cout << "Indentation complete." << std::endl;
