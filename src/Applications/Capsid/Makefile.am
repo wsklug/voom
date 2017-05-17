@@ -1,4 +1,4 @@
-bin_PROGRAMS    = relax countValence refine disassemble grow dual indentWparticles indent asphVsFVK asphVsFVKcont asphmodVsFVK asphmodVsFVKcont asphVsFVKMorse asphNoRescale asphBrownian asphPressureRamp relaxMorse asphHarmonic annealing
+bin_PROGRAMS    = relax refine disassemble grow dual indentWparticles asphericityCont asphericityMorse brownian asphericityHarm annealing
 AM_CPPFLAGS =-I$(srcdir)/../../       		\
 		-I$(srcdir)/../../Body/		\
 		-I$(srcdir)/../../Model/		\
@@ -58,7 +58,6 @@ LDADD	= -lblitz              		\
 	-lgfortran
 #
 # capsid_lbfgsb_SOURCES    =  capsid-lbfgsb.cc 
-countValence_SOURCES    =  countValence.cc 
 #
 relax_SOURCES    =  relax.cc 
 #
@@ -72,26 +71,12 @@ grow_SOURCES    =  grow.cc C0MembraneGLoutput.cc
 #
 indentWparticles_SOURCES    =  indentWparticles.cc 
 #
-indent_SOURCES = indent.cc
+asphericityCont_SOURCES = asphericityCont.cc
 #
-asphVsFVK_SOURCES = asphVsFVK.cc
+asphericityMorse_SOURCES = asphericityMorse.cc HelperFunctions.cc HelperFunctions.h
 #
-asphVsFVKcont_SOURCES = asphVsFVKcont.cc
+brownian_SOURCES = brownian.cc
 #
-asphmodVsFVK_SOURCES = asphmodVsFVK.cc
-#
-asphmodVsFVKcont_SOURCES = asphmodVsFVKcont.cc
-#
-asphVsFVKMorse_SOURCES = asphVsFVKMorse.cc
-#
-asphNoRescale_SOURCES = asphNoRescale.cc HelperFunctions.cc HelperFunctions.h
-#
-asphBrownian_SOURCES = asphBrownian.cc
-#
-asphPressureRamp_SOURCES = asphPressureRamp.cc
-#
-relaxMorse_SOURCES = relaxMorse.cc
-#
-asphHarmonic_SOURCES = asphHarmonic.cc
+asphericityHarm_SOURCES = asphericityHarm.cc
 #
 annealing_SOURCES = annealing.cc

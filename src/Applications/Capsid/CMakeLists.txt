@@ -36,9 +36,7 @@ endif(LINK_LAPACK)
 
 set(voom_LIBRARIES Body Solvers Materials Elements Quadrature Shape VoomMath Geometry Mesh Model)
 
-set(capsid_targets asphNoRescale annealing asphBrownian asphHarmonic dual relaxMorse 
-    asphmodVsFVKcont indentWparticles edgeStrainAndValence harmonic2D Morse2D Morse2DPeriodic reOrient
-    twinMeshModel unstableBonds indentContinuum)
+set(capsid_targets asphericityMorse annealing brownian asphericityHarm dual asphericityCont indentWparticles harmonic2D Morse2D Morse2DPeriodic reOrient twoMeshAnneal indentContinuum)
 
 IF(WIN32 AND BLA_VENDOR MATCHES "Intel[0-9]*_64lp_seq")
 	link_directories("${MKL_ROOT}/lib/intel64")
@@ -64,8 +62,7 @@ foreach(curr_target ${capsid_targets})
 	
 endforeach(curr_target)
 
-set (helper_targets densityPlot rotatePoints createTfromOutline rmsd cellDataToPointData 
-	sphHarmCoeff testSphHarm)
+set (helper_targets densityPlot rotatePoints createTfromOutline rmsd sphHarmCoeff)
 
 foreach(curr_target ${helper_targets})
 
@@ -80,4 +77,3 @@ endforeach(curr_target)
 #set(BOOST_ROOT "C:/Software/intel/boost_1_62_0")
 find_package(Boost REQUIRED)
 target_include_directories(sphHarmCoeff PRIVATE ${Boost_INCLUDE_DIRS})
-target_include_directories(testSphHarm PRIVATE ${Boost_INCLUDE_DIRS})
