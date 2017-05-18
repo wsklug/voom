@@ -1,7 +1,6 @@
 #ifndef _HELPERFUNCTIONS_H
 #define _HELPERFUNCTIONS_H
 
-
 #include <string>
 #include <iostream>
 #include <iomanip>
@@ -95,7 +94,8 @@ void meshSphericalPointCloud(const vtkSmartPointer<vtkPolyData> pd, double searc
 
 //std::vector<tvmet::Vector<int, 3> > Poisson3DSurf(const std::vector<DeformationNode<3>*> &a);
 
-std::vector<std::vector<double> > getSphCellLimits(const vtkSmartPointer<vtkPolyData> &bins, int long_res);
+std::vector<std::vector<double> > getSphCellLimits(const vtkSmartPointer<vtkPolyData> &bins,
+						   int long_res);
 
 void putParticlesInBins(const std::vector<std::vector<double> > &cellLimits,
 	const Eigen::Matrix3Xd &newCurr, const std::vector<DeformationNode<3>*> &defNodes,
@@ -104,6 +104,9 @@ void putParticlesInBins(const std::vector<std::vector<double> > &cellLimits,
 std::vector<double> getMeshQualityInfo(const std::vector<DeformationNode<3>*> &a, 
 	const std::vector< tvmet::Vector<int, 3> > connectivities);
 
+void getMorseBonds(vtkSmartPointer<vtkCellArray> bonds, std::vector< DeformationNode<3>* >
+		   morseNodes, double searchRad)
+ 
 void plotMorseBonds(const std::vector<std::string> &fileNames, std::string fname, 
 	double epsilon, double Rshift, double sigma, vtkSmartPointer<vtkCellArray> bonds);
 

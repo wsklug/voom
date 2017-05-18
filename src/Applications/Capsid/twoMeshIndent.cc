@@ -12,16 +12,16 @@
 #include "Lbfgsb.h"
 #include "RigidHemisphereAL.h"
 #include "RigidPlateAL.h"
+#include "ViscosityBody.h"
 
 #include <vtkPolyData.h>
 #include <vtkDataSetReader.h>
 #include <vtkPolyDataNormals.h>
 #include <vtkSmartPointer.h>
-#include <vtkUnstructuredGrid.h>
 #include <vtkGeometryFilter.h>
+#include <vtkLinearSubdivisionFilter.h>
 
 #include "Morse.h"
-#include "SpringPotential.h"
 #include "PotentialBody.h"
 
 #include "HelperFunctions.h"
@@ -39,7 +39,7 @@ int main(int argc, char* argv[])
   clock_t t1, t2;
   t1 = clock();
   if (argc < 2) {
-    cout << "Usage: indent modelName"
+    cout << "Usage: twoMeshIndent modelName(without .vtk extension)"
 	 << endl;
     return(0);
   }
@@ -66,7 +66,6 @@ int main(int argc, char* argv[])
   bool unload = false;
   double epsilon;
   double percentStrain;
-  bool harmonicRelaxNeeded;
   double Ravg = 0;
   double Rshift = 1.0;
   double Zmin;
@@ -79,6 +78,7 @@ int main(int argc, char* argv[])
   double searchRadFactor = 1.2;
   double capsoSearchRadFactor = 1.2;
   double cleanTol = 0.0;
+  int numSubDiv = 1;
 
   //Read epsilon and percentStrain from input file. percentStrain is
   //calculated so as to set the inflection point of Morse potential
@@ -89,13 +89,13 @@ int main(int argc, char* argv[])
   assert(miscInpFile);
   miscInpFile >> temp >> epsilon
 	      >> temp >> percentStrain
-	      >> temp >> harmonicRelaxNeeded
 	      >> temp >> gamma_inp
 	      >> temp >> indent_inp
 	      >> temp >> step_inp
 	      >> temp >> friction_inp
 	      >> temp >> unload
 	      >> temp >> ARtol
+	      >> temp >> numSubDiv
 	      >> temp >> searchRadFactor
 	      >> temp >> capsoSearchRadFactor
 	      >> temp >> cleanTol;
@@ -109,9 +109,7 @@ int main(int argc, char* argv[])
   }
 
   vtkPolyDataReader * reader = vtkPolyDataReader::New();
-  vtkSmartPointer<vtkPolyData> mesh;
   string inputFileName;
-  vtkSmartPointer<vtkDataArray> displacements;
 
   inputFileName = modelName + ".vtk";
   reader->SetFileName(inputFileName.c_str());
@@ -127,45 +125,74 @@ int main(int argc, char* argv[])
   normals->ConsistencyOn();
   normals->SplittingOff();
   normals->AutoOrientNormalsOn();
-
-  mesh = normals->GetOutput();
   normals->Update();
-  std::cout << "mesh->GetNumberOfPoints() = " << mesh->GetNumberOfPoints()
-	    << std::endl;
-
+  vtkSmartPointer<vtkPolyData> coarseMesh = normals->GetOutput();
+  
+  //Subdivide into finer mesh
+  vtkSmartPointer<vtkLinearSubdivisionFilter> lsdf
+    = vtkSmartPointer<vtkLinearSubdivisionFilter>::New();
+  lsdf->SetNumberOfSubdivisions(numSubDiv);
+  lsdf->SetInputConnection(normals->GetOutputPort());
+  lsdf->Update();
+  vtkSmartPointer<vtkPolyData> fineMesh = lsdf->GetOutput();
+  
   // create vector of nodes
   int dof = 0;
-  std::vector< NodeBase* > nodes;
-  std::vector< DeformationNode<3>* > defNodes;
+  std::vector< NodeBase* > bendingNodes;
+  std::vector< DeformationNode<3>* > morseNodes;
+
+  std::vector<int> coarseMeshPointIDs(coarseMesh->GetNumberOfPoints(),0);
 
   // read in points
-  for (int a = 0; a < mesh->GetNumberOfPoints(); a++) {
+  for (int a = 0; a < fineMesh->GetNumberOfPoints(); a++) {
     int id = a;
-    DeformationNode<3>::Point x;
-    mesh->GetPoint(a, &(x[0]));
+    DeformationNode<3>::Point x, y;
+    fineMesh->GetPoint(a, &(x[0]));
     Ravg += tvmet::norm2(x);
     NodeBase::DofIndexMap idx(3);
     for (int j = 0; j < 3; j++) idx[j] = dof++;
     DeformationNode<3>* n = new DeformationNode<3>(id, idx, x);
-    nodes.push_back(n);
-    defNodes.push_back(n);
+    bendingNodes.push_back(n);
+    for(int b=0; b < coarseMesh->GetNumberOfPoints(); b++){
+      coarseMesh->GetPoint(b, &y[0]);
+      if(tvmet::norm2(x-y) < 1e-8){
+	coarseMeshPointIDs[b] = a;
+	morseNodes.push_back(n);
+	break;
+      }
+    }
+    
   }
 
-  assert(nodes.size() != 0);
-  Ravg /= nodes.size();
-  cout << "Number of nodes: " << nodes.size() << endl
+  assert(bendingNodes.size() != 0);
+  Ravg /= bendingNodes.size();
+  cout << "Number of bending nodes: " << bendingNodes.size() << endl
        << "Ravg = " << Ravg << endl;
 
-  // read in triangle connectivities
+  // read in triangle connectivities for fineMesh
   vector< tvmet::Vector<int, 3> > connectivities;
   tvmet::Vector<int, 3> c;
-  int ntri = mesh->GetNumberOfCells();
+  int ntri = fineMesh->GetNumberOfCells();
   connectivities.reserve(ntri);
-  if (verbose) cout << "Number of triangles: " << ntri << endl;
+  if (verbose) cout << "Number of triangles in fine mesh: " << ntri << endl;
   for (int i = 0; i < ntri; i++) {
-    assert(mesh->GetCell(i)->GetNumberOfPoints() == 3);
-    for (int a = 0; a < 3; a++) c[a] = mesh->GetCell(i)->GetPointId(a);
+    assert(fineMesh->GetCell(i)->GetNumberOfPoints() == 3);
+    for (int a = 0; a < 3; a++) c[a] = fineMesh->GetCell(i)->GetPointId(a);
     connectivities.push_back(c);
+  }
+
+  // read in triangle connectivities for coarseMesh
+  vector< tvmet::Vector<int, 3> > coarseMeshconn;
+  int coarseMeshTri = fineMesh->GetNumberOfCells();
+  connectivities.reserve(coarseMeshTri);
+  if (verbose) cout << "Number of triangles in coarse mesh: " << coarseMeshTri
+		    << endl;
+  for (int i = 0; i < coarseMeshTtri; i++) {
+    assert(fineMesh->GetCell(i)->GetNumberOfPoints() == 3);
+    for (int a = 0; a < 3; a++){
+      c[a] = coarseMeshPointIDs[fineMesh->GetCell(i)->GetPointId(a)];
+    }
+    coarseMeshConn.push_back(c);
   }
 
   std::vector<double> lengthStat;
@@ -174,37 +201,36 @@ int main(int argc, char* argv[])
 
   // Calculate side lengths average and std dev of the 
   //equilateral triangles
-  lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);
+  lengthStat = calcEdgeLenAndStdDev(bendingNodes, coarseMeshConn);
   EdgeLength = lengthStat[0];
   stdDevEdgeLen = lengthStat[1];
   std::cout << "Before any relaxation :" << endl
-	    << "   Average triangle edge length = " << std::setprecision(10)
-	    << EdgeLength << endl
-	    << "   Standard deviation = " << std::setprecision(10)
+	    << "   Average triangle edge length of coarse mesh = "
+	    << EdgeLength << endl << "   Standard deviation = "
 	    << stdDevEdgeLen << endl;
-  std::cout.precision(6);
 
-  //Rescale the capsid such that triangle edge-lengths are unity
-  for (int i = 0; i < defNodes.size(); i++) {
+  //Rescale the capsid such that coarse mesh triangle edge-lengths are
+  //unity
+  for (int i = 0; i < bendingNodes.size(); i++) {
     DeformationNode<3>::Point x;
-    x = defNodes[i]->point();
+    x = bendingNodes[i]->point();
     x *= 1.0 / EdgeLength;
-    defNodes[i]->setPoint(x);
-    defNodes[i]->setPosition(x);
+    bendingNodes[i]->setPoint(x);
+    bendingNodes[i]->setPosition(x);
   }
 
   //Recalculate edge lengths and capsid radius
-  lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);
+  lengthStat = calcEdgeLenAndStdDev(bendingNodes, coarseMeshConn);
   EdgeLength = lengthStat[0];
 
   Ravg = 0.0;
-  for (int i = 0; i < defNodes.size(); i++) {
+  for (int i = 0; i < bendingNodes.size(); i++) {
     DeformationNode<3>::Point x;
-    x = defNodes[i]->point();
+    x = bendingNodes[i]->point();
     double tempRadius = tvmet::norm2(x);
     Ravg += tempRadius;
   }
-  Ravg /= defNodes.size();
+  Ravg /= bendingNodes.size();
 
   std::cout << "Radius of capsid after rescaling = " << Ravg << endl;
 
@@ -233,65 +259,15 @@ int main(int argc, char* argv[])
   std::stringstream sstm;
   string fname = modelName;
   string rName;
-  string actualFile;
 
   typedef FVK MaterialType;
   typedef LoopShellBody<MaterialType> LSB;
   typedef LoopShell<MaterialType> LS;
   MaterialType bending(KC, KG, C0, 0.0, 0.0);
 
-  if (harmonicRelaxNeeded) {
-
-    //****** Relax the initial mesh using harmonic potential ****** //
-
-    LSB * bd1 = new LSB(bending, connectivities, nodes, quadOrder);
-    bd1->setOutput(paraview);
-    SpringPotential SpringMat(springConstant, Rshift);
-    PotentialBody * SpringBody = new
-      PotentialBody(&SpringMat, defNodes, PotentialSearchRF);
-
-    //Create Model
-    Model::BodyContainer bdc1;
-    bdc1.push_back(SpringBody);
-    bdc1.push_back(bd1);
-    Model model1(bdc1, nodes);
-
-    std::cout << "Spring constant: " << springConstant << endl;
-    std::cout << "Relaxing the mesh using harmonic potential..." << endl;
-
-    Lbfgsb solver2(model1.dof(), m, factr, pgtol, iprint, 1e5);
-    solver2.solve(&model1);
-
-    std::cout << "Harmonic potential relaxation complete." << endl;
-
-    //Print to VTK file
-    sstm << fname << "-relaxed-harmonic";
-    rName = sstm.str();
-    bd1->printParaview(rName.c_str());
-    sstm.str("");
-    sstm.clear();
-
-    //Release allocated memory
-    delete bd1;
-    delete SpringBody;
-
-    //Recalculate edge lengths and dependent quantities
-    lengthStat = calcEdgeLenAndStdDev(defNodes, connectivities);
-    EdgeLength = lengthStat[0];
-    Rshift = EdgeLength;
-    sigma = (100 / (Rshift*percentStrain))*log(2.0);
-    springConstant = 2 * sigma*sigma*epsilon;
-    std::cout << "After relaxing with harmonic potential: " << endl
-	      << "   Average triangle edge length = " << std::setprecision(10)
-	      << EdgeLength << endl
-	      << "   Standard deviation = " << std::setprecision(10)
-	      << stdDevEdgeLen << endl;
-    std::cout.precision(6);
-  }
-
   //********************************** Actual Indentation **********************//
 
-  LSB * bd = new LSB(bending, connectivities, nodes, quadOrder);
+  LSB * bd = new LSB(bending, connectivities, bendingNodes, quadOrder);
   bd->setOutput(paraview);
 
   std::cout << "Morse  potential parameters:" << endl
@@ -305,29 +281,22 @@ int main(int argc, char* argv[])
   Morse Mat(epsilon, sigma, Rshift);
 
   // Then initialize potential body
-  PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);
+  PotentialBody * PrBody = new PotentialBody(&Mat, morseNodes, PotentialSearchRF);
   PrBody->compute(true, false, false);
   std::cout << "Initial protein body energy = " << PrBody->energy() << endl;
   //Assign the MorseBond structure from the initial neighbor information
   vtkSmartPointer<vtkCellArray> bonds = vtkSmartPointer<vtkCellArray>::New();
-  vtkIdType bond[2] = { 0, 0 };
-  for (int i = 0; i < defNodes.size(); i++) {
-    tvmet::Vector<double, 3> centerNode = defNodes[i]->point();
-    for (int a = i + 1; a < defNodes.size(); a++) {
-      tvmet::Vector<double, 3> currNode = defNodes[a]->point();
-      double r = tvmet::norm2(centerNode - currNode);
-      if (r <= PotentialSearchRF) {
-	bond[0] = i;
-	bond[1] = a;
-	bonds->InsertNextCell(2, bond);
-      }
-    }
-  }
+  getMorseBonds(bonds, morseNodes, PotentialSearchRF);
 
+  // Create a ViscosityBody for viscous regularization
+  ViscosityBody * vb = new ViscosityBody(fineMesh, connectivities,
+					 1e-2*springConstant);
+  
   // create Model
   Model::BodyContainer bdc;
   bdc.push_back(PrBody);
   bdc.push_back(bd);
+  bdc.push_back(vb);
 
   Model model(bdc, nodes);
 
@@ -335,17 +304,19 @@ int main(int argc, char* argv[])
   std::cout << "Relaxing shape for gamma = " << gamma << std::endl;
 
   // relax initial shape;
-  solver.solve(&model);
+  while(vb->energy() > 1e-8*(bd->energy() + PrBody->energy())){
+    solver.solve(&model);
+  }
 
   std::cout << "Shape relaxed." << std::endl
 	    << "Energy = " << solver.function() << std::endl;
 
   //Calculate centre of sphere as average of position vectors of all nodes.
   tvmet::Vector<double, 3> Xavg(0.0);
-  for (int i = 0; i < defNodes.size(); i++) {
-    Xavg += defNodes[i]->point();
+  for (int i = 0; i < bendingNodes.size(); i++) {
+    Xavg += bendingNodes[i]->point();
   }
-  Xavg /= defNodes.size();
+  Xavg /= bendingNodes.size();
 
   //We will calculate radius using the quadrature points
   vtkSmartPointer<vtkPolyData> lssPd = bd->getLoopShellSurfPoints(cleanTol);
@@ -363,8 +334,8 @@ int main(int argc, char* argv[])
   Zmin = std::numeric_limits<double>::max();
   Zmax = -std::numeric_limits<double>::max();
 
-  for (int a = 0; a < defNodes.size(); a++) {
-    double Z = defNodes[a]->getPoint(2);
+  for (int a = 0; a < bendingNodes.size(); a++) {
+    double Z = bendingNodes[a]->getPoint(2);
     Zmin = std::min(Zmin, Z);
     Zmax = std::max(Zmax, Z);
   }
@@ -383,7 +354,7 @@ int main(int argc, char* argv[])
   double friction = friction_inp;
   double k_AL = 1.0e2;
   RigidHemisphereAL * afm
-    = new RigidHemisphereAL(defNodes, k_AL, afmR, xc, friction);
+    = new RigidHemisphereAL(bendingNodes, k_AL, afmR, xc, friction);
   afm->updateContact();
 
   bd->pushBack(afm);
@@ -392,7 +363,7 @@ int main(int argc, char* argv[])
   bool up = true;
   Z_glass = Zmin;
 
-  RigidPlateAL* glass = new RigidPlateAL(defNodes, k_AL, Z_glass, up, friction);
+  RigidPlateAL* glass = new RigidPlateAL(bendingNodes, k_AL, Z_glass, up, friction);
   bd->pushBack(glass);
 
   const double originalHeight = Zmax - Zmin;
@@ -412,7 +383,8 @@ int main(int argc, char* argv[])
   string fzName = modelName + ".fz";
   ofstream FvsZ(fzName.c_str());
   FvsZ << "#Step\tIndentation\tGlass_Fz\tAFM_Fz"
-       << "\tMorseEnergy\tLSBStrainEnergy\tPlateEnergy\tAFMEnergy\tSolverFunction"
+       << "\tMorseEnergy\tLSBStrainEnergy\tPlateEnergy\tAFMEnergy"
+       <<"\tViscRegEnergy\tSolverFunction"
        << std::endl;
 
   blitz::Array<double, 1> x_prev(model.dof());
@@ -439,8 +411,8 @@ int main(int argc, char* argv[])
     // initial guess
     if (step == 0) {
       // shift capsid up by dZ/2 as an initial guess
-      for (int a = 0; a < defNodes.size(); a++) {
-	defNodes[a]->addPoint(2, 0.5*dZ);
+      for (int a = 0; a < bendingNodes.size(); a++) {
+	bendingNodes[a]->addPoint(2, 0.5*dZ);
       }
       model.getField(solver);
     }
@@ -478,7 +450,10 @@ int main(int argc, char* argv[])
     model.computeAndAssemble(solver, false, true, false);
     bd->printParaview("contact");
 
-    solver.solve(&model);
+    while(vb->energy() > 1e-8*(bd->energy() + PrBody->energy())){
+      solver.solve(&model);
+    }
+    
     bdEnergy = bd->energy();		
 
     // update contact
@@ -512,7 +487,7 @@ int main(int argc, char* argv[])
     // have occurred and it's better not to make a continuation
     // attempt.
     if (max(abs(u_prev)) > 1.0) {
-      std::cout << "??????? Strange Condition Activated ???????"
+      std::cout << "??????? Large Deformation Detected ???????"
 		<< std::endl;
       u_prev = 0.0;//????
     }
@@ -526,7 +501,6 @@ int main(int argc, char* argv[])
     }
 
     //This is where we remesh before next indentation step
-
     if (remesh) {
       elementsChanged = bd->Remesh(ARtol, bending, quadOrder);
 			
@@ -534,16 +508,11 @@ int main(int argc, char* argv[])
       if (elementsChanged > 0) {
 	std::cout << "Number of elements that changed after remeshing = "
 		  << elementsChanged << "." << std::endl;
-
-	//If some elements have changed then we need to reset the
-	//reference configuration with average side lengths
-	//bd->SetRefConfiguration(EdgeLength);
-
-	//We also need to recompute the neighbors for PotentialBody
-	//PrBody->recomputeNeighbors(PotentialSearchRF);
-
+	
 	//Relax again after remeshing
-	solver.solve(&model);
+	while(vb->energy() > 1e-8*(bd->energy() + PrBody->energy())){
+	  solver.solve(&model);
+	}
 
       }
     }// Remeshing ends here
@@ -558,6 +527,7 @@ int main(int argc, char* argv[])
 	 << "\t" << bd->totalStrainEnergy() / (Ravg*std::sqrt(Y*KC))
 	 << "\t" << glass->energy() / (Ravg*std::sqrt(Y*KC))
 	 << "\t" << afm->energy() / (Ravg*std::sqrt(Y*KC))
+	 << "\t" << vb->energy() / (Ravg*std::sqrt(Y*KC))
 	 << "\t" << solver.function() / (Ravg*std::sqrt(Y*KC))
 	 << std::endl;
 
@@ -610,6 +580,3 @@ int main(int argc, char* argv[])
   return 0;
 
 }
-
-///////////////////////// END OF MAIN FUNCTION //////////////////////////////////
-/////////////////////////                     //////////////////////////////////
