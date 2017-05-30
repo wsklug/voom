@@ -79,6 +79,7 @@ int main(int argc, char* argv[])
   double searchRadFactor = 1.2;
   double capsoSearchRadFactor = 1.2;
   double cleanTol = 0.0;
+  int loopSurfSubDiv = 3;
 
   //Read epsilon and percentStrain from input file. percentStrain is
   //calculated so as to set the inflection point of Morse potential
@@ -95,6 +96,7 @@ int main(int argc, char* argv[])
 	      >> temp >> step_inp
 	      >> temp >> friction_inp
 	      >> temp >> unload
+	      >> temp >> loopSurfSubDiv
 	      >> temp >> ARtol
 	      >> temp >> searchRadFactor
 	      >> temp >> capsoSearchRadFactor
@@ -348,7 +350,8 @@ int main(int argc, char* argv[])
   Xavg /= defNodes.size();
 
   //We will calculate radius using the quadrature points
-  vtkSmartPointer<vtkPolyData> lssPd = bd->getLoopShellSurfPoints(cleanTol);
+  vtkSmartPointer<vtkPolyData> lssPd = 
+    bd->getLoopShellSurfPoints(cleanTol, loopSurfSubDiv);
   std::vector<double> radialStats = getRadialStats(lssPd, Xavg);
   Ravg = radialStats[0];
   std::cout << "Radius of capsid after relaxation = " << Ravg << endl;
@@ -574,7 +577,7 @@ int main(int argc, char* argv[])
 			
     //Now we will print the LoopShellSurface
     //We will calculate radius using the quadrature points
-    lssPd = bd->getLoopShellSurfPoints(cleanTol);
+    lssPd = bd->getLoopShellSurfPoints(cleanTol, loopSurfSubDiv);
     radialStats = getRadialStats(lssPd, Xavg);
     capsomerSearchRad = radialStats[2];
 

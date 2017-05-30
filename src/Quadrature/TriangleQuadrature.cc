@@ -83,7 +83,8 @@ namespace voom {
 
     } else {
       
-      std::cout << "TriangleQuadrature::_initialize(): No quadrature rule is implmented for order " 
+      std::cout << "TriangleQuadrature::_initialize(): "
+      <<"No quadrature rule is implemented for order " 
 		<< order << ".  Quadrature uninitialized." << std::endl;
     }
     return;

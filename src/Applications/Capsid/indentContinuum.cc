@@ -57,6 +57,7 @@ int main(int argc, char* argv[])
 	double ARtol = 1.05;
 	double cleanTol = 0.01;
 	double capsoSearchRadFactor = 1.5;
+    int loopSurfSubDiv = 3;
 
 	//Read epsilon and percentStrain from input file.
 	string temp;
@@ -68,6 +69,7 @@ int main(int argc, char* argv[])
 		>> temp >> friction_inp
 		>> temp >> cleanTol
 		>> temp >> capsoSearchRadFactor
+		>> temp >> loopSurfSubDiv
 		>> temp >> unload;
 
 	miscInpFile.close();
@@ -234,7 +236,8 @@ int main(int argc, char* argv[])
 	Xavg /= defNodes.size();
 
 	//We will calculate radius using the quadrature points
-	vtkSmartPointer<vtkPolyData> lssPd = bd->getLoopShellSurfPoints(cleanTol);
+	vtkSmartPointer<vtkPolyData> lssPd = 
+        bd->getLoopShellSurfPoints(cleanTol, loopSurfSubDiv);
 	std::vector<double> radialStats = getRadialStats(lssPd, Xavg);
 	Ravg = radialStats[0];
 	std::cout << "Radius of capsid after relaxation = " << Ravg << endl;
@@ -435,7 +438,7 @@ int main(int argc, char* argv[])
 
 		//Now we will print the LoopShellSurface
 		//We will calculate radius using the quadrature points
-		lssPd = bd->getLoopShellSurfPoints(cleanTol);
+		lssPd = bd->getLoopShellSurfPoints(cleanTol, loopSurfSubDiv);
 		radialStats = getRadialStats(lssPd, Xavg);
 		capsomerSearchRad = radialStats[2];
 		sstm << modelName << "-LoopShellSurf-"

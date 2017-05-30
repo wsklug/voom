@@ -105,7 +105,7 @@ std::vector<double> getMeshQualityInfo(const std::vector<DeformationNode<3>*> &a
 	const std::vector< tvmet::Vector<int, 3> > connectivities);
 
 void getMorseBonds(vtkSmartPointer<vtkCellArray> bonds, std::vector< DeformationNode<3>* >
-		   morseNodes, double searchRad)
+		   morseNodes, double searchRad);
  
 void plotMorseBonds(const std::vector<std::string> &fileNames, std::string fname, 
 	double epsilon, double Rshift, double sigma, vtkSmartPointer<vtkCellArray> bonds);

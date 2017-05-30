@@ -11,7 +11,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 #VTK_DIR e.g. VTK_DIR = "/usr/local/VTK-7.0"
 #GSL_ROOT_DIR e.g. GSL_ROOT_DIR =  "/usr/local"
 
-set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose build type, options are: Debug|Release|MinSizeRel|RelWithDebInfo" FORCE)
+#set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose build type, options are: Debug|Release|MinSizeRel|RelWithDebInfo" FORCE)
 
 # set(VTK_DIR "/u/local/apps/vtk/5.8.0/lib/vtk-5.8" CACHE PATH "Directory containing VTKConfig.cmake" FORCE)
 # set(tvmet_DIR "/u/local/apps/tvmet/current" CACHE PATH "Directory containing include/tvmet/tvmet.h" FORCE)

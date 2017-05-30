@@ -1551,7 +1551,8 @@ namespace voom
 	// calculated
 	template<class Material_t>
 	vtkSmartPointer<vtkPolyData> 
-		LoopShellBody<Material_t>::getLoopShellSurfPoints(double cleanTol) {
+		LoopShellBody<Material_t>::getLoopShellSurfPoints(double cleanTol, 
+            int numSubDiv) {
 		FeElementContainer elements = _shells;
 		vtkSmartPointer<vtkPoints> newPointSet = 
 			vtkSmartPointer<vtkPoints>::New();
@@ -1559,26 +1560,45 @@ namespace voom
 		std::vector<TriangleQuadrature::Point> pts = quadPoints.points();
 
 		//We will manually introduce the 'quadPoints'
-		pts.resize(15);
-		pts[0].coords = 0.00, 0.00; pts[0].weight = 0.0;
-		pts[1].coords = 0.25, 0.00; pts[1].weight = 0.0;
-		pts[2].coords = 0.50, 0.00; pts[2].weight = 0.0;
-		pts[3].coords = 0.75, 0.00; pts[3].weight = 0.0;
-		pts[4].coords = 1.00, 0.00; pts[4].weight = 0.0;
-
-		pts[5].coords = 0.00, 0.25; pts[5].weight = 0.0;
-		pts[6].coords = 0.25, 0.25; pts[6].weight = 0.0;
-		pts[7].coords = 0.50, 0.25; pts[7].weight = 0.0;
-		pts[8].coords = 0.75, 0.25; pts[8].weight = 0.0;
-		
-		pts[9].coords = 0.00, 0.50; pts[9].weight = 0.0;
-		pts[10].coords = 0.25, 0.50; pts[10].weight = 0.0;
-		pts[11].coords = 0.50, 0.50; pts[11].weight = 0.0;
-
-		pts[12].coords = 0.00, 0.75; pts[12].weight = 0.0;
-		pts[13].coords = 0.25, 0.75; pts[13].weight = 0.0;
-
-		pts[14].coords = 0.00, 1.00; pts[14].weight = 0.0;
+        switch( numSubDiv ){
+            case 0:
+                pts.resize(3);
+                pts[0].coords = 0.00, 0.00; pts[0].weight = 0.0;
+                pts[1].coords = 0.25, 0.00; pts[1].weight = 0.0;
+                pts[2].coords = 0.50, 0.00; pts[2].weight = 0.0;
+                break;
+            case 1:
+                pts.resize(6);
+                pts[0].coords = 0.00, 0.00; pts[0].weight = 0.0;
+                pts[1].coords = 0.50, 0.00; pts[1].weight = 0.0;
+                pts[2].coords = 1.00, 0.00; pts[2].weight = 0.0;
+                pts[3].coords = 0.00, 0.50; pts[3].weight = 0.0;
+                pts[4].coords = 0.50, 0.50; pts[4].weight = 0.0;
+                pts[5].coords = 0.00, 1.00; pts[5].weight = 0.0;
+                break;
+            case 2:
+                pts.resize(15);
+                pts[0].coords = 0.00, 0.00; pts[0].weight = 0.0;
+                pts[1].coords = 0.25, 0.00; pts[1].weight = 0.0;
+                pts[2].coords = 0.50, 0.00; pts[2].weight = 0.0;
+                pts[3].coords = 0.75, 0.00; pts[3].weight = 0.0;
+                pts[4].coords = 1.00, 0.00; pts[4].weight = 0.0;
+                pts[5].coords = 0.00, 0.25; pts[5].weight = 0.0;
+                pts[6].coords = 0.25, 0.25; pts[6].weight = 0.0;
+                pts[7].coords = 0.50, 0.25; pts[7].weight = 0.0;
+                pts[8].coords = 0.75, 0.25; pts[8].weight = 0.0;
+                pts[9].coords = 0.00, 0.50; pts[9].weight = 0.0;
+                pts[10].coords = 0.25, 0.50; pts[10].weight = 0.0;
+                pts[11].coords = 0.50, 0.50; pts[11].weight = 0.0;
+                pts[12].coords = 0.00, 0.75; pts[12].weight = 0.0;
+                pts[13].coords = 0.25, 0.75; pts[13].weight = 0.0;
+                pts[14].coords = 0.00, 1.00; pts[14].weight = 0.0;
+                break;
+            default:
+                std::cout<< "\tgetLoopShellSurfPoints: " << numSubDiv
+                <<" subdivisions is not supported yet."<< std::endl;
+                break;
+        }
 
 		vtkSmartPointer<vtkCellArray> cells = 
 			vtkSmartPointer<vtkCellArray>::New();
@@ -1609,6 +1629,9 @@ namespace voom
 		vtkSmartPointer<vtkPolyDataWriter> writer =
 			vtkSmartPointer<vtkPolyDataWriter>::New();
 		//Remove duplicate points if any and return
+        writer->SetFileName("BeforeCleaning.vtk");
+        writer->SetInputData(poly);
+        writer->Write();
 		vtkSmartPointer<vtkCleanPolyData> cpd
 			= vtkSmartPointer<vtkCleanPolyData>::New();
 		cpd->SetInputData(poly);

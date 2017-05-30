@@ -64,6 +64,7 @@ int main(int argc, char* argv[])
   bool remesh = true;
   bool useOldRemeshTechnicque = false;
   double cleanTol = 0.0;
+  int loopSurfSubDiv = 3;
 
 
   //Read epsilon and percentStrain from input file. percentStrain is
@@ -79,6 +80,7 @@ int main(int argc, char* argv[])
 	      >> temp >> searchRadFactor
 	      >> temp >> cleanTol
 	      >> temp >> capsoSearchRadFactor
+	      >> temp >> loopSurfSubDiv
 	      >> temp >> harmonicRelaxNeeded
 	      >> temp >> projectOnSphere
 	      >> temp >> remesh
@@ -466,7 +468,8 @@ int main(int argc, char* argv[])
     Xavg /= defNodes.size();
 
     //We will calculate radius using the quadrature points
-    vtkSmartPointer<vtkPolyData> lssPd = bd->getLoopShellSurfPoints(cleanTol);
+    vtkSmartPointer<vtkPolyData> lssPd = 
+        bd->getLoopShellSurfPoints(cleanTol, loopSurfSubDiv);
     std::vector<double> radialStats = getRadialStats(lssPd, Xavg);
     Ravg = radialStats[0];
     std::cout << "Radius of capsid after relaxation = " << Ravg << endl;

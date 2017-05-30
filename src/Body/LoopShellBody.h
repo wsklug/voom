@@ -189,7 +189,7 @@ namespace voom
     double strechingEnergy() const {
       double stretchingEnergy = 0.0;
       for(ConstFeElementIterator e=_shells.begin(); e!=_shells.end(); e++) {
-	stretchingEnergy += (*e)->strechingEnergy();
+          stretchingEnergy += (*e)->strechingEnergy();
       }	
       return strechingEnergy;
     }
@@ -198,8 +198,7 @@ namespace voom
     double totalStrainEnergy() const {
       double totalStrainEnergy = 0.0;
       for(ConstFeElementIterator e=_shells.begin(); e!=_shells.end(); e++) {
-	totalStrainEnergy += (*e)->strainEnergy();
-	
+          totalStrainEnergy += (*e)->strainEnergy();
       }	
       return totalStrainEnergy;
     }
@@ -287,13 +286,15 @@ namespace voom
     double AverageEdgeLength();
 
     // Compute element neighbors
-    std::vector<std::vector<uint > > ComputeElementNeighBors(std::vector<tvmet::Vector<int,3> > ConnTable);
+    std::vector<std::vector<uint > > ComputeElementNeighBors(
+        std::vector<tvmet::Vector<int,3> > ConnTable);
 
     // Remesh elements with bad aspect ratio
     uint Remesh(double ARtol, Material_t material, uint quadOrder);
 
     // Create Shell FE
-    void CreateLoopFE(ConnectivityContainer & connectivities, Material_t material, uint quadOrder, bool remeshing);
+    void CreateLoopFE(ConnectivityContainer & connectivities, 
+                      Material_t material, uint quadOrder, bool remeshing);
 
     // Calculate and return maximum principal strain (using right
     // Cauchy-Green strain) for all active elements
@@ -303,13 +304,17 @@ namespace voom
 	void printQuadPoints(std::string fileName);
 
 	//! Print point cloud on LoopShell surface
-	vtkSmartPointer<vtkPolyData> getLoopShellSurfPoints(double cleanTol);
+	vtkSmartPointer<vtkPolyData> getLoopShellSurfPoints(double cleanTol,
+                                                        int numSubDiv);
 
     //Get Maximum Principal Strains
-    std::vector<double> getMaxPrincipalStrains() {return _maxPrincipalStrain;};
+    std::vector<double> getMaxPrincipalStrains()
+    {return _maxPrincipalStrain;};
 
-    void setAreaConstraint(GlobalConstraint AreaConstr) {_areaConstraint = AreaConstr;};
-    void setVolumeConstraint(GlobalConstraint VolConstr) {_volumeConstraint = VolConstr;};
+    void setAreaConstraint(GlobalConstraint AreaConstr) 
+    {_areaConstraint = AreaConstr;};
+    void setVolumeConstraint(GlobalConstraint VolConstr) 
+    {_volumeConstraint = VolConstr;};
     // ----------------------------------------- //
 
 
