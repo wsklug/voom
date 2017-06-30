@@ -70,6 +70,7 @@ int main(int argc, char* argv[])
   vtkSmartPointer<vtkPolyDataNormals> normals = 
     vtkSmartPointer<vtkPolyDataNormals>::New();
   normals->SetInputConnection(reader->GetOutputPort());
+  normals->ComputeCellNormalsOn();
   normals->ConsistencyOn();
   normals->SplittingOff();
   normals->AutoOrientNormalsOn();

@@ -146,6 +146,7 @@ int main(int argc, char* argv[])
   
   // send through normals filter to ensure that triangle orientations
   // are consistent 
+  normals->ComputeCellNormalsOn();
   normals->ConsistencyOn();
   normals->SplittingOff();
   normals->AutoOrientNormalsOn();

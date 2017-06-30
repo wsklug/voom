@@ -20,6 +20,7 @@
 #include <vtkSmartPointer.h>
 #include <vtkGeometryFilter.h>
 #include <vtkLinearSubdivisionFilter.h>
+#include <vtkPoints.h>
 
 #include "Morse.h"
 #include "PotentialBody.h"
@@ -125,6 +126,7 @@ int main(int argc, char* argv[])
     normals->SetInputConnection(reader->GetOutputPort());
     // send through normals filter to ensure that triangle orientations
     // are consistent
+    normals->ComputeCellNormalsOn();
     normals->ConsistencyOn();
     normals->SplittingOff();
     normals->AutoOrientNormalsOn();
@@ -546,6 +548,7 @@ int main(int argc, char* argv[])
         sstm << modelName << "-step-" << step;
         rName = sstm.str();
         bd->printParaview(rName);
+               
         //We will append Caspsomer POINT_DATA to the vtk output file
         //printed by printParaview(), if such a file exists
         sstm << ".vtk";
@@ -554,6 +557,31 @@ int main(int argc, char* argv[])
         sstm.clear();
         allStepFiles.push_back(rName);
 
+        // Prepare particle filename
+        sstm << modelName << "-Particles-" << step << ".vtk";
+        rName = sstm.str();
+        sstm.str("");
+        sstm.clear();
+        
+        //Write out the Morse particle positions
+        vtkSmartPointer<vtkPolyData> morseParticles 
+            = vtkSmartPointer<vtkPolyData>::New();
+        vtkSmartPointer<vtkCellArray> cells = 
+			vtkSmartPointer<vtkCellArray>::New();
+        for(int pIdx=0; pIdx < morseNodes.size(); pIdx++){
+            Vector3D position = morseNodes[pIdx]->point();
+            double pos[3] = {position[0], position[1], position[2]};
+            morseParticles->GetPoints()->InsertNextPoint(pos);
+            vtkSmartPointer<vtkVertex> currVertex =
+				  vtkSmartPointer<vtkVertex>::New();
+            currVertex->GetPointIds()->SetId(0, pIdx);
+			cells->InsertNextCell(currVertex);
+        }
+        vtkSmartPointer<vtkPolyDataWriter> writer = vtkSmartPointer<vtkPolyDataWriter>::New();
+        writer->SetFileName(rName.c_str());
+        writer->SetInputData(morseParticles);
+        writer->Write();
+        
         //Now we will print the LoopShellSurface
         //We will calculate radius using the quadrature points
         lssPd = bd->getLoopShellSurfPoints(cleanTol, loopSurfSubDiv);

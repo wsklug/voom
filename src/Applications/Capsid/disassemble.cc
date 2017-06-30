@@ -75,6 +75,7 @@ int main(int argc, char* argv[])
   // are consistent
   vtkPolyDataNormals * normals = vtkPolyDataNormals::New();
   normals->SetInput( reader->GetOutput() );
+  normals->ComputeCellNormalsOn();
   normals->ConsistencyOn();
   normals->SplittingOff();
   normals->AutoOrientNormalsOn();
