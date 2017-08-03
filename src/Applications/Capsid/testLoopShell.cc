@@ -11,6 +11,7 @@
 #include "FVK.h"
 #include "LoopShellBody.h"
 #include "TriangleQuadrature.h"
+#include "HelperFunctions.h"
 
 using namespace tvmet;
 using namespace std;
@@ -27,19 +28,21 @@ int main(int argc, char* argv[] ){
     vtkSmartPointer<vtkPolyDataReader> reader =
 		vtkSmartPointer<vtkPolyDataReader>::New();
     reader->SetFileName(inFile.c_str());	
-
+    reader->Update();
+    /*
     vtkSmartPointer<vtkPolyDataNormals> normals =
     vtkSmartPointer<vtkPolyDataNormals>::New();    
     normals->SetInputConnection(reader->GetOutputPort());
     normals->ComputeCellNormalsOn();
     normals->ConsistencyOn();
     normals->SplittingOff();
-    normals->Update(); 
+    normals->Update();
 	vtkSmartPointer<vtkPolyData> mesh = normals->GetOutput();
-
+	*/
+    vtkSmartPointer<vtkPolyData> mesh = reader->GetOutput();
 	std::cout << "Mesh->GetNumberOfPoints() = " << mesh->GetNumberOfPoints()
 		<< std::endl;
-
+	/*
 	// create vector of nodes
 	int dof = 0;
 	std::vector< NodeBase* > nodes;
@@ -73,20 +76,22 @@ int main(int argc, char* argv[] ){
     double KG = 10.0;
     double C0 = 10.0;
     
-    double quadOrder = 1.0;
+    int quadOrder = 1;
     
     MaterialType bending(KC, KG, C0, 0.0, 0.0);
     LSB * bd = new LSB(bending, connectivities, nodes, quadOrder);
     bd->setOutput(paraview);
     
     double cleanTol = 0.01;
-    int loopSurfSubDiv = 2;
+    int loopSurfSubDiv = 0;
     vtkSmartPointer<vtkPolyData> lssPd = 
         bd->getLoopShellSurfPoints(cleanTol, loopSurfSubDiv);
-    
+    */
+    meshSphericalPointCloud(mesh, 0.144, "LoopShellSurface.vtk");
+
     vtkSmartPointer<vtkPolyDataWriter> writer = 
         vtkSmartPointer<vtkPolyDataWriter>::New();
-    writer->SetInputData(lssPd);
+    writer->SetInputData(mesh);
     writer->SetFileName("Refined.vtk");
     writer->Write();
     return(1);

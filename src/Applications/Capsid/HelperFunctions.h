@@ -11,6 +11,7 @@
 #include <limits>
 #include <set>
 #include <list>
+#include <math.h>
 
 #include <vtkPointData.h>
 #include <vtkPolyData.h>
@@ -39,6 +40,8 @@
 #include <vtkReverseSense.h>
 #include <vtkUnstructuredGrid.h>
 #include <vtkCleanPolyData.h>
+#include <vtkKdTree.h>
+#include <vtkIdList.h>
 
 #if defined(_OPENMP)
 #include <omp.h>

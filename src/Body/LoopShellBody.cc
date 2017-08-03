@@ -1564,8 +1564,8 @@ namespace voom
             case 0:
                 pts.resize(3);
                 pts[0].coords = 0.00, 0.00; pts[0].weight = 0.0;
-                pts[1].coords = 0.25, 0.00; pts[1].weight = 0.0;
-                pts[2].coords = 0.50, 0.00; pts[2].weight = 0.0;
+                pts[1].coords = 0.00, 1.00; pts[1].weight = 0.0;
+                pts[2].coords = 1.00, 0.00; pts[2].weight = 0.0;
                 break;
             case 1:
                 pts.resize(6);

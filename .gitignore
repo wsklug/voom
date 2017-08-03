@@ -1,0 +1,10 @@
+# Ignore .directory created by Dolphin
+.directory
+
+# Ignore Eclipse files
+.project
+.cproject
+.settings/*
+
+# Ignore Kate or KDevelop Files
+*.kdev*
