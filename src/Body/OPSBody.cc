@@ -1,0 +1,1945 @@
+/*
+*OPSBody.cc
+** Created on: Aug 5, 2017
+*     Author: amit
+ */
+#include "OPSBody.h"
+
+namespace voom {
+
+OPSBody::OPSBody(const vector<OPSNode*> & nodes, properties p, double r) :
+				_opsNodes(nodes), _prop(p), _searchR(r) {
+
+	_dof = 0;
+	// Initialize Body.h containers
+	_nodes.insert(_nodes.begin(), nodes.begin(), nodes.end());
+	for (ConstNodeIterator n = _nodes.begin(); n != _nodes.end(); n++) {
+		_dof += (*n)->dof();
+	}
+
+	// Construct vtkPolyData from nodes
+	_polyData = vtkSmartPointer<vtkPolyData>::New();
+	//Construct the kd-tree
+	_kdTree = vtkSmartPointer<vtkKdTree>::New();
+	updatePolyDataAndKdTree();
+
+	//Initialize the _neighbors vector
+	for(int i=0; i < _opsNodes.size(); i++){
+		_neighbors.push_back( vtkSmartPointer<vtkIdList>::New() );
+	}
+	updateNeighbors();
+
+	//Set the initial nearest neighbor vector
+	for (int i = 0; i < _opsNodes.size(); i++) {
+		Vector3D currPos(0.0);
+		_polyData->GetPoint(i, &(currPos[0]));
+		vtkSmartPointer<vtkIdList> neighbors =
+				vtkSmartPointer<vtkIdList>::New();
+		_kdTree->FindClosestNPoints(2, &(currPos[0]), neighbors);
+		neighbors->DeleteId(i);
+		_initialNearestNeighbor.push_back( neighbors->GetId(0) );
+	}
+}
+
+/*
+*Updates _polyData with latest deformed node positions and normals
+ */
+void OPSBody::updatePolyDataAndKdTree() {
+	vtkSmartPointer<vtkPoints> pts = vtkSmartPointer<vtkPoints>::New();
+	vtkSmartPointer<vtkCellArray> verts = vtkSmartPointer<vtkCellArray>::New();
+	vtkSmartPointer<vtkDoubleArray> normals =
+			vtkSmartPointer<vtkDoubleArray>::New();
+	normals->SetNumberOfComponents(3);
+	normals->SetNumberOfTuples(_opsNodes.size());
+	int ptIdx = 0;
+	for (opsNodeIterator n = _opsNodes.begin(); n != _opsNodes.end(); ++n) {
+		Vector3D coords = (*n)->deformedPosition();
+		Vector3D currNormal = (*n)->deformedRotationVector();
+		pts->InsertNextPoint(&(coords[0]));
+		normals->InsertNextTuple(&(currNormal[0]));
+		verts->InsertNextCell(1);
+		verts->InsertCellPoint(ptIdx++);
+	}
+	_polyData->SetPoints(pts);
+	_polyData->SetVerts(verts);
+	_polyData->GetPointData()->SetNormals(normals);
+	_kdTree->BuildLocatorFromPoints( _polyData );
+}
+
+/*
+*Store the neighbors information for each node
+ */
+void OPSBody::updateNeighbors(){
+	for(int i=0; i < _opsNodes.size(); i++){
+		Vector3D pos(0.0);
+		_polyData->GetPoint( i, &(pos[0]) );
+		_neighbors[i]->Reset();
+		_kdTree->FindPointsWithinRadius( _searchR, &(pos[0]), _neighbors[i] );
+		_neighbors[i]->DeleteId(i);
+	}
+}
+
+/*
+*Compute the OPSbody energy and energy contribution due to some other elements
+*inherited from the parent Body class _elements container
+ */
+void OPSBody::compute(bool f0, bool f1, bool f2) {
+
+	double aM, aP, aN, aC;
+	double E, re, s;
+	double K, a, b;
+
+	aM = _prop.alphaM; aP = _prop.alphaP; aN = _prop.alphaN; aC = _prop.alphaC;
+	E = _prop.epsilon; re = _prop.r_e; s = _prop.s;
+	K = _prop.K; a = _prop.a; b = _prop.b;
+
+	// Initialize energy to be zero
+	if (f0)
+		_energy = 0.0;
+
+	if(f0 && !f1){
+		for(int i=0; i < _opsNodes.size(); i++){
+			Vector3D vi(0.0), xi(0.0);
+			xi = _opsNodes[i]->deformedPosition();
+			vi = _opsNodes[i]->deformedRotationVector();
+
+			for(int j=0; j < _neighbors[i]->GetNumberOfIds(); j++){
+				Vector3D vj(0.0), xj(0.0);
+				double morseEn, KerXi, Phi_pXi, Phi_nXi, Phi_cXi;
+				vtkIdType currId = _neighbors[i]->GetId(j);
+
+				xj = _opsNodes[currId]->deformedPosition();
+				vj = _opsNodes[currId]->deformedRotationVector();
+
+				morseEn = morse(xi,xj);
+	            KerXi = psi( vi, xi, xj);
+				Phi_pXi = phi_p( vi, xi, xj );
+				Phi_nXi = phi_n( vi, vj );
+				Phi_cXi = phi_c( vi, vj, xi, xj );
+
+				_energy += aM*morseEn + ( aP*Phi_pXi + aN*Phi_nXi + aC*Phi_cXi )*KerXi;
+			}
+		}
+	}
+	else{
+		for(int i=0; i < _opsNodes.size(); i++){
+			Vector3D vi(0.0), xi(0.0);
+			xi = _opsNodes[i]->deformedPosition();
+			vi = _opsNodes[i]->deformedRotationVector();
+
+			for(int j=0; j < _neighbors[i]->GetNumberOfIds(); j++){
+				Vector3D vj(0.0), xj(0.0);
+				double morseEn, KerXi, Phi_pXi, Phi_nXi, Phi_cXi;
+				Vector3D dMorseXi, dMorseXj, dKerXi, dKerXj, dKerVi;
+				Vector3D dPhi_pXi, dPhi_pXj, dPhi_pVi, dPhi_nVi, dPhi_nVj;
+				Vector3D dPhi_cXi, dPhi_cXj, dPhi_cVi, dPhi_cVj;
+				vtkIdType currId = _neighbors[i]->GetId(j);
+
+				xj = _opsNodes[currId]->deformedPosition();
+				vj = _opsNodes[currId]->deformedRotationVector();
+
+				// Evaluate morse potential derivatives
+				morseEn = morse(xi,xj);
+				dMorseXi = DmorseDxi( xi, xj );
+				dMorseXj = DmorseDxj( xi, xj );
+
+				// Evaluate kernel and its derivatives
+				KerXi = psi( vi, xi, xj );
+				dKerXi = DpsiDxi( vi, xi, xj );
+				dKerXj = DpsiDxj( vi, xi, xj );
+				dKerVi = DpsiDvi( vi, xi, xj );
+
+				// Evaluate co-planarity potential and its derivatives
+				Phi_pXi = phi_p( vi, xi, xj );
+				dPhi_pXi = Dphi_pDxi( vi, xi, xj );
+				dPhi_pXj = Dphi_pDxj( vi, xi, xj );
+				dPhi_pVi = Dphi_pDvi( vi, xi, xj );
+
+				// Evaluate co-normality potential and its derivatives
+				Phi_nXi = phi_n( vi, vj );
+				dPhi_nVi = Dphi_nDvi( vi, vj );
+				dPhi_nVj = Dphi_nDvj( vi, vj );
+
+				// Evaluate co-circularity potential and its derivatives
+				Phi_cXi = phi_c( vi, vj, xi, xj );
+				dPhi_cXi = Dphi_cDxi( vi, vj, xi, xj );
+				dPhi_cXj = Dphi_cDxj( vi, vj, xi, xj );
+				dPhi_cVi = Dphi_cDvi( vi, vj, xi, xj );
+				dPhi_cVj = Dphi_cDvj( vi, vj, xi, xj );
+
+				Vector3D centerDx(0.0), centerDv(0.0), neighborDx(0.0), neighborDv(0.0);
+
+				centerDx = aM*dMorseXi + aP*( dPhi_pXi*KerXi + Phi_pXi*dKerXi )
+						+ aN*( Phi_nXi*dKerXi ) + aC*( dPhi_cXi*KerXi
+								+ Phi_cXi*dKerXi );
+				centerDv = aP*( dPhi_pVi*KerXi + Phi_pXi*dKerVi ) +
+		                aN*( dPhi_nVi*KerXi + Phi_nXi*dKerVi ) +
+		                aC*( dPhi_cVi*KerXi + Phi_cXi*dKerVi );
+
+				neighborDx = aM*dMorseXj + aP*( dPhi_pXj*KerXi +
+		                  Phi_pXi*dKerXj ) + aN*( Phi_nXi*dKerXj )
+		                + aC*( dPhi_cXj*KerXi + Phi_cXi*dKerXj );
+				neighborDv = KerXi*( aN*dPhi_nVj + aC*dPhi_cVj );
+
+				OPSNode::OPSNodalForce centerForce(centerDx[0], centerDx[1], centerDx[2],
+						centerDv[0], centerDv[1], centerDv[2]);
+				OPSNode::OPSNodalForce neighborForce(neighborDx[0], neighborDx[1],
+						neighborDx[2], neighborDv[0], neighborDv[1], neighborDv[2]);
+
+				for(int k=0; k < 6; k++){
+					_opsNodes[i]->addForce( k, centerForce(k) );
+					_opsNodes[currId]->addForce( k, neighborForce(k) );
+				}
+				_energy += aM*morseEn + ( aP*Phi_pXi + aN*Phi_nXi + aC*Phi_cXi )*KerXi;
+
+			}
+		}
+	}
+
+	//If the inherited _elements container is non-empty
+	for (int i = 0; i < _elements.size(); i++) {
+		_elements[i]->compute(f0, f1, f2);
+		_energy += _elements[i]->energy();
+	}
+
+	return;
+
+}
+
+/*
+*Morse function
+ */
+double OPSBody::morse(Vector3D xi, Vector3D xj){
+	double E, re, s, r, potential;
+	E = _prop.epsilon; re = _prop.r_e; s = _prop.s;
+	r = tvmet::norm2(xi - xj);
+	potential = E*( -2*exp( -s*(r-re) ) + exp( -2*s*(r-re) ) );
+	return potential;
+}
+
+/*
+*The kernel function
+ */
+double OPSBody::psi(Vector3D vi, Vector3D xi, Vector3D xj){
+	double K, a, b, psi0;
+	double u0, u1, u2, x0, x1, x2, y0, y1, y2;
+	double vi_mag_sqr, vi_mag, sin_alpha_i, cos_alpha_i;
+	double sin_alpha_i_2, cos_alpha_i_2;
+
+	K = _prop.K; a = _prop.a; b = _prop.b;
+	u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
+	x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
+	y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+
+	vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
+	vi_mag = sqrt(vi_mag_sqr);
+	sin_alpha_i = sin( 0.5*vi_mag );
+	cos_alpha_i = cos( 0.5*vi_mag );
+	sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
+	cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
+
+	psi0 = K*exp(-pow(cos_alpha_i_2*(-x2 + y2) + cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1) / vi_mag
+		+ cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0) / vi_mag	- sin_alpha_i_2*u0*u0*(-x2 + y2)/ vi_mag_sqr
+		+ sin_alpha_i_2*u0*u2*(-2*x0 + 2*y0) / vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/ vi_mag_sqr
+		+ sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1) / vi_mag_sqr + sin_alpha_i_2*u2*u2*(-x2 + y2)/ vi_mag_sqr, 2) / (2*b*b)
+		+ (-pow(cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 + 2*y2)/ vi_mag
+		- cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)	/ vi_mag
+		+ sin_alpha_i_2*u0*u0 *(-x0 + y0) / vi_mag_sqr + sin_alpha_i_2*u0*u1 *(-2*x1 + 2*y1)/ vi_mag_sqr
+		+ sin_alpha_i_2*u0*u2 *(-2*x2 + 2*y2)/ vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0) / vi_mag_sqr
+		- sin_alpha_i_2*u2*u2*(-x0 + y0) / vi_mag_sqr,2)
+		- pow(cos_alpha_i_2*(-x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/ vi_mag
+		+ cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/ vi_mag
+		- sin_alpha_i_2*u0*u0*(-x1 + y1)/ vi_mag_sqr + sin_alpha_i_2*u0*u1*(-2*x0 + 2*y0)/ vi_mag_sqr
+		+ sin_alpha_i_2*u1*u1*(-x1 + y1) / vi_mag_sqr + sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/ vi_mag_sqr
+		- sin_alpha_i_2*u2*u2*(-x1 + y1)/ vi_mag_sqr, 2))/ (2*a*a));
+	return psi0;
+
+}
+/*
+*The co-planarity function
+ */
+double OPSBody::phi_p(Vector3D vi, Vector3D xi, Vector3D xj){
+	double u0, u1, u2, x0, x1, x2, y0, y1, y2;
+	double vi_mag_sqr, vi_mag, sin_alpha_i, cos_alpha_i;
+	double sin_alpha_i_2, cos_alpha_i_2, phi_p0;
+
+	u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
+	x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
+	y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+
+	vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
+	vi_mag = sqrt(vi_mag_sqr);
+	sin_alpha_i = sin( 0.5*vi_mag );
+	cos_alpha_i = cos( 0.5*vi_mag );
+	sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
+	cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
+
+	phi_p0 = pow((-x0 + y0)*(2*cos_alpha_i*sin_alpha_i*u1 / vi_mag + 2*sin_alpha_i_2*u0*u2 / vi_mag_sqr)
+			+ (-x1 + y1)*(-2*cos_alpha_i*sin_alpha_i*u0 / vi_mag + 2*sin_alpha_i_2*u1*u2 / vi_mag_sqr)
+			+ (-x2 + y2)*(cos_alpha_i_2	- sin_alpha_i_2*u0*u0 / vi_mag_sqr
+			- sin_alpha_i_2*u1*u1 / vi_mag_sqr	+ sin_alpha_i_2*u2*u2 / vi_mag_sqr), 2);
+	return phi_p0;
+}
+/*
+*The co-normality function
+ */
+double OPSBody::phi_n(Vector3D vi, Vector3D vj){
+	double u0, u1, u2, v0, v1, v2;
+	double vi_mag_sqr, vi_mag, vj_mag_sqr, vj_mag;
+	double sin_alpha_i, cos_alpha_i, sin_alpha_j, cos_alpha_j;
+	double sin_alpha_i_2, cos_alpha_i_2, sin_alpha_j_2, cos_alpha_j_2, phi_n0;
+
+	u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
+	v0 = vj[0]; v1 = vj[1]; v2 = vj[2];
+
+	vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
+	vj_mag_sqr = v0*v0 + v1*v1 + v2*v2;
+	vi_mag = sqrt(vi_mag_sqr);
+	vj_mag = sqrt(vj_mag_sqr);
+	sin_alpha_i = sin( 0.5*vi_mag );
+	cos_alpha_i = cos( 0.5*vi_mag );
+	sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
+	cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
+	sin_alpha_j = sin( 0.5*vj_mag );
+	cos_alpha_j = cos( 0.5*vj_mag );
+	sin_alpha_j_2 = sin_alpha_j*sin_alpha_j;
+	cos_alpha_j_2 = cos_alpha_j*cos_alpha_j;
+
+	phi_n0 = pow(-2*cos_alpha_i*sin_alpha_i*u0 / vi_mag
+			+ 2*cos_alpha_j*sin_alpha_j*v0 / vj_mag
+			+ 2*sin_alpha_i_2*u1*u2 / vi_mag_sqr
+			- 2*sin_alpha_j_2*v1*v2 / vj_mag_sqr, 2)
+					+ pow(2*cos_alpha_i*sin_alpha_i*u1 / vi_mag
+							- 2*cos_alpha_j*sin_alpha_j*v1 / vj_mag
+							+ 2*sin_alpha_i_2*u0*u2 / vi_mag_sqr
+							- 2*sin_alpha_j_2*v0*v2 / vj_mag_sqr, 2)
+							+ pow(cos_alpha_i_2 - cos_alpha_j_2
+									- sin_alpha_i_2*u0*u0 / vi_mag_sqr
+									- sin_alpha_i_2*u1*u1 / vi_mag_sqr
+									+ sin_alpha_i_2*u2*u2 / vi_mag_sqr
+									+ sin_alpha_j_2*v0*v0 / vj_mag_sqr
+									+ sin_alpha_j_2*v1*v1 / vj_mag_sqr
+									- sin_alpha_j_2*v2*v2 / vj_mag_sqr, 2);
+	return phi_n0;
+}
+
+/*
+*The co-circularity function
+ */
+double OPSBody::phi_c(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj){
+	double u0, u1, u2, v0, v1, v2, x0, x1, x2, y0, y1, y2;
+	double vi_mag_sqr, vi_mag, vj_mag_sqr, vj_mag;
+	double sin_alpha_i, cos_alpha_i, sin_alpha_j, cos_alpha_j;
+	double sin_alpha_i_2, cos_alpha_i_2, sin_alpha_j_2, cos_alpha_j_2, phi_c0;
+
+	u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
+	v0 = vj[0]; v1 = vj[1]; v2 = vj[2];
+	x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
+	y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+
+	vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
+	vj_mag_sqr = v0*v0 + v1*v1 + v2*v2;
+	vi_mag = sqrt(vi_mag_sqr);
+	vj_mag = sqrt(vj_mag_sqr);
+	sin_alpha_i = sin( 0.5*vi_mag );
+	cos_alpha_i = cos( 0.5*vi_mag );
+	sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
+	cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
+	sin_alpha_j = sin( 0.5*vj_mag );
+	cos_alpha_j = cos( 0.5*vj_mag );
+	sin_alpha_j_2 = sin_alpha_j*sin_alpha_j;
+	cos_alpha_j_2 = cos_alpha_j*cos_alpha_j;
+
+	phi_c0 = pow((-x0 + y0)*(2*cos_alpha_i*sin_alpha_i*u1 / vi_mag
+					+ 2*cos_alpha_j*sin_alpha_j*v1 / vj_mag
+					+ 2*sin_alpha_i_2*u0*u2 / vi_mag_sqr
+					+ 2*sin_alpha_j_2*v0*v2 / vj_mag_sqr)
+					+ (-x1 + y1)*(-2*cos_alpha_i*sin_alpha_i*u0 / vi_mag
+					- 2*cos_alpha_j*sin_alpha_j*v0/ vj_mag
+							+ 2*sin_alpha_i_2*u1*u2 / vi_mag_sqr
+							+ 2*sin_alpha_j_2*v1*v2 / vj_mag_sqr)
+							+ (-x2 + y2)*(cos_alpha_i_2 + cos_alpha_j_2
+									- sin_alpha_i_2*u0*u0 / vi_mag_sqr
+									- sin_alpha_i_2*u1*u1 / vi_mag_sqr
+									+ sin_alpha_i_2*u2*u2 / vi_mag_sqr
+									- sin_alpha_j_2*v0*v0 / vj_mag_sqr
+									- sin_alpha_j_2*v1*v1 / vj_mag_sqr
+									+ sin_alpha_j_2*v2*v2 / vj_mag_sqr), 2);
+
+	return phi_c0;
+}
+
+/*
+*Derivative of Morse with respect to xi
+ */
+Vector3D OPSBody::DmorseDxi(Vector3D xi, Vector3D xj){
+	double epsilon, l0, a, rij, DmorseDxi0, DmorseDxi1, DmorseDxi2;
+	double x0, x1, x2, y0, y1, y2;
+
+	epsilon = _prop.epsilon; l0 = _prop.r_e; a = _prop.s;
+	rij = tvmet::norm2( xi-xj );
+
+	x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
+	y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+
+	DmorseDxi0 = epsilon
+		*(2*a*(x0 - y0)*exp(-a*(-l0 + rij)) / rij
+					- 2*a*(x0 - y0)*exp(-2*a*(-l0 + rij)) / rij);
+
+	DmorseDxi1 = epsilon
+		*(2*a*(x1 - y1)*exp(-a*(-l0 + rij)) / rij
+					- 2*a*(x1 - y1)*exp(-2*a*(-l0 + rij)) / rij);
+
+	DmorseDxi2 = epsilon
+		*(2*a*(x2 - y2)*exp(-a*(-l0 + rij)) / rij
+					- 2*a*(x2 - y2)*exp(-2*a*(-l0 + rij)) / rij);
+
+	Vector3D DmorseDxi( DmorseDxi0, DmorseDxi1, DmorseDxi2 );
+
+	return DmorseDxi;
+}
+
+/*
+*Derivative of Morse with respect to xj
+ */
+Vector3D OPSBody::DmorseDxj(Vector3D xi, Vector3D xj){
+	double epsilon, l0, a, rij, DmorseDxj0, DmorseDxj1, DmorseDxj2;
+	double x0, x1, x2, y0, y1, y2;
+
+	epsilon = _prop.epsilon; l0 = _prop.r_e; a = _prop.s;
+	rij = tvmet::norm2( xi-xj );
+
+	x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
+	y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+
+	DmorseDxj0 = epsilon
+		*(2*a*(-x0 + y0)*exp(-a*(-l0 + rij)) / rij
+					- 2*a*(-x0 + y0)*exp(-2*a*(-l0 + rij)) / rij);
+
+	DmorseDxj1 = epsilon
+		*(2*a*(-x1 + y1)*exp(-a*(-l0 + rij)) / rij
+					- 2*a*(-x1 + y1)*exp(-2*a*(-l0 + rij)) / rij);
+
+	DmorseDxj2 = epsilon
+		*(2*a*(-x2 + y2)*exp(-a*(-l0 + rij)) / rij
+					- 2*a*(-x2 + y2)*exp(-2*a*(-l0 + rij)) / rij);
+
+	Vector3D DmorseDxj( DmorseDxj0, DmorseDxj1, DmorseDxj2 );
+
+	return DmorseDxj;
+}
+
+/*
+*Derivative of kernel psi wrt vi
+ */
+Vector3D OPSBody::DpsiDvi(Vector3D vi, Vector3D xi, Vector3D xj){
+	double K, a, b, psi0;
+	double u0, u1, u2, x0, x1, x2, y0, y1, y2;
+	double vi_mag_sqr, vi_mag, sin_alpha_i, cos_alpha_i;
+	double sin_alpha_i_2, cos_alpha_i_2;
+	double DpsiDu0, DpsiDu1, DpsiDu2;
+
+	K = _prop.K; a = _prop.a; b = _prop.b;
+	u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
+	x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
+	y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+
+	vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
+	vi_mag = sqrt(vi_mag_sqr);
+	sin_alpha_i = sin( 0.5*vi_mag );
+	cos_alpha_i = cos( 0.5*vi_mag );
+	sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
+	cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
+
+	DpsiDu0 = K*(-(cos_alpha_i_2*(-x2 + y2) +
+			cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
+			cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
+			sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
+					2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
+					sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+					sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr)*(cos_alpha_i_2*u0*u0*(-
+							2*x1 + 2*y1)/vi_mag_sqr + cos_alpha_i_2*u0*u1*(2*x0 -
+									2*y0)/vi_mag_sqr - 2*cos_alpha_i*sin_alpha_i*pow(u0,3)*(-x2 +
+											y2)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u0*u2*(-2*x0 +
+													2*y0)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u0*u0*(-2*x1 +
+															2*y1)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u0*u1*u1*(-x2 +
+																	y2)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u1*u2*(-2*x1 +
+																			2*y1)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u0*u1*(2*x0 -
+																					2*y0)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u2*u2*(-x2 +
+																							y2)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u0*(-x2 + y2)/vi_mag +
+																							2*cos_alpha_i*sin_alpha_i*(-2*x1 + 2*y1)/vi_mag +
+																							4*sin_alpha_i_2*pow(u0,3)*(-x2 + y2)/(pow(vi_mag,4)) -
+																							4*sin_alpha_i_2*u0*u0*u2*(-2*x0 + 2*y0)/(pow(vi_mag,4)) -
+																							sin_alpha_i_2*u0*u0*(-2*x1 + 2*y1)/vi_mag_sqr +
+																							4*sin_alpha_i_2*u0*u1*u1*(-x2 + y2)/(pow(vi_mag,4)) -
+																							4*sin_alpha_i_2*u0*u1*u2*(-2*x1 + 2*y1)/(pow(vi_mag,4)) -
+																							sin_alpha_i_2*u0*u1*(2*x0 - 2*y0)/vi_mag_sqr -
+																							4*sin_alpha_i_2*u0*u2*u2*(-x2 + y2)/(pow(vi_mag,4)) -
+																							4*sin_alpha_i_2*u0*(-x2 + y2)/vi_mag_sqr + 2*sin_alpha_i_2*u2*(-
+																									2*x0 + 2*y0)/vi_mag_sqr)/(2*b*b) + (-(cos_alpha_i_2*(-x0 + y0) +
+																											cos_alpha_i*sin_alpha_i*u1*(-2*x2 + 2*y2)/vi_mag -
+																											cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
+																											sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																													2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
+																															2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
+																															sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr)*(cos_alpha_i_2*u0*u1*(-
+																																	2*x2 + 2*y2)/vi_mag_sqr - cos_alpha_i_2*u0*u2*(-2*x1 +
+																																			2*y1)/vi_mag_sqr + 2*cos_alpha_i*sin_alpha_i*pow(u0,3)*(-x0 +
+																																					y0)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u0*u1*(-2*x1 +
+																																							2*y1)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u0*u2*(-2*x2 +
+																																									2*y2)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u0*u1*u1*(-x0 +
+																																											y0)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u0*u1*(-2*x2 +
+																																													2*y2)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u0*u2*u2*(-x0 +
+																																															y0)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u2*(-2*x1 +
+																																																	2*y1)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u0*(-x0 + y0)/vi_mag -
+																																																	4*sin_alpha_i_2*pow(u0,3)*(-x0 + y0)/(pow(vi_mag,4)) -
+																																																	4*sin_alpha_i_2*u0*u0*u1*(-2*x1 + 2*y1)/(pow(vi_mag,4)) -
+																																																	4*sin_alpha_i_2*u0*u0*u2*(-2*x2 + 2*y2)/(pow(vi_mag,4)) +
+																																																	4*sin_alpha_i_2*u0*u1*u1*(-x0 + y0)/(pow(vi_mag,4)) -
+																																																	sin_alpha_i_2*u0*u1*(-2*x2 + 2*y2)/vi_mag_sqr +
+																																																	4*sin_alpha_i_2*u0*u2*u2*(-x0 + y0)/(pow(vi_mag,4)) +
+																																																	sin_alpha_i_2*u0*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+																																																	4*sin_alpha_i_2*u0*(-x0 + y0)/vi_mag_sqr + 2*sin_alpha_i_2*u1*(-
+																																																			2*x1 + 2*y1)/vi_mag_sqr + 2*sin_alpha_i_2*u2*(-2*x2 +
+																																																					2*y2)/vi_mag_sqr) - (cos_alpha_i_2*(-x1 + y1) -
+																																																							cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
+																																																							cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
+																																																							sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																																									2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
+																																																									sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+																																																									sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr)*(-cos_alpha_i_2*u0*u0*(-
+																																																											2*x2 + 2*y2)/vi_mag_sqr + cos_alpha_i_2*u0*u2*(-2*x0 +
+																																																													2*y0)/vi_mag_sqr - 2*cos_alpha_i*sin_alpha_i*pow(u0,3)*(-x1 +
+																																																															y1)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u0*u1*(-2*x0 +
+																																																																	2*y0)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u0*(-2*x2 +
+																																																																			2*y2)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u1*u1*(-x1 +
+																																																																					y1)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u1*u2*(-2*x2 +
+																																																																							2*y2)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u0*u2*u2*(-x1 +
+																																																																									y1)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u0*u2*(-2*x0 +
+																																																																											2*y0)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u0*(-x1 + y1)/vi_mag -
+																																																																											2*cos_alpha_i*sin_alpha_i*(-2*x2 + 2*y2)/vi_mag +
+																																																																											4*sin_alpha_i_2*pow(u0,3)*(-x1 + y1)/(pow(vi_mag,4)) -
+																																																																											4*sin_alpha_i_2*u0*u0*u1*(-2*x0 + 2*y0)/(pow(vi_mag,4)) +
+																																																																											sin_alpha_i_2*u0*u0*(-2*x2 + 2*y2)/vi_mag_sqr -
+																																																																											4*sin_alpha_i_2*u0*u1*u1*(-x1 + y1)/(pow(vi_mag,4)) -
+																																																																											4*sin_alpha_i_2*u0*u1*u2*(-2*x2 + 2*y2)/(pow(vi_mag,4)) +
+																																																																											4*sin_alpha_i_2*u0*u2*u2*(-x1 + y1)/(pow(vi_mag,4)) -
+																																																																											sin_alpha_i_2*u0*u2*(-2*x0 + 2*y0)/vi_mag_sqr -
+																																																																											4*sin_alpha_i_2*u0*(-x1 + y1)/vi_mag_sqr + 2*sin_alpha_i_2*u1*(-
+																																																																													2*x0 + 2*y0)/vi_mag_sqr))/(2*a*a))*exp(-pow(cos_alpha_i_2*(-x2 + y2) +
+																																																																															cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
+																																																																															cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
+																																																																															sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
+																																																																																	2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
+																																																																																	sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+																																																																																	sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr,2)/(2*b*b) + (-
+																																																																																			pow(cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
+																																																																																					2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
+																																																																																					sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																																																																							2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
+																																																																																									2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
+																																																																																									sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr,2) - pow(cos_alpha_i_2*(-
+																																																																																											x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
+																																																																																											cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
+																																																																																											sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																																																																													2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
+																																																																																													sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+																																																																																													sin_alpha_i_2*u2*u2*(-x1 +
+																																																																																															y1)/vi_mag_sqr,2))/(2*a*a));
+
+	DpsiDu1 = K*(-(cos_alpha_i_2*(-
+			x2 + y2) + cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
+			cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
+			sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
+					2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
+					sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+					sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr)*(cos_alpha_i_2*u0*u1*(-
+							2*x1 + 2*y1)/vi_mag_sqr + cos_alpha_i_2*u1*u1*(2*x0 -
+									2*y0)/vi_mag_sqr - 2*cos_alpha_i*sin_alpha_i*u0*u0*u1*(-x2 +
+											y2)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u1*u2*(-2*x0 +
+													2*y0)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u0*u1*(-2*x1 +
+															2*y1)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*pow(u1,3)*(-x2 +
+																	y2)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u1*u1*u2*(-2*x1 +
+																			2*y1)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u1*u1*(2*x0 -
+																					2*y0)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u1*u2*u2*(-x2 +
+																							y2)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u1*(-x2 + y2)/vi_mag +
+																							2*cos_alpha_i*sin_alpha_i*(2*x0 - 2*y0)/vi_mag +
+																							4*sin_alpha_i_2*u0*u0*u1*(-x2 + y2)/(pow(vi_mag,4)) -
+																							4*sin_alpha_i_2*u0*u1*u2*(-2*x0 + 2*y0)/(pow(vi_mag,4)) -
+																							sin_alpha_i_2*u0*u1*(-2*x1 + 2*y1)/vi_mag_sqr +
+																							4*sin_alpha_i_2*pow(u1,3)*(-x2 + y2)/(pow(vi_mag,4)) -
+																							4*sin_alpha_i_2*u1*u1*u2*(-2*x1 + 2*y1)/(pow(vi_mag,4)) -
+																							sin_alpha_i_2*u1*u1*(2*x0 - 2*y0)/vi_mag_sqr -
+																							4*sin_alpha_i_2*u1*u2*u2*(-x2 + y2)/(pow(vi_mag,4)) -
+																							4*sin_alpha_i_2*u1*(-x2 + y2)/vi_mag_sqr + 2*sin_alpha_i_2*u2*(-
+																									2*x1 + 2*y1)/vi_mag_sqr)/(2*b*b) + (-(cos_alpha_i_2*(-x0 + y0) +
+																											cos_alpha_i*sin_alpha_i*u1*(-2*x2 + 2*y2)/vi_mag -
+																											cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
+																											sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																													2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
+																															2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
+																															sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr)*(cos_alpha_i_2*u1*u1*(-
+																																	2*x2 + 2*y2)/vi_mag_sqr - cos_alpha_i_2*u1*u2*(-2*x1 +
+																																			2*y1)/vi_mag_sqr + 2*cos_alpha_i*sin_alpha_i*u0*u0*u1*(-x0 +
+																																					y0)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u1*u1*(-2*x1 +
+																																							2*y1)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u1*u2*(-2*x2 +
+																																									2*y2)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*pow(u1,3)*(-x0 +
+																																											y0)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u1*u1*(-2*x2 +
+																																													2*y2)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u1*u2*u2*(-x0 +
+																																															y0)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u1*u2*(-2*x1 +
+																																																	2*y1)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u1*(-x0 + y0)/vi_mag +
+																																																	2*cos_alpha_i*sin_alpha_i*(-2*x2 + 2*y2)/vi_mag -
+																																																	4*sin_alpha_i_2*u0*u0*u1*(-x0 + y0)/(pow(vi_mag,4)) -
+																																																	4*sin_alpha_i_2*u0*u1*u1*(-2*x1 + 2*y1)/(pow(vi_mag,4)) -
+																																																	4*sin_alpha_i_2*u0*u1*u2*(-2*x2 + 2*y2)/(pow(vi_mag,4)) +
+																																																	2*sin_alpha_i_2*u0*(-2*x1 + 2*y1)/vi_mag_sqr +
+																																																	4*sin_alpha_i_2*pow(u1,3)*(-x0 + y0)/(pow(vi_mag,4)) - sin_alpha_i_2*u1*u1*(-
+																																																			2*x2 + 2*y2)/vi_mag_sqr + 4*sin_alpha_i_2*u1*u2*u2*(-x0 +
+																																																					y0)/(pow(vi_mag,4)) + sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr -
+																																																					4*sin_alpha_i_2*u1*(-x0 + y0)/vi_mag_sqr) - (cos_alpha_i_2*(-x1 +
+																																																							y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
+																																																							cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
+																																																							sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																																									2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
+																																																									sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+																																																									sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr)*(-cos_alpha_i_2*u0*u1*(-
+																																																											2*x2 + 2*y2)/vi_mag_sqr + cos_alpha_i_2*u1*u2*(-2*x0 +
+																																																													2*y0)/vi_mag_sqr - 2*cos_alpha_i*sin_alpha_i*u0*u0*u1*(-x1 +
+																																																															y1)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u1*u1*(-2*x0 +
+																																																																	2*y0)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u1*(-2*x2 +
+																																																																			2*y2)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*pow(u1,3)*(-x1 +
+																																																																					y1)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u1*u1*u2*(-2*x2 +
+																																																																							2*y2)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u1*u2*u2*(-x1 +
+																																																																									y1)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u1*u2*(-2*x0 +
+																																																																											2*y0)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u1*(-x1 + y1)/vi_mag +
+																																																																											4*sin_alpha_i_2*u0*u0*u1*(-x1 + y1)/(pow(vi_mag,4)) -
+																																																																											4*sin_alpha_i_2*u0*u1*u1*(-2*x0 + 2*y0)/(pow(vi_mag,4)) +
+																																																																											sin_alpha_i_2*u0*u1*(-2*x2 + 2*y2)/vi_mag_sqr +
+																																																																											2*sin_alpha_i_2*u0*(-2*x0 + 2*y0)/vi_mag_sqr -
+																																																																											4*sin_alpha_i_2*pow(u1,3)*(-x1 + y1)/(pow(vi_mag,4)) -
+																																																																											4*sin_alpha_i_2*u1*u1*u2*(-2*x2 + 2*y2)/(pow(vi_mag,4)) +
+																																																																											4*sin_alpha_i_2*u1*u2*u2*(-x1 + y1)/(pow(vi_mag,4)) -
+																																																																											sin_alpha_i_2*u1*u2*(-2*x0 + 2*y0)/vi_mag_sqr +
+																																																																											4*sin_alpha_i_2*u1*(-x1 + y1)/vi_mag_sqr + 2*sin_alpha_i_2*u2*(-
+																																																																													2*x2 + 2*y2)/vi_mag_sqr))/(2*a*a))*exp(-pow(cos_alpha_i_2*(-x2 + y2) +
+																																																																															cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
+																																																																															cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
+																																																																															sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
+																																																																																	2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
+																																																																																	sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+																																																																																	sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr,2)/(2*b*b) + (-
+																																																																																			pow(cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
+																																																																																					2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
+																																																																																					sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																																																																							2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
+																																																																																									2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
+																																																																																									sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr,2) - pow(cos_alpha_i_2*(-
+																																																																																											x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
+																																																																																											cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
+																																																																																											sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																																																																													2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
+																																																																																													sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+																																																																																													sin_alpha_i_2*u2*u2*(-x1 +
+																																																																																															y1)/vi_mag_sqr,2))/(2*a*a));
+
+	DpsiDu2 = K*(-(cos_alpha_i_2*(-
+			x2 + y2) + cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
+			cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
+			sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
+					2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
+					sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+					sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr)*(cos_alpha_i_2*u0*u2*(-
+							2*x1 + 2*y1)/vi_mag_sqr + cos_alpha_i_2*u1*u2*(2*x0 -
+									2*y0)/vi_mag_sqr - 2*cos_alpha_i*sin_alpha_i*u0*u0*u2*(-x2 +
+											y2)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u2*u2*(-2*x0 +
+													2*y0)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u0*u2*(-2*x1 +
+															2*y1)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u1*u1*u2*(-x2 +
+																	y2)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u1*u2*u2*(-2*x1 +
+																			2*y1)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u1*u2*(2*x0 -
+																					2*y0)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*pow(u2,3)*(-x2 +
+																							y2)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u2*(-x2 + y2)/vi_mag +
+																							4*sin_alpha_i_2*u0*u0*u2*(-x2 + y2)/(pow(vi_mag,4)) -
+																							4*sin_alpha_i_2*u0*u2*u2*(-2*x0 + 2*y0)/(pow(vi_mag,4)) -
+																							sin_alpha_i_2*u0*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+																							2*sin_alpha_i_2*u0*(-2*x0 + 2*y0)/vi_mag_sqr +
+																							4*sin_alpha_i_2*u1*u1*u2*(-x2 + y2)/(pow(vi_mag,4)) -
+																							4*sin_alpha_i_2*u1*u2*u2*(-2*x1 + 2*y1)/(pow(vi_mag,4)) -
+																							sin_alpha_i_2*u1*u2*(2*x0 - 2*y0)/vi_mag_sqr + 2*sin_alpha_i_2*u1*(-
+																									2*x1 + 2*y1)/vi_mag_sqr - 4*sin_alpha_i_2*pow(u2,3)*(-x2 + y2)/(pow(vi_mag,4)) +
+																									4*sin_alpha_i_2*u2*(-x2 + y2)/vi_mag_sqr)/(2*b*b) + (-
+																											(cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
+																													2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
+																													sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																															2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
+																																	2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
+																																	sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr)*(cos_alpha_i_2*u1*u2*(-
+																																			2*x2 + 2*y2)/vi_mag_sqr - cos_alpha_i_2*u2*u2*(-2*x1 +
+																																					2*y1)/vi_mag_sqr + 2*cos_alpha_i*sin_alpha_i*u0*u0*u2*(-x0 +
+																																							y0)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u1*u2*(-2*x1 +
+																																									2*y1)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u2*u2*(-2*x2 +
+																																											2*y2)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u1*u1*u2*(-x0 +
+																																													y0)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u1*u2*(-2*x2 +
+																																															2*y2)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*pow(u2,3)*(-x0 +
+																																																	y0)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u2*u2*(-2*x1 +
+																																																			2*y1)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u2*(-x0 + y0)/vi_mag -
+																																																			2*cos_alpha_i*sin_alpha_i*(-2*x1 + 2*y1)/vi_mag -
+																																																			4*sin_alpha_i_2*u0*u0*u2*(-x0 + y0)/(pow(vi_mag,4)) -
+																																																			4*sin_alpha_i_2*u0*u1*u2*(-2*x1 + 2*y1)/(pow(vi_mag,4)) -
+																																																			4*sin_alpha_i_2*u0*u2*u2*(-2*x2 + 2*y2)/(pow(vi_mag,4)) +
+																																																			2*sin_alpha_i_2*u0*(-2*x2 + 2*y2)/vi_mag_sqr +
+																																																			4*sin_alpha_i_2*u1*u1*u2*(-x0 + y0)/(pow(vi_mag,4)) -
+																																																			sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr +
+																																																			4*sin_alpha_i_2*pow(u2,3)*(-x0 + y0)/(pow(vi_mag,4)) + sin_alpha_i_2*u2*u2*(-
+																																																					2*x1 + 2*y1)/vi_mag_sqr - 4*sin_alpha_i_2*u2*(-x0 + y0)/vi_mag_sqr) -
+																																																					(cos_alpha_i_2*(-x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 +
+																																																							2*y2)/vi_mag + cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
+																																																							sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																																									2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
+																																																									sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+																																																									sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr)*(-cos_alpha_i_2*u0*u2*(-
+																																																											2*x2 + 2*y2)/vi_mag_sqr + cos_alpha_i_2*u2*u2*(-2*x0 +
+																																																													2*y0)/vi_mag_sqr - 2*cos_alpha_i*sin_alpha_i*u0*u0*u2*(-x1 +
+																																																															y1)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u1*u2*(-2*x0 +
+																																																																	2*y0)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u0*u2*(-2*x2 +
+																																																																			2*y2)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u1*u1*u2*(-x1 +
+																																																																					y1)/(pow(vi_mag,3)) + 2*cos_alpha_i*sin_alpha_i*u1*u2*u2*(-2*x2 +
+																																																																							2*y2)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*pow(u2,3)*(-x1 +
+																																																																									y1)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u2*u2*(-2*x0 +
+																																																																											2*y0)/(pow(vi_mag,3)) - 2*cos_alpha_i*sin_alpha_i*u2*(-x1 + y1)/vi_mag +
+																																																																											2*cos_alpha_i*sin_alpha_i*(-2*x0 + 2*y0)/vi_mag +
+																																																																											4*sin_alpha_i_2*u0*u0*u2*(-x1 + y1)/(pow(vi_mag,4)) -
+																																																																											4*sin_alpha_i_2*u0*u1*u2*(-2*x0 + 2*y0)/(pow(vi_mag,4)) +
+																																																																											sin_alpha_i_2*u0*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+																																																																											4*sin_alpha_i_2*u1*u1*u2*(-x1 + y1)/(pow(vi_mag,4)) -
+																																																																											4*sin_alpha_i_2*u1*u2*u2*(-2*x2 + 2*y2)/(pow(vi_mag,4)) +
+																																																																											2*sin_alpha_i_2*u1*(-2*x2 + 2*y2)/vi_mag_sqr +
+																																																																											4*sin_alpha_i_2*pow(u2,3)*(-x1 + y1)/(pow(vi_mag,4)) - sin_alpha_i_2*u2*u2*(-
+																																																																													2*x0 + 2*y0)/vi_mag_sqr - 4*sin_alpha_i_2*u2*(-x1 +
+																																																																															y1)/vi_mag_sqr))/(2*a*a))*exp(-pow(cos_alpha_i_2*(-x2 + y2) +
+																																																																																	cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
+																																																																																	cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
+																																																																																	sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
+																																																																																			2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
+																																																																																			sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+																																																																																			sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr,2)/(2*b*b) + (-
+																																																																																					pow(cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
+																																																																																							2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
+																																																																																							sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																																																																									2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
+																																																																																											2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
+																																																																																											sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr,2) - pow(cos_alpha_i_2*(-
+																																																																																													x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
+																																																																																													cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
+																																																																																													sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																																																																															2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
+																																																																																															sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+																																																																																															sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr,2))/(2*a*a));
+
+	Vector3D DpsiDvi( DpsiDu0, DpsiDu1, DpsiDu2 );
+	return DpsiDvi;
+}
+
+/*
+*Derivative psi xi
+ */
+Vector3D OPSBody::DpsiDxi(Vector3D vi, Vector3D xi, Vector3D xj){
+	double K, a, b, psi0;
+	double u0, u1, u2, x0, x1, x2, y0, y1, y2;
+	double vi_mag_sqr, vi_mag, sin_alpha_i, cos_alpha_i;
+	double sin_alpha_i_2, cos_alpha_i_2;
+	double DpsiDx0, DpsiDx1, DpsiDx2;
+
+	K = _prop.K; a = _prop.a; b = _prop.b;
+	u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
+	x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
+	y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+
+	vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
+	vi_mag = sqrt(vi_mag_sqr);
+	sin_alpha_i = sin( 0.5*vi_mag );
+	cos_alpha_i = cos( 0.5*vi_mag );
+	sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
+	cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
+
+	DpsiDx0 = K*(-
+			(4*cos_alpha_i*sin_alpha_i*u1/vi_mag -
+					4*sin_alpha_i_2*u0*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x2 + y2) +
+							cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
+							cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
+							sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
+									2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
+									sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+									sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr)/(2*b*b) + (-(-
+											4*cos_alpha_i*sin_alpha_i*u2/vi_mag -
+											4*sin_alpha_i_2*u0*u1/vi_mag_sqr)*(cos_alpha_i_2*(-x1 + y1) -
+													cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
+													cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
+													sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+															2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
+															sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+															sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr) - (-2*cos_alpha_i_2 -
+																	2*sin_alpha_i_2*u0*u0/vi_mag_sqr + 2*sin_alpha_i_2*u1*u1/vi_mag_sqr +
+																	2*sin_alpha_i_2*u2*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x0 + y0) +
+																			cos_alpha_i*sin_alpha_i*u1*(-2*x2 + 2*y2)/vi_mag -
+																			cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
+																			sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																					2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
+																							2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
+																							sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr))/(2*a*a))*exp(-
+																									pow(cos_alpha_i_2*(-x2 + y2) + cos_alpha_i*sin_alpha_i*u0*(-2*x1 +
+																											2*y1)/vi_mag + cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
+																											sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
+																													2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
+																													sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+																													sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr,2)/(2*b*b) + (-
+																															pow(cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
+																																	2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
+																																	sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																			2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
+																																					2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
+																																					sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr,2) - pow(cos_alpha_i_2*(-
+																																							x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
+																																							cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
+																																							sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																									2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
+																																									sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+																																									sin_alpha_i_2*u2*u2*(-x1 +
+																																											y1)/vi_mag_sqr,2))/(2*a*a));
+
+	DpsiDx1 = K*(-(-
+			4*cos_alpha_i*sin_alpha_i*u0/vi_mag -
+			4*sin_alpha_i_2*u1*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x2 + y2) +
+					cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
+					cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
+					sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
+							2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
+							sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+							sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr)/(2*b*b) + (-
+									(4*cos_alpha_i*sin_alpha_i*u2/vi_mag -
+											4*sin_alpha_i_2*u0*u1/vi_mag_sqr)*(cos_alpha_i_2*(-x0 + y0) +
+													cos_alpha_i*sin_alpha_i*u1*(-2*x2 + 2*y2)/vi_mag -
+													cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
+													sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+															2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
+																	2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
+																	sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr) - (-2*cos_alpha_i_2 +
+																			2*sin_alpha_i_2*u0*u0/vi_mag_sqr - 2*sin_alpha_i_2*u1*u1/vi_mag_sqr +
+																			2*sin_alpha_i_2*u2*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x1 + y1) -
+																					cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
+																					cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
+																					sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																							2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
+																							sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+																							sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr))/(2*a*a))*exp(-
+																									pow(cos_alpha_i_2*(-x2 + y2) + cos_alpha_i*sin_alpha_i*u0*(-2*x1 +
+																											2*y1)/vi_mag + cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
+																											sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
+																													2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
+																													sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+																													sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr,2)/(2*b*b) + (-
+																															pow(cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
+																																	2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
+																																	sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																			2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
+																																					2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
+																																					sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr,2) - pow(cos_alpha_i_2*(-
+																																							x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
+																																							cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
+																																							sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																									2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
+																																									sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+																																									sin_alpha_i_2*u2*u2*(-x1 +
+																																											y1)/vi_mag_sqr,2))/(2*a*a));
+
+	DpsiDx2 = K*(-(-2*cos_alpha_i_2 +
+			2*sin_alpha_i_2*u0*u0/vi_mag_sqr + 2*sin_alpha_i_2*u1*u1/vi_mag_sqr -
+			2*sin_alpha_i_2*u2*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x2 + y2) +
+					cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
+					cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
+					sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
+							2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
+							sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+							sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr)/(2*b*b) + (-
+									(4*cos_alpha_i*sin_alpha_i*u0/vi_mag -
+											4*sin_alpha_i_2*u1*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x1 + y1) -
+													cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
+													cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
+													sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+															2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
+															sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+															sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr) - (-
+																	4*cos_alpha_i*sin_alpha_i*u1/vi_mag -
+																	4*sin_alpha_i_2*u0*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x0 + y0) +
+																			cos_alpha_i*sin_alpha_i*u1*(-2*x2 + 2*y2)/vi_mag -
+																			cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
+																			sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																					2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
+																							2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
+																							sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr))/(2*a*a))*exp(-
+																									pow(cos_alpha_i_2*(-x2 + y2) + cos_alpha_i*sin_alpha_i*u0*(-2*x1 +
+																											2*y1)/vi_mag + cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
+																											sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
+																													2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
+																													sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+																													sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr,2)/(2*b*b) + (-
+																															pow(cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
+																																	2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
+																																	sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																			2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
+																																					2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
+																																					sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr,2) - pow(cos_alpha_i_2*(-
+																																							x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
+																																							cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
+																																							sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																									2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
+																																									sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+																																									sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr,2))/(2*a*a));
+
+	Vector3D DpsiDxi( DpsiDx0, DpsiDx1, DpsiDx2 );
+	return DpsiDxi;
+}
+
+/*
+*Derivative of psi wrt xj
+ */
+Vector3D OPSBody::DpsiDxj(Vector3D vi, Vector3D xi, Vector3D xj){
+	double K, a, b, psi0;
+	double u0, u1, u2, x0, x1, x2, y0, y1, y2;
+	double vi_mag_sqr, vi_mag, sin_alpha_i, cos_alpha_i;
+	double sin_alpha_i_2, cos_alpha_i_2;
+	double DpsiDy0, DpsiDy1, DpsiDy2;
+
+	K = _prop.K; a = _prop.a; b = _prop.b;
+	u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
+	x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
+	y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+
+	vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
+	vi_mag = sqrt(vi_mag_sqr);
+	sin_alpha_i = sin( 0.5*vi_mag );
+	cos_alpha_i = cos( 0.5*vi_mag );
+	sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
+	cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
+
+	DpsiDy0 = K*(-(-
+			4*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+			4*sin_alpha_i_2*u0*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x2 + y2) +
+					cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
+					cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
+					sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
+							2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
+							sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+							sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr)/(2*b*b) + (-
+									(4*cos_alpha_i*sin_alpha_i*u2/vi_mag +
+											4*sin_alpha_i_2*u0*u1/vi_mag_sqr)*(cos_alpha_i_2*(-x1 + y1) -
+													cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
+													cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
+													sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+															2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
+															sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+															sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr) - (2*cos_alpha_i_2 +
+																	2*sin_alpha_i_2*u0*u0/vi_mag_sqr - 2*sin_alpha_i_2*u1*u1/vi_mag_sqr -
+																	2*sin_alpha_i_2*u2*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x0 + y0) +
+																			cos_alpha_i*sin_alpha_i*u1*(-2*x2 + 2*y2)/vi_mag -
+																			cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
+																			sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																					2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
+																							2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
+																							sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr))/(2*a*a))*exp(-
+																									pow(cos_alpha_i_2*(-x2 + y2) + cos_alpha_i*sin_alpha_i*u0*(-2*x1 +
+																											2*y1)/vi_mag + cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
+																											sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
+																													2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
+																													sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+																													sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr,2)/(2*b*b) + (-
+																															pow(cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
+																																	2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
+																																	sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																			2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
+																																					2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
+																																					sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr,2) - pow(cos_alpha_i_2*(-
+																																							x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
+																																							cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
+																																							sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																									2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
+																																									sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+																																									sin_alpha_i_2*u2*u2*(-x1 +
+																																											y1)/vi_mag_sqr,2))/(2*a*a));
+
+	DpsiDy1 = K*(-
+			(4*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+					4*sin_alpha_i_2*u1*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x2 + y2) +
+							cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
+							cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
+							sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
+									2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
+									sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+									sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr)/(2*b*b) + (-(-
+											4*cos_alpha_i*sin_alpha_i*u2/vi_mag +
+											4*sin_alpha_i_2*u0*u1/vi_mag_sqr)*(cos_alpha_i_2*(-x0 + y0) +
+													cos_alpha_i*sin_alpha_i*u1*(-2*x2 + 2*y2)/vi_mag -
+													cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
+													sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+															2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
+																	2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
+																	sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr) - (2*cos_alpha_i_2 -
+																			2*sin_alpha_i_2*u0*u0/vi_mag_sqr + 2*sin_alpha_i_2*u1*u1/vi_mag_sqr -
+																			2*sin_alpha_i_2*u2*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x1 + y1) -
+																					cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
+																					cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
+																					sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																							2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
+																							sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+																							sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr))/(2*a*a))*exp(-
+																									pow(cos_alpha_i_2*(-x2 + y2) + cos_alpha_i*sin_alpha_i*u0*(-2*x1 +
+																											2*y1)/vi_mag + cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
+																											sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
+																													2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
+																													sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+																													sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr,2)/(2*b*b) + (-
+																															pow(cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
+																																	2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
+																																	sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																			2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
+																																					2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
+																																					sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr,2) - pow(cos_alpha_i_2*(-
+																																							x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
+																																							cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
+																																							sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																									2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
+																																									sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+																																									sin_alpha_i_2*u2*u2*(-x1 +
+																																											y1)/vi_mag_sqr,2))/(2*a*a));
+
+	DpsiDy2 = K*(-(2*cos_alpha_i_2 -
+			2*sin_alpha_i_2*u0*u0/vi_mag_sqr - 2*sin_alpha_i_2*u1*u1/vi_mag_sqr +
+			2*sin_alpha_i_2*u2*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x2 + y2) +
+					cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
+					cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
+					sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
+							2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
+							sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+							sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr)/(2*b*b) + (-(-
+									4*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+									4*sin_alpha_i_2*u1*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x1 + y1) -
+											cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
+											cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
+											sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+													2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
+													sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+													sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr) -
+													(4*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+															4*sin_alpha_i_2*u0*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x0 + y0) +
+																	cos_alpha_i*sin_alpha_i*u1*(-2*x2 + 2*y2)/vi_mag -
+																	cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
+																	sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																			2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
+																					2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
+																					sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr))/(2*a*a))*exp(-
+																							pow(cos_alpha_i_2*(-x2 + y2) + cos_alpha_i*sin_alpha_i*u0*(-2*x1 +
+																									2*y1)/vi_mag + cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
+																									sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
+																											2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
+																											sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
+																											sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr,2)/(2*b*b) + (-
+																													pow(cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
+																															2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
+																															sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																	2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
+																																			2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
+																																			sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr,2) - pow(cos_alpha_i_2*(-
+																																					x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
+																																					cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
+																																					sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
+																																							2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
+																																							sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
+																																							sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr,2))/(2*a*a));
+
+	Vector3D DpsiDxj( DpsiDy0, DpsiDy1, DpsiDy2 );
+	return DpsiDxj;
+}
+
+/*
+*Derivative of phi_p wrt vi
+ */
+Vector3D OPSBody::Dphi_pDvi(Vector3D vi, Vector3D xi, Vector3D xj){
+	double u0, u1, u2, x0, x1, x2, y0, y1, y2;
+	double vi_mag_sqr, vi_mag, sin_alpha_i, cos_alpha_i;
+	double sin_alpha_i_2, cos_alpha_i_2, phi_p0;
+	double Dphi_pDu0, Dphi_pDu1, Dphi_pDu2;
+
+	u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
+	x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
+	y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+
+	vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
+	vi_mag = sqrt(vi_mag_sqr);
+	sin_alpha_i = sin( 0.5*vi_mag );
+	cos_alpha_i = cos( 0.5*vi_mag );
+	sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
+	cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
+
+	Dphi_pDu0 = ((-x0 +
+			y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+					2*sin_alpha_i_2*u0*u2/vi_mag_sqr) + (-x1 + y1)*(-
+							2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+							2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 -
+									sin_alpha_i_2*u0*u0/vi_mag_sqr - sin_alpha_i_2*u1*u1/vi_mag_sqr +
+									sin_alpha_i_2*u2*u2/vi_mag_sqr))*(2*(-x0 +
+											y0)*(cos_alpha_i_2*u0*u1/vi_mag_sqr +
+													2*cos_alpha_i*sin_alpha_i*u0*u0*u2/pow(vi_mag,3) -
+													2*cos_alpha_i*sin_alpha_i*u0*u1/pow(vi_mag,3) -
+													4*sin_alpha_i_2*u0*u0*u2/pow(vi_mag,4) -
+													sin_alpha_i_2*u0*u1/vi_mag_sqr + 2*sin_alpha_i_2*u2/vi_mag_sqr) +
+													2*(-x1 + y1)*(-cos_alpha_i_2*u0*u0/vi_mag_sqr +
+															2*cos_alpha_i*sin_alpha_i*u0*u0/pow(vi_mag,3) +
+															2*cos_alpha_i*sin_alpha_i*u0*u1*u2/pow(vi_mag,3) -
+															2*cos_alpha_i*sin_alpha_i/vi_mag + sin_alpha_i_2*u0*u0/vi_mag_sqr -
+															4*sin_alpha_i_2*u0*u1*u2/pow(vi_mag,4)) + 2*(-x2 + y2)*(-
+																	cos_alpha_i*sin_alpha_i*pow(u0,3)/pow(vi_mag,3) -
+																	cos_alpha_i*sin_alpha_i*u0*u1*u1/pow(vi_mag,3) +
+																	cos_alpha_i*sin_alpha_i*u0*u2*u2/pow(vi_mag,3) -
+																	cos_alpha_i*sin_alpha_i*u0/vi_mag +
+																	2*sin_alpha_i_2*pow(u0,3)/pow(vi_mag,4) +
+																	2*sin_alpha_i_2*u0*u1*u1/pow(vi_mag,4) -
+																	2*sin_alpha_i_2*u0*u2*u2/pow(vi_mag,4) -
+																	2*sin_alpha_i_2*u0/vi_mag_sqr));
+
+	Dphi_pDu1 = ((-x0 +
+			y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+					2*sin_alpha_i_2*u0*u2/vi_mag_sqr) + (-x1 + y1)*(-
+							2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+							2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 -
+									sin_alpha_i_2*u0*u0/vi_mag_sqr - sin_alpha_i_2*u1*u1/vi_mag_sqr +
+									sin_alpha_i_2*u2*u2/vi_mag_sqr))*(2*(-x0 +
+											y0)*(cos_alpha_i_2*u1*u1/vi_mag_sqr +
+													2*cos_alpha_i*sin_alpha_i*u0*u1*u2/pow(vi_mag,3) -
+													2*cos_alpha_i*sin_alpha_i*u1*u1/pow(vi_mag,3) +
+													2*cos_alpha_i*sin_alpha_i/vi_mag -
+													4*sin_alpha_i_2*u0*u1*u2/pow(vi_mag,4) -
+													sin_alpha_i_2*u1*u1/vi_mag_sqr) + 2*(-x1 + y1)*(-
+															cos_alpha_i_2*u0*u1/vi_mag_sqr +
+															2*cos_alpha_i*sin_alpha_i*u0*u1/pow(vi_mag,3) +
+															2*cos_alpha_i*sin_alpha_i*u1*u1*u2/pow(vi_mag,3) +
+															sin_alpha_i_2*u0*u1/vi_mag_sqr -
+															4*sin_alpha_i_2*u1*u1*u2/pow(vi_mag,4) + 2*sin_alpha_i_2*u2/vi_mag_sqr) + 2*(-x2 + y2)*(-
+																	cos_alpha_i*sin_alpha_i*u0*u0*u1/pow(vi_mag,3) -
+																	cos_alpha_i*sin_alpha_i*pow(u1,3)/pow(vi_mag,3) +
+																	cos_alpha_i*sin_alpha_i*u1*u2*u2/pow(vi_mag,3) -
+																	cos_alpha_i*sin_alpha_i*u1/vi_mag +
+																	2*sin_alpha_i_2*u0*u0*u1/pow(vi_mag,4) +
+																	2*sin_alpha_i_2*pow(u1,3)/pow(vi_mag,4) -
+																	2*sin_alpha_i_2*u1*u2*u2/pow(vi_mag,4) -
+																	2*sin_alpha_i_2*u1/vi_mag_sqr));
+
+	Dphi_pDu2 = ((-x0 +
+			y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+					2*sin_alpha_i_2*u0*u2/vi_mag_sqr) + (-x1 + y1)*(-
+							2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+							2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 -
+									sin_alpha_i_2*u0*u0/vi_mag_sqr - sin_alpha_i_2*u1*u1/vi_mag_sqr +
+									sin_alpha_i_2*u2*u2/vi_mag_sqr))*(2*(-x0 +
+											y0)*(cos_alpha_i_2*u1*u2/vi_mag_sqr +
+													2*cos_alpha_i*sin_alpha_i*u0*u2*u2/pow(vi_mag,3) -
+													2*cos_alpha_i*sin_alpha_i*u1*u2/pow(vi_mag,3) -
+													4*sin_alpha_i_2*u0*u2*u2/pow(vi_mag,4) + 2*sin_alpha_i_2*u0/vi_mag_sqr -
+													sin_alpha_i_2*u1*u2/vi_mag_sqr) + 2*(-x1 + y1)*(-
+															cos_alpha_i_2*u0*u2/vi_mag_sqr +
+															2*cos_alpha_i*sin_alpha_i*u0*u2/pow(vi_mag,3) +
+															2*cos_alpha_i*sin_alpha_i*u1*u2*u2/pow(vi_mag,3) +
+															sin_alpha_i_2*u0*u2/vi_mag_sqr -
+															4*sin_alpha_i_2*u1*u2*u2/pow(vi_mag,4) + 2*sin_alpha_i_2*u1/vi_mag_sqr) + 2*(-x2 + y2)*(-
+																	cos_alpha_i*sin_alpha_i*u0*u0*u2/pow(vi_mag,3) -
+																	cos_alpha_i*sin_alpha_i*u1*u1*u2/pow(vi_mag,3) +
+																	cos_alpha_i*sin_alpha_i*pow(u2,3)/pow(vi_mag,3) -
+																	cos_alpha_i*sin_alpha_i*u2/vi_mag +
+																	2*sin_alpha_i_2*u0*u0*u2/pow(vi_mag,4) +
+																	2*sin_alpha_i_2*u1*u1*u2/pow(vi_mag,4) -
+																	2*sin_alpha_i_2*pow(u2,3)/pow(vi_mag,4) + 2*sin_alpha_i_2*u2/vi_mag_sqr));
+
+	Vector3D Dphi_pDvi(Dphi_pDu0, Dphi_pDu1, Dphi_pDu2);
+	return Dphi_pDvi;
+}
+
+/*
+*Derivative of phi_p wrt xi
+ */
+Vector3D OPSBody::Dphi_pDxi(Vector3D vi, Vector3D xi, Vector3D xj){
+	double u0, u1, u2, x0, x1, x2, y0, y1, y2;
+	double vi_mag_sqr, vi_mag, sin_alpha_i, cos_alpha_i;
+	double sin_alpha_i_2, cos_alpha_i_2, phi_p0;
+	double Dphi_pDx0, Dphi_pDx1, Dphi_pDx2;
+
+	u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
+	x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
+	y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+
+	vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
+	vi_mag = sqrt(vi_mag_sqr);
+	sin_alpha_i = sin( 0.5*vi_mag );
+	cos_alpha_i = cos( 0.5*vi_mag );
+	sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
+	cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
+
+	Dphi_pDx0 = (-
+			4*cos_alpha_i*sin_alpha_i*u1/vi_mag -
+			4*sin_alpha_i_2*u0*u2/vi_mag_sqr)*((-x0 +
+					y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+							2*sin_alpha_i_2*u0*u2/vi_mag_sqr) + (-x1 + y1)*(-
+									2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+									2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 -
+											sin_alpha_i_2*u0*u0/vi_mag_sqr - sin_alpha_i_2*u1*u1/vi_mag_sqr +
+											sin_alpha_i_2*u2*u2/vi_mag_sqr));
+
+	Dphi_pDx1 = (4*cos_alpha_i
+			*sin_alpha_i*u0/vi_mag - 4*sin_alpha_i_2*u1*u2/vi_mag_sqr)*((-x0 +
+					y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+							2*sin_alpha_i_2*u0*u2/vi_mag_sqr) + (-x1 + y1)*(-
+									2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+									2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 -
+											sin_alpha_i_2*u0*u0/vi_mag_sqr - sin_alpha_i_2*u1*u1/vi_mag_sqr +
+											sin_alpha_i_2*u2*u2/vi_mag_sqr));
+
+	Dphi_pDx2 = ((-x0 +
+			y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+					2*sin_alpha_i_2*u0*u2/vi_mag_sqr) + (-x1 + y1)*(-
+							2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+							2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 -
+									sin_alpha_i_2*u0*u0/vi_mag_sqr - sin_alpha_i_2*u1*u1/vi_mag_sqr +
+									sin_alpha_i_2*u2*u2/vi_mag_sqr))*(-2*cos_alpha_i_2 +
+											2*sin_alpha_i_2*u0*u0/vi_mag_sqr + 2*sin_alpha_i_2*u1*u1/vi_mag_sqr -
+											2*sin_alpha_i_2*u2*u2/vi_mag_sqr);
+
+	Vector3D Dphi_pDxi(Dphi_pDx0, Dphi_pDx1, Dphi_pDx2);
+	return Dphi_pDxi;
+}
+
+/*
+*Derivative of phi_p wrt xj
+ */
+Vector3D OPSBody::Dphi_pDxj(Vector3D vi, Vector3D xi, Vector3D xj){
+	double u0, u1, u2, x0, x1, x2, y0, y1, y2;
+	double vi_mag_sqr, vi_mag, sin_alpha_i, cos_alpha_i;
+	double sin_alpha_i_2, cos_alpha_i_2, phi_p0;
+	double Dphi_pDy0, Dphi_pDy1, Dphi_pDy2;
+
+	u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
+	x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
+	y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+
+	vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
+	vi_mag = sqrt(vi_mag_sqr);
+	sin_alpha_i = sin( 0.5*vi_mag );
+	cos_alpha_i = cos( 0.5*vi_mag );
+	sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
+	cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
+
+	Dphi_pDy0 = (4*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+			4*sin_alpha_i_2*u0*u2/vi_mag_sqr)*((-x0 +
+					y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+							2*sin_alpha_i_2*u0*u2/vi_mag_sqr) + (-x1 + y1)*(-
+									2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+									2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 -
+											sin_alpha_i_2*u0*u0/vi_mag_sqr - sin_alpha_i_2*u1*u1/vi_mag_sqr +
+											sin_alpha_i_2*u2*u2/vi_mag_sqr));
+
+	Dphi_pDy1 = (-
+			4*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+			4*sin_alpha_i_2*u1*u2/vi_mag_sqr)*((-x0 +
+					y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+							2*sin_alpha_i_2*u0*u2/vi_mag_sqr) + (-x1 + y1)*(-
+									2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+									2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 -
+											sin_alpha_i_2*u0*u0/vi_mag_sqr - sin_alpha_i_2*u1*u1/vi_mag_sqr +
+											sin_alpha_i_2*u2*u2/vi_mag_sqr));
+
+	Dphi_pDy2 = ((-x0 +
+			y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+					2*sin_alpha_i_2*u0*u2/vi_mag_sqr) + (-x1 + y1)*(-
+							2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+							2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 -
+									sin_alpha_i_2*u0*u0/vi_mag_sqr - sin_alpha_i_2*u1*u1/vi_mag_sqr +
+									sin_alpha_i_2*u2*u2/vi_mag_sqr))*(2*cos_alpha_i_2 -
+											2*sin_alpha_i_2*u0*u0/vi_mag_sqr - 2*sin_alpha_i_2*u1*u1/vi_mag_sqr +
+											2*sin_alpha_i_2*u2*u2/vi_mag_sqr);
+
+	Vector3D Dphi_pDxj(Dphi_pDy0, Dphi_pDy1, Dphi_pDy2);
+	return Dphi_pDxj;
+}
+
+/*
+*Derivative of phi_n wrt vi
+ */
+Vector3D OPSBody::Dphi_nDvi(Vector3D vi, Vector3D vj){
+	double u0, u1, u2, v0, v1, v2;
+	double vi_mag_sqr, vi_mag, vj_mag_sqr, vj_mag;
+	double sin_alpha_i, cos_alpha_i, sin_alpha_j, cos_alpha_j;
+	double sin_alpha_i_2, cos_alpha_i_2, sin_alpha_j_2, cos_alpha_j_2, phi_n0;
+	double Dphi_nDu0, Dphi_nDu1, Dphi_nDu2;
+
+	u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
+	v0 = vj[0]; v1 = vj[1]; v2 = vj[2];
+
+	vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
+	vj_mag_sqr = v0*v0 + v1*v1 + v2*v2;
+	vi_mag = sqrt(vi_mag_sqr);
+	vj_mag = sqrt(vj_mag_sqr);
+	sin_alpha_i = sin( 0.5*vi_mag );
+	cos_alpha_i = cos( 0.5*vi_mag );
+	sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
+	cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
+	sin_alpha_j = sin( 0.5*vj_mag );
+	cos_alpha_j = cos( 0.5*vj_mag );
+	sin_alpha_j_2 = sin_alpha_j*sin_alpha_j;
+	cos_alpha_j_2 = cos_alpha_j*cos_alpha_j;
+
+	Dphi_nDu0 = (-
+			2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+			2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+			2*sin_alpha_i_2*u1*u2/vi_mag_sqr -
+			2*sin_alpha_j_2*v1*v2/vj_mag_sqr)*(-
+					2*cos_alpha_i_2*u0*u0/vi_mag_sqr + 4*
+					cos_alpha_i*sin_alpha_i*u0*u0/pow(vi_mag,3) +
+					4*cos_alpha_i*sin_alpha_i*u0*u1*u2/pow(vi_mag,3) -
+					4*cos_alpha_i*sin_alpha_i/vi_mag + 2*sin_alpha_i_2*u0*u0/vi_mag_sqr -
+					8*sin_alpha_i_2*u0*u1*u2/pow(vi_mag,4)) +
+					(2*cos_alpha_i*sin_alpha_i*u1/vi_mag -
+							2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+							2*sin_alpha_i_2*u0*u2/vi_mag_sqr -
+							2*sin_alpha_j_2*v0*v2/vj_mag_sqr)*(2*cos_alpha_i_2*u0*u1/vi_mag_sqr +
+									4*cos_alpha_i*sin_alpha_i*u0*u0*u2/pow(vi_mag,3) -
+									4*cos_alpha_i*sin_alpha_i*u0*u1/pow(vi_mag,3) -
+									8*sin_alpha_i_2*u0*u0*u2/pow(vi_mag,4) -
+									2*sin_alpha_i_2*u0*u1/vi_mag_sqr + 4*sin_alpha_i_2*u2/vi_mag_sqr) +
+									(cos_alpha_i_2 - cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
+											sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr +
+											sin_alpha_j_2*v0*v0/vj_mag_sqr + sin_alpha_j_2*v1*v1/vj_mag_sqr -
+											sin_alpha_j_2*v2*v2/vj_mag_sqr)*(-
+													2*cos_alpha_i*sin_alpha_i*pow(u0,3)/pow(vi_mag,3) -
+													2*cos_alpha_i*sin_alpha_i*u0*u1*u1/pow(vi_mag,3) +
+													2*cos_alpha_i*sin_alpha_i*u0*u2*u2/pow(vi_mag,3) -
+													2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+													4*sin_alpha_i_2*pow(u0,3)/pow(vi_mag,4) +
+													4*sin_alpha_i_2*u0*u1*u1/pow(vi_mag,4) -
+													4*sin_alpha_i_2*u0*u2*u2/pow(vi_mag,4) -
+													4*sin_alpha_i_2*u0/vi_mag_sqr);
+
+	Dphi_nDu1 = (-
+			2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+			2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+			2*sin_alpha_i_2*u1*u2/vi_mag_sqr -
+			2*sin_alpha_j_2*v1*v2/vj_mag_sqr)*(-
+					2*cos_alpha_i_2*u0*u1/vi_mag_sqr + 4*
+					cos_alpha_i*sin_alpha_i*u0*u1/pow(vi_mag,3) +
+					4*cos_alpha_i*sin_alpha_i*u1*u1*u2/pow(vi_mag,3) +
+					2*sin_alpha_i_2*u0*u1/vi_mag_sqr -
+					8*sin_alpha_i_2*u1*u1*u2/pow(vi_mag,4) +
+					4*sin_alpha_i_2*u2/vi_mag_sqr) + (2*
+							cos_alpha_i*sin_alpha_i*u1/vi_mag -
+							2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+							2*sin_alpha_i_2*u0*u2/vi_mag_sqr -
+							2*sin_alpha_j_2*v0*v2/vj_mag_sqr)*(2*cos_alpha_i_2*u1*u1/vi_mag_sqr +
+									4*cos_alpha_i*sin_alpha_i*u0*u1*u2/pow(vi_mag,3) -
+									4*cos_alpha_i*sin_alpha_i*u1*u1/pow(vi_mag,3) +
+									4*cos_alpha_i*sin_alpha_i/vi_mag -
+									8*sin_alpha_i_2*u0*u1*u2/pow(vi_mag,4) -
+									2*sin_alpha_i_2*u1*u1/vi_mag_sqr) + (cos_alpha_i_2 -
+											cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
+											sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr +
+											sin_alpha_j_2*v0*v0/vj_mag_sqr + sin_alpha_j_2*v1*v1/vj_mag_sqr -
+											sin_alpha_j_2*v2*v2/vj_mag_sqr)*(-
+													2*cos_alpha_i*sin_alpha_i*u0*u0*u1/pow(vi_mag,3) -
+													2*cos_alpha_i*sin_alpha_i*pow(u1,3)/pow(vi_mag,3) +
+													2*cos_alpha_i*sin_alpha_i*u1*u2*u2/pow(vi_mag,3) -
+													2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+													4*sin_alpha_i_2*u0*u0*u1/pow(vi_mag,4) +
+													4*sin_alpha_i_2*pow(u1,3)/pow(vi_mag,4) -
+													4*sin_alpha_i_2*u1*u2*u2/pow(vi_mag,4) -
+													4*sin_alpha_i_2*u1/vi_mag_sqr);
+
+	Dphi_nDu2 = (-
+			2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+			2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+			2*sin_alpha_i_2*u1*u2/vi_mag_sqr -
+			2*sin_alpha_j_2*v1*v2/vj_mag_sqr)*(-
+					2*cos_alpha_i_2*u0*u2/vi_mag_sqr + 4*
+					cos_alpha_i*sin_alpha_i*u0*u2/pow(vi_mag,3) +
+					4*cos_alpha_i*sin_alpha_i*u1*u2*u2/pow(vi_mag,3) +
+					2*sin_alpha_i_2*u0*u2/vi_mag_sqr -
+					8*sin_alpha_i_2*u1*u2*u2/pow(vi_mag,4) +
+					4*sin_alpha_i_2*u1/vi_mag_sqr) + (2*
+							cos_alpha_i*sin_alpha_i*u1/vi_mag -
+							2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+							2*sin_alpha_i_2*u0*u2/vi_mag_sqr -
+							2*sin_alpha_j_2*v0*v2/vj_mag_sqr)*(2*cos_alpha_i_2*u1*u2/vi_mag_sqr +
+									4*cos_alpha_i*sin_alpha_i*u0*u2*u2/pow(vi_mag,3) -
+									4*cos_alpha_i*sin_alpha_i*u1*u2/pow(vi_mag,3) -
+									8*sin_alpha_i_2*u0*u2*u2/pow(vi_mag,4) + 4*sin_alpha_i_2*u0/vi_mag_sqr -
+									2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (cos_alpha_i_2 -
+											cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
+											sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr +
+											sin_alpha_j_2*v0*v0/vj_mag_sqr + sin_alpha_j_2*v1*v1/vj_mag_sqr -
+											sin_alpha_j_2*v2*v2/vj_mag_sqr)*(-
+													2*cos_alpha_i*sin_alpha_i*u0*u0*u2/pow(vi_mag,3) -
+													2*cos_alpha_i*sin_alpha_i*u1*u1*u2/pow(vi_mag,3) +
+													2*cos_alpha_i*sin_alpha_i*pow(u2,3)/pow(vi_mag,3) -
+													2*cos_alpha_i*sin_alpha_i*u2/vi_mag +
+													4*sin_alpha_i_2*u0*u0*u2/pow(vi_mag,4) +
+													4*sin_alpha_i_2*u1*u1*u2/pow(vi_mag,4) -
+													4*sin_alpha_i_2*pow(u2,3)/pow(vi_mag,4) + 4*sin_alpha_i_2*u2/vi_mag_sqr);
+
+	Vector3D Dphi_nDvi( Dphi_nDu0, Dphi_nDu1, Dphi_nDu2 );
+	return Dphi_nDvi;
+}
+
+/*
+*Derivative of phi_n wrt vj
+ */
+Vector3D OPSBody::Dphi_nDvj(Vector3D vi, Vector3D vj){
+	double u0, u1, u2, v0, v1, v2;
+	double vi_mag_sqr, vi_mag, vj_mag_sqr, vj_mag;
+	double sin_alpha_i, cos_alpha_i, sin_alpha_j, cos_alpha_j;
+	double sin_alpha_i_2, cos_alpha_i_2, sin_alpha_j_2, cos_alpha_j_2, phi_n0;
+	double Dphi_nDv0, Dphi_nDv1, Dphi_nDv2;
+
+	u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
+	v0 = vj[0]; v1 = vj[1]; v2 = vj[2];
+
+	vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
+	vj_mag_sqr = v0*v0 + v1*v1 + v2*v2;
+	vi_mag = sqrt(vi_mag_sqr);
+	vj_mag = sqrt(vj_mag_sqr);
+	sin_alpha_i = sin( 0.5*vi_mag );
+	cos_alpha_i = cos( 0.5*vi_mag );
+	sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
+	cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
+	sin_alpha_j = sin( 0.5*vj_mag );
+	cos_alpha_j = cos( 0.5*vj_mag );
+	sin_alpha_j_2 = sin_alpha_j*sin_alpha_j;
+	cos_alpha_j_2 = cos_alpha_j*cos_alpha_j;
+
+	Dphi_nDv0 = (-
+			2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+			2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+			2*sin_alpha_i_2*u1*u2/vi_mag_sqr -
+			2*sin_alpha_j_2*v1*v2/vj_mag_sqr)*(2*cos_alpha_j_2*v0*v0/vj_mag_sqr -
+					4*cos_alpha_j*sin_alpha_j*v0*v0/pow(vj_mag,3) -
+					4*cos_alpha_j*sin_alpha_j*v0*v1*v2/pow(vj_mag,3) +
+					4*cos_alpha_j*sin_alpha_j/vj_mag - 2*sin_alpha_j_2*v0*v0/vj_mag_sqr +
+					8*sin_alpha_j_2*v0*v1*v2/pow(vj_mag,4)) +
+					(2*cos_alpha_i*sin_alpha_i*u1/vi_mag -
+							2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+							2*sin_alpha_i_2*u0*u2/vi_mag_sqr -
+							2*sin_alpha_j_2*v0*v2/vj_mag_sqr)*(-
+									2*cos_alpha_j_2*v0*v1/vj_mag_sqr - 4*
+									cos_alpha_j*sin_alpha_j*v0*v0*v2/pow(vj_mag,3) +
+									4*cos_alpha_j*sin_alpha_j*v0*v1/pow(vj_mag,3) +
+									8*sin_alpha_j_2*v0*v0*v2/pow(vj_mag,4) +
+									2*sin_alpha_j_2*v0*v1/vj_mag_sqr - 4*sin_alpha_j_2*v2/vj_mag_sqr) +
+									(cos_alpha_i_2 - cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
+											sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr +
+											sin_alpha_j_2*v0*v0/vj_mag_sqr + sin_alpha_j_2*v1*v1/vj_mag_sqr -
+											sin_alpha_j_2*v2*v2/vj_mag_sqr)*(2*cos_alpha_j*sin_alpha_j*pow(v0,3)/
+													pow(vj_mag,3) + 2*cos_alpha_j*sin_alpha_j*v0*v1*v1/pow(vj_mag,3) -
+													2*cos_alpha_j*sin_alpha_j*v0*v2*v2/pow(vj_mag,3) +
+													2*cos_alpha_j*sin_alpha_j*v0/vj_mag -
+													4*sin_alpha_j_2*pow(v0,3)/pow(vj_mag,4) -
+													4*sin_alpha_j_2*v0*v1*v1/pow(vj_mag,4) +
+													4*sin_alpha_j_2*v0*v2*v2/pow(vj_mag,4) +
+													4*sin_alpha_j_2*v0/vj_mag_sqr);
+
+	Dphi_nDv1 = (-
+			2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+			2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+			2*sin_alpha_i_2*u1*u2/vi_mag_sqr -
+			2*sin_alpha_j_2*v1*v2/vj_mag_sqr)*(2*cos_alpha_j_2*v0*v1/vj_mag_sqr -
+					4*cos_alpha_j*sin_alpha_j*v0*v1/pow(vj_mag,3) -
+					4*cos_alpha_j*sin_alpha_j*v1*v1*v2/pow(vj_mag,3) -
+					2*sin_alpha_j_2*v0*v1/vj_mag_sqr +
+					8*sin_alpha_j_2*v1*v1*v2/pow(vj_mag,4) -
+					4*sin_alpha_j_2*v2/vj_mag_sqr) + (2*
+							cos_alpha_i*sin_alpha_i*u1/vi_mag -
+							2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+							2*sin_alpha_i_2*u0*u2/vi_mag_sqr -
+							2*sin_alpha_j_2*v0*v2/vj_mag_sqr)*(-
+									2*cos_alpha_j_2*v1*v1/vj_mag_sqr - 4*
+									cos_alpha_j*sin_alpha_j*v0*v1*v2/pow(vj_mag,3) +
+									4*cos_alpha_j*sin_alpha_j*v1*v1/pow(vj_mag,3) -
+									4*cos_alpha_j*sin_alpha_j/vj_mag +
+									8*sin_alpha_j_2*v0*v1*v2/pow(vj_mag,4) +
+									2*sin_alpha_j_2*v1*v1/vj_mag_sqr) + (cos_alpha_i_2 -
+											cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
+											sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr +
+											sin_alpha_j_2*v0*v0/vj_mag_sqr + sin_alpha_j_2*v1*v1/vj_mag_sqr -
+											sin_alpha_j_2*v2*v2/vj_mag_sqr)*(2*cos_alpha_j*sin_alpha_j*v0*v0*
+													v1/pow(vj_mag,3) + 2*cos_alpha_j*sin_alpha_j*pow(v1,3)/pow(vj_mag,3) -
+													2*cos_alpha_j*sin_alpha_j*v1*v2*v2/pow(vj_mag,3) +
+													2*cos_alpha_j*sin_alpha_j*v1/vj_mag -
+													4*sin_alpha_j_2*v0*v0*v1/pow(vj_mag,4) -
+													4*sin_alpha_j_2*pow(v1,3)/pow(vj_mag,4) +
+													4*sin_alpha_j_2*v1*v2*v2/pow(vj_mag,4) +
+													4*sin_alpha_j_2*v1/vj_mag_sqr);
+
+	Dphi_nDv2 = (-
+			2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
+			2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+			2*sin_alpha_i_2*u1*u2/vi_mag_sqr -
+			2*sin_alpha_j_2*v1*v2/vj_mag_sqr)*(2*cos_alpha_j_2*v0*v2/vj_mag_sqr -
+					4*cos_alpha_j*sin_alpha_j*v0*v2/pow(vj_mag,3) -
+					4*cos_alpha_j*sin_alpha_j*v1*v2*v2/pow(vj_mag,3) -
+					2*sin_alpha_j_2*v0*v2/vj_mag_sqr +
+					8*sin_alpha_j_2*v1*v2*v2/pow(vj_mag,4) -
+					4*sin_alpha_j_2*v1/vj_mag_sqr) + (2*
+							cos_alpha_i*sin_alpha_i*u1/vi_mag -
+							2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+							2*sin_alpha_i_2*u0*u2/vi_mag_sqr -
+							2*sin_alpha_j_2*v0*v2/vj_mag_sqr)*(-
+									2*cos_alpha_j_2*v1*v2/vj_mag_sqr - 4*
+									cos_alpha_j*sin_alpha_j*v0*v2*v2/pow(vj_mag,3) +
+									4*cos_alpha_j*sin_alpha_j*v1*v2/pow(vj_mag,3) +
+									8*sin_alpha_j_2*v0*v2*v2/pow(vj_mag,4) - 4*sin_alpha_j_2*v0/vj_mag_sqr +
+									2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (cos_alpha_i_2 -
+											cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
+											sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr +
+											sin_alpha_j_2*v0*v0/vj_mag_sqr + sin_alpha_j_2*v1*v1/vj_mag_sqr -
+											sin_alpha_j_2*v2*v2/vj_mag_sqr)*(2*cos_alpha_j*sin_alpha_j*v0*v0*
+													v2/pow(vj_mag,3) + 2*cos_alpha_j*sin_alpha_j*v1*v1*v2/pow(vj_mag,3) -
+													2*cos_alpha_j*sin_alpha_j*pow(v2,3)/pow(vj_mag,3) +
+													2*cos_alpha_j*sin_alpha_j*v2/vj_mag -
+													4*sin_alpha_j_2*v0*v0*v2/pow(vj_mag,4) -
+													4*sin_alpha_j_2*v1*v1*v2/pow(vj_mag,4) +
+													4*sin_alpha_j_2*pow(v2,3)/pow(vj_mag,4) - 4*sin_alpha_j_2*v2/vj_mag_sqr);
+
+	Vector3D Dphi_nDvj( Dphi_nDv0, Dphi_nDv1, Dphi_nDv2 );
+	return Dphi_nDvj;
+}
+
+/*
+*Derivative of phi_c wrt vi
+ */
+Vector3D OPSBody::Dphi_cDvi(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj){
+	double u0, u1, u2, v0, v1, v2, x0, x1, x2, y0, y1, y2;
+	double vi_mag_sqr, vi_mag, vj_mag_sqr, vj_mag;
+	double sin_alpha_i, cos_alpha_i, sin_alpha_j, cos_alpha_j;
+	double sin_alpha_i_2, cos_alpha_i_2, sin_alpha_j_2, cos_alpha_j_2, phi_c0;
+	double Dphi_cDu0, Dphi_cDu1, Dphi_cDu2;
+
+	u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
+	v0 = vj[0]; v1 = vj[1]; v2 = vj[2];
+	x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
+	y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+
+	vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
+	vj_mag_sqr = v0*v0 + v1*v1 + v2*v2;
+	vi_mag = sqrt(vi_mag_sqr);
+	vj_mag = sqrt(vj_mag_sqr);
+	sin_alpha_i = sin( 0.5*vi_mag );
+	cos_alpha_i = cos( 0.5*vi_mag );
+	sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
+	cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
+	sin_alpha_j = sin( 0.5*vj_mag );
+	cos_alpha_j = cos( 0.5*vj_mag );
+	sin_alpha_j_2 = sin_alpha_j*sin_alpha_j;
+	cos_alpha_j_2 = cos_alpha_j*cos_alpha_j;
+
+	Dphi_cDu0 = ((-x0 +
+			y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+					2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+					2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
+					2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
+							2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
+							2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+							2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
+							2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
+									cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
+									sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
+									sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
+									sin_alpha_j_2*v2*v2/vj_mag_sqr))*(2*(-x0 +
+											y0)*(cos_alpha_i_2*u0*u1/vi_mag_sqr +
+													2*cos_alpha_i*sin_alpha_i*u0*u0*u2/pow(vi_mag,3) -
+													2*cos_alpha_i*sin_alpha_i*u0*u1/pow(vi_mag,3) -
+													4*sin_alpha_i_2*u0*u0*u2/pow(vi_mag,4) -
+													sin_alpha_i_2*u0*u1/vi_mag_sqr + 2*sin_alpha_i_2*u2/vi_mag_sqr) +
+													2*(-x1 + y1)*(-cos_alpha_i_2*u0*u0/vi_mag_sqr +
+															2*cos_alpha_i*sin_alpha_i*u0*u0/pow(vi_mag,3) +
+															2*cos_alpha_i*sin_alpha_i*u0*u1*u2/pow(vi_mag,3) -
+															2*cos_alpha_i*sin_alpha_i/vi_mag + sin_alpha_i_2*u0*u0/vi_mag_sqr -
+															4*sin_alpha_i_2*u0*u1*u2/pow(vi_mag,4)) + 2*(-x2 + y2)*(-
+																	cos_alpha_i*sin_alpha_i*pow(u0,3)/pow(vi_mag,3) -
+																	cos_alpha_i*sin_alpha_i*u0*u1*u1/pow(vi_mag,3) +
+																	cos_alpha_i*sin_alpha_i*u0*u2*u2/pow(vi_mag,3) -
+																	cos_alpha_i*sin_alpha_i*u0/vi_mag +
+																	2*sin_alpha_i_2*pow(u0,3)/pow(vi_mag,4) +
+																	2*sin_alpha_i_2*u0*u1*u1/pow(vi_mag,4) -
+																	2*sin_alpha_i_2*u0*u2*u2/pow(vi_mag,4) -
+																	2*sin_alpha_i_2*u0/vi_mag_sqr));
+
+	Dphi_cDu1 = ((-x0 +
+			y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+					2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+					2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
+					2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
+							2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
+							2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+							2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
+							2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
+									cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
+									sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
+									sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
+									sin_alpha_j_2*v2*v2/vj_mag_sqr))*(2*(-x0 +
+											y0)*(cos_alpha_i_2*u1*u1/vi_mag_sqr +
+													2*cos_alpha_i*sin_alpha_i*u0*u1*u2/pow(vi_mag,3) -
+													2*cos_alpha_i*sin_alpha_i*u1*u1/pow(vi_mag,3) +
+													2*cos_alpha_i*sin_alpha_i/vi_mag -
+													4*sin_alpha_i_2*u0*u1*u2/pow(vi_mag,4) -
+													sin_alpha_i_2*u1*u1/vi_mag_sqr) + 2*(-x1 + y1)*(-
+															cos_alpha_i_2*u0*u1/vi_mag_sqr +
+															2*cos_alpha_i*sin_alpha_i*u0*u1/pow(vi_mag,3) +
+															2*cos_alpha_i*sin_alpha_i*u1*u1*u2/pow(vi_mag,3) +
+															sin_alpha_i_2*u0*u1/vi_mag_sqr -
+															4*sin_alpha_i_2*u1*u1*u2/pow(vi_mag,4) + 2*sin_alpha_i_2*u2/vi_mag_sqr) + 2*(-x2 + y2)*(-
+																	cos_alpha_i*sin_alpha_i*u0*u0*u1/pow(vi_mag,3) -
+																	cos_alpha_i*sin_alpha_i*pow(u1,3)/pow(vi_mag,3) +
+																	cos_alpha_i*sin_alpha_i*u1*u2*u2/pow(vi_mag,3) -
+																	cos_alpha_i*sin_alpha_i*u1/vi_mag +
+																	2*sin_alpha_i_2*u0*u0*u1/pow(vi_mag,4) +
+																	2*sin_alpha_i_2*pow(u1,3)/pow(vi_mag,4) -
+																	2*sin_alpha_i_2*u1*u2*u2/pow(vi_mag,4) -
+																	2*sin_alpha_i_2*u1/vi_mag_sqr));
+
+	Dphi_cDu2 = ((-x0 +
+			y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+					2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+					2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
+					2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
+							2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
+							2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+							2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
+							2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
+									cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
+									sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
+									sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
+									sin_alpha_j_2*v2*v2/vj_mag_sqr))*(2*(-x0 +
+											y0)*(cos_alpha_i_2*u1*u2/vi_mag_sqr +
+													2*cos_alpha_i*sin_alpha_i*u0*u2*u2/pow(vi_mag,3) -
+													2*cos_alpha_i*sin_alpha_i*u1*u2/pow(vi_mag,3) -
+													4*sin_alpha_i_2*u0*u2*u2/pow(vi_mag,4) + 2*sin_alpha_i_2*u0/vi_mag_sqr -
+													sin_alpha_i_2*u1*u2/vi_mag_sqr) + 2*(-x1 + y1)*(-
+															cos_alpha_i_2*u0*u2/vi_mag_sqr +
+															2*cos_alpha_i*sin_alpha_i*u0*u2/pow(vi_mag,3) +
+															2*cos_alpha_i*sin_alpha_i*u1*u2*u2/pow(vi_mag,3) +
+															sin_alpha_i_2*u0*u2/vi_mag_sqr -
+															4*sin_alpha_i_2*u1*u2*u2/pow(vi_mag,4) + 2*sin_alpha_i_2*u1/vi_mag_sqr) + 2*(-x2 + y2)*(-
+																	cos_alpha_i*sin_alpha_i*u0*u0*u2/pow(vi_mag,3) -
+																	cos_alpha_i*sin_alpha_i*u1*u1*u2/pow(vi_mag,3) +
+																	cos_alpha_i*sin_alpha_i*pow(u2,3)/pow(vi_mag,3) -
+																	cos_alpha_i*sin_alpha_i*u2/vi_mag +
+																	2*sin_alpha_i_2*u0*u0*u2/pow(vi_mag,4) +
+																	2*sin_alpha_i_2*u1*u1*u2/pow(vi_mag,4) -
+																	2*sin_alpha_i_2*pow(u2,3)/pow(vi_mag,4) + 2*sin_alpha_i_2*u2/vi_mag_sqr));
+
+	Vector3D Dphi_cDvi( Dphi_cDu0, Dphi_cDu1, Dphi_cDu2 );
+	return Dphi_cDvi;
+}
+
+/*
+*Derivative of phi_c wrt vj
+ */
+Vector3D OPSBody::Dphi_cDvj(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj){
+	double u0, u1, u2, v0, v1, v2, x0, x1, x2, y0, y1, y2;
+	double vi_mag_sqr, vi_mag, vj_mag_sqr, vj_mag;
+	double sin_alpha_i, cos_alpha_i, sin_alpha_j, cos_alpha_j;
+	double sin_alpha_i_2, cos_alpha_i_2, sin_alpha_j_2, cos_alpha_j_2, phi_c0;
+	double Dphi_cDv0, Dphi_cDv1, Dphi_cDv2;
+
+	u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
+	v0 = vj[0]; v1 = vj[1]; v2 = vj[2];
+	x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
+	y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+
+	vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
+	vj_mag_sqr = v0*v0 + v1*v1 + v2*v2;
+	vi_mag = sqrt(vi_mag_sqr);
+	vj_mag = sqrt(vj_mag_sqr);
+	sin_alpha_i = sin( 0.5*vi_mag );
+	cos_alpha_i = cos( 0.5*vi_mag );
+	sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
+	cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
+	sin_alpha_j = sin( 0.5*vj_mag );
+	cos_alpha_j = cos( 0.5*vj_mag );
+	sin_alpha_j_2 = sin_alpha_j*sin_alpha_j;
+	cos_alpha_j_2 = cos_alpha_j*cos_alpha_j;
+
+	Dphi_cDv0 = ((-x0 +
+			y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+					2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+					2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
+					2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
+							2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
+							2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+							2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
+							2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
+									cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
+									sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
+									sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
+									sin_alpha_j_2*v2*v2/vj_mag_sqr))*(2*(-x0 +
+											y0)*(cos_alpha_j_2*v0*v1/vj_mag_sqr +
+													2*cos_alpha_j*sin_alpha_j*v0*v0*v2/pow(vj_mag,3) -
+													2*cos_alpha_j*sin_alpha_j*v0*v1/pow(vj_mag,3) -
+													4*sin_alpha_j_2*v0*v0*v2/pow(vj_mag,4) -
+													sin_alpha_j_2*v0*v1/vj_mag_sqr + 2*sin_alpha_j_2*v2/vj_mag_sqr) +
+													2*(-x1 + y1)*(-cos_alpha_j_2*v0*v0/vj_mag_sqr +
+															2*cos_alpha_j*sin_alpha_j*v0*v0/pow(vj_mag,3) +
+															2*cos_alpha_j*sin_alpha_j*v0*v1*v2/pow(vj_mag,3) -
+															2*cos_alpha_j*sin_alpha_j/vj_mag + sin_alpha_j_2*v0*v0/vj_mag_sqr -
+															4*sin_alpha_j_2*v0*v1*v2/pow(vj_mag,4)) + 2*(-x2 + y2)*(-
+																	cos_alpha_j*sin_alpha_j*pow(v0,3)/pow(vj_mag,3) -
+																	cos_alpha_j*sin_alpha_j*v0*v1*v1/pow(vj_mag,3) +
+																	cos_alpha_j*sin_alpha_j*v0*v2*v2/pow(vj_mag,3) -
+																	cos_alpha_j*sin_alpha_j*v0/vj_mag +
+																	2*sin_alpha_j_2*pow(v0,3)/pow(vj_mag,4) +
+																	2*sin_alpha_j_2*v0*v1*v1/pow(vj_mag,4) -
+																	2*sin_alpha_j_2*v0*v2*v2/pow(vj_mag,4) -
+																	2*sin_alpha_j_2*v0/vj_mag_sqr));
+
+	Dphi_cDv1 = ((-x0 +
+			y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+					2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+					2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
+					2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
+							2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
+							2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+							2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
+							2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
+									cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
+									sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
+									sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
+									sin_alpha_j_2*v2*v2/vj_mag_sqr))*(2*(-x0 +
+											y0)*(cos_alpha_j_2*v1*v1/vj_mag_sqr +
+													2*cos_alpha_j*sin_alpha_j*v0*v1*v2/pow(vj_mag,3) -
+													2*cos_alpha_j*sin_alpha_j*v1*v1/pow(vj_mag,3) +
+													2*cos_alpha_j*sin_alpha_j/vj_mag -
+													4*sin_alpha_j_2*v0*v1*v2/pow(vj_mag,4) -
+													sin_alpha_j_2*v1*v1/vj_mag_sqr) + 2*(-x1 + y1)*(-
+															cos_alpha_j_2*v0*v1/vj_mag_sqr +
+															2*cos_alpha_j*sin_alpha_j*v0*v1/pow(vj_mag,3) +
+															2*cos_alpha_j*sin_alpha_j*v1*v1*v2/pow(vj_mag,3) +
+															sin_alpha_j_2*v0*v1/vj_mag_sqr -
+															4*sin_alpha_j_2*v1*v1*v2/pow(vj_mag,4) + 2*sin_alpha_j_2*v2/vj_mag_sqr) + 2*(-x2 + y2)*(-
+																	cos_alpha_j*sin_alpha_j*v0*v0*v1/pow(vj_mag,3) -
+																	cos_alpha_j*sin_alpha_j*pow(v1,3)/pow(vj_mag,3) +
+																	cos_alpha_j*sin_alpha_j*v1*v2*v2/pow(vj_mag,3) -
+																	cos_alpha_j*sin_alpha_j*v1/vj_mag +
+																	2*sin_alpha_j_2*v0*v0*v1/pow(vj_mag,4) +
+																	2*sin_alpha_j_2*pow(v1,3)/pow(vj_mag,4) -
+																	2*sin_alpha_j_2*v1*v2*v2/pow(vj_mag,4) -
+																	2*sin_alpha_j_2*v1/vj_mag_sqr));
+
+	Dphi_cDv2 = ((-x0 +
+			y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+					2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+					2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
+					2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
+							2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
+							2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+							2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
+							2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
+									cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
+									sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
+									sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
+									sin_alpha_j_2*v2*v2/vj_mag_sqr))*(2*(-x0 +
+											y0)*(cos_alpha_j_2*v1*v2/vj_mag_sqr +
+													2*cos_alpha_j*sin_alpha_j*v0*v2*v2/pow(vj_mag,3) -
+													2*cos_alpha_j*sin_alpha_j*v1*v2/pow(vj_mag,3) -
+													4*sin_alpha_j_2*v0*v2*v2/pow(vj_mag,4) + 2*sin_alpha_j_2*v0/vj_mag_sqr -
+													sin_alpha_j_2*v1*v2/vj_mag_sqr) + 2*(-x1 + y1)*(-
+															cos_alpha_j_2*v0*v2/vj_mag_sqr +
+															2*cos_alpha_j*sin_alpha_j*v0*v2/pow(vj_mag,3) +
+															2*cos_alpha_j*sin_alpha_j*v1*v2*v2/pow(vj_mag,3) +
+															sin_alpha_j_2*v0*v2/vj_mag_sqr -
+															4*sin_alpha_j_2*v1*v2*v2/pow(vj_mag,4) + 2*sin_alpha_j_2*v1/vj_mag_sqr) + 2*(-x2 + y2)*(-
+																	cos_alpha_j*sin_alpha_j*v0*v0*v2/pow(vj_mag,3) -
+																	cos_alpha_j*sin_alpha_j*v1*v1*v2/pow(vj_mag,3) +
+																	cos_alpha_j*sin_alpha_j*pow(v2,3)/pow(vj_mag,3) -
+																	cos_alpha_j*sin_alpha_j*v2/vj_mag +
+																	2*sin_alpha_j_2*v0*v0*v2/pow(vj_mag,4) +
+																	2*sin_alpha_j_2*v1*v1*v2/pow(vj_mag,4) -
+																	2*sin_alpha_j_2*pow(v2,3)/pow(vj_mag,4) + 2*sin_alpha_j_2*v2/vj_mag_sqr));
+
+	Vector3D Dphi_cDvj( Dphi_cDv0, Dphi_cDv1, Dphi_cDv2 );
+	return Dphi_cDvj;
+}
+
+/*
+*Derivative of phi_c wrt xi
+ */
+Vector3D OPSBody::Dphi_cDxi(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj){
+	double u0, u1, u2, v0, v1, v2, x0, x1, x2, y0, y1, y2;
+	double vi_mag_sqr, vi_mag, vj_mag_sqr, vj_mag;
+	double sin_alpha_i, cos_alpha_i, sin_alpha_j, cos_alpha_j;
+	double sin_alpha_i_2, cos_alpha_i_2, sin_alpha_j_2, cos_alpha_j_2, phi_c0;
+	double Dphi_cDx0, Dphi_cDx1, Dphi_cDx2;
+
+	u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
+	v0 = vj[0]; v1 = vj[1]; v2 = vj[2];
+	x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
+	y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+
+	vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
+	vj_mag_sqr = v0*v0 + v1*v1 + v2*v2;
+	vi_mag = sqrt(vi_mag_sqr);
+	vj_mag = sqrt(vj_mag_sqr);
+	sin_alpha_i = sin( 0.5*vi_mag );
+	cos_alpha_i = cos( 0.5*vi_mag );
+	sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
+	cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
+	sin_alpha_j = sin( 0.5*vj_mag );
+	cos_alpha_j = cos( 0.5*vj_mag );
+	sin_alpha_j_2 = sin_alpha_j*sin_alpha_j;
+	cos_alpha_j_2 = cos_alpha_j*cos_alpha_j;
+
+	Dphi_cDx0 = ((-x0 +
+			y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+					2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+					2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
+					2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
+							2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
+							2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+							2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
+							2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
+									cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
+									sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
+									sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
+									sin_alpha_j_2*v2*v2/vj_mag_sqr))*(-
+											4*cos_alpha_i*sin_alpha_i*u1/vi_mag -
+											4*cos_alpha_j*sin_alpha_j*v1/vj_mag -
+											4*sin_alpha_i_2*u0*u2/vi_mag_sqr -
+											4*sin_alpha_j_2*v0*v2/vj_mag_sqr);
+
+	Dphi_cDx1 = ((-x0 +
+			y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+					2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+					2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
+					2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
+							2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
+							2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+							2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
+							2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
+									cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
+									sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
+									sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
+									sin_alpha_j_2*v2*v2/vj_mag_sqr))*(4*cos_alpha_i*sin_alpha_i*
+											u0/vi_mag + 4*cos_alpha_j*sin_alpha_j*v0/vj_mag -
+											4*sin_alpha_i_2*u1*u2/vi_mag_sqr -
+											4*sin_alpha_j_2*v1*v2/vj_mag_sqr);
+
+	Dphi_cDx2 = ((-x0 +
+			y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+					2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+					2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
+					2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
+							2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
+							2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+							2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
+							2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
+									cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
+									sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
+									sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
+									sin_alpha_j_2*v2*v2/vj_mag_sqr))*(-2*cos_alpha_i_2 -
+											2*cos_alpha_j_2 + 2*sin_alpha_i_2*u0*u0/vi_mag_sqr +
+											2*sin_alpha_i_2*u1*u1/vi_mag_sqr - 2*sin_alpha_i_2*u2*u2/vi_mag_sqr +
+											2*sin_alpha_j_2*v0*v0/vj_mag_sqr + 2*sin_alpha_j_2*v1*v1/vj_mag_sqr -
+											2*sin_alpha_j_2*v2*v2/vj_mag_sqr);
+
+	Vector3D Dphi_cDxi( Dphi_cDx0, Dphi_cDx1, Dphi_cDx2 );
+	return Dphi_cDxi;
+}
+
+/*
+*Derivative of phi_c wrt xj
+ */
+Vector3D OPSBody::Dphi_cDxj(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj){
+	double u0, u1, u2, v0, v1, v2, x0, x1, x2, y0, y1, y2;
+	double vi_mag_sqr, vi_mag, vj_mag_sqr, vj_mag;
+	double sin_alpha_i, cos_alpha_i, sin_alpha_j, cos_alpha_j;
+	double sin_alpha_i_2, cos_alpha_i_2, sin_alpha_j_2, cos_alpha_j_2, phi_c0;
+	double Dphi_cDy0, Dphi_cDy1, Dphi_cDy2;
+
+	u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
+	v0 = vj[0]; v1 = vj[1]; v2 = vj[2];
+	x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
+	y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+
+	vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
+	vj_mag_sqr = v0*v0 + v1*v1 + v2*v2;
+	vi_mag = sqrt(vi_mag_sqr);
+	vj_mag = sqrt(vj_mag_sqr);
+	sin_alpha_i = sin( 0.5*vi_mag );
+	cos_alpha_i = cos( 0.5*vi_mag );
+	sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
+	cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
+	sin_alpha_j = sin( 0.5*vj_mag );
+	cos_alpha_j = cos( 0.5*vj_mag );
+	sin_alpha_j_2 = sin_alpha_j*sin_alpha_j;
+	cos_alpha_j_2 = cos_alpha_j*cos_alpha_j;
+
+	Dphi_cDy0 = ((-x0 +
+			y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+					2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+					2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
+					2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
+							2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
+							2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+							2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
+							2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
+									cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
+									sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
+									sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
+									sin_alpha_j_2*v2*v2/vj_mag_sqr))*(4*cos_alpha_i*sin_alpha_i*
+											u1/vi_mag + 4*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+											4*sin_alpha_i_2*u0*u2/vi_mag_sqr +
+											4*sin_alpha_j_2*v0*v2/vj_mag_sqr);
+
+	Dphi_cDy1 = ((-x0 +
+			y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+					2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+					2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
+					2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
+							2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
+							2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+							2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
+							2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
+									cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
+									sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
+									sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
+									sin_alpha_j_2*v2*v2/vj_mag_sqr))*(-
+											4*cos_alpha_i*sin_alpha_i*u0/vi_mag -
+											4*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+											4*sin_alpha_i_2*u1*u2/vi_mag_sqr +
+											4*sin_alpha_j_2*v1*v2/vj_mag_sqr);
+
+	Dphi_cDy2 = ((-x0 +
+			y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
+					2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
+					2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
+					2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
+							2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
+							2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
+							2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
+							2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
+									cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
+									sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
+									sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
+									sin_alpha_j_2*v2*v2/vj_mag_sqr))*(2*cos_alpha_i_2 +
+											2*cos_alpha_j_2 - 2*sin_alpha_i_2*u0*u0/vi_mag_sqr -
+											2*sin_alpha_i_2*u1*u1/vi_mag_sqr + 2*sin_alpha_i_2*u2*u2/vi_mag_sqr -
+											2*sin_alpha_j_2*v0*v0/vj_mag_sqr - 2*sin_alpha_j_2*v1*v1/vj_mag_sqr +
+											2*sin_alpha_j_2*v2*v2/vj_mag_sqr);
+
+	Vector3D Dphi_cDxi( Dphi_cDy0, Dphi_cDy1, Dphi_cDy2 );
+	return Dphi_cDxi;
+}
+
+
+}
+

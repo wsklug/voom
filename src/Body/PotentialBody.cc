@@ -94,9 +94,8 @@ namespace voom
 			_energy += _elements[i]->energy();
 		}
 
-
 		return;
-	};
+	}
 
 	//! General printing of a Paraview file
 	void PotentialBody::printParaview(const string name) const {

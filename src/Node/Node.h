@@ -8,12 +8,12 @@
 //----------------------------------------------------------------------
 
 /*! 
-  \file Node.h
+ \file Node.h
 
-  \brief Node is a class for a Finite Element node representing a
-  point in a mesh where some field is interpolated.
+ \brief Node is a class for a Finite Element node representing a
+ point in a mesh where some field is interpolated.
 
-*/
+ */
 
 #ifndef _NODE_
 #define _NODE_
@@ -28,707 +28,1099 @@
 #undef _B
 #endif
 
- 
 #include <vector>
 #include <fstream>
 #include "NodeBase.h"
 
-namespace voom
-{
+namespace voom {
 
-  //! A node with point representing a value of a scalar field at
-  //  specified position.
-  template< int dim_n >
-  class ScalarFieldNode : public NodeBase {
-    
-  public:
-    typedef NodeBase Base;
-    typedef double Point;
-    typedef typename tvmet::Vector<double,dim_n> PositionVector;
+//! A node with point representing a value of a scalar field at
+//  specified position.
+template<int dim_n>
+class ScalarFieldNode: public NodeBase {
 
-    //! default constructor
-    ScalarFieldNode() {}
+public:
+	typedef NodeBase Base;
+	typedef double Point;
+	typedef typename tvmet::Vector<double, dim_n> PositionVector;
 
-    //! construct from position and point
-    ScalarFieldNode(int id, const NodeBase::DofIndexMap & index, 
-		    const PositionVector & X, const Point & p) : Base(id,index)
-    { _X = X; _point = p; }
+	//! default constructor
+	ScalarFieldNode() {
+	}
 
-    ScalarFieldNode(int id, const NodeBase::DofIndexMap & index, 
-		    const PositionVector & X) : Base(id,index) 
-    { _X = _point = X; }
+	//! construct from position and point
+	ScalarFieldNode(int id, const NodeBase::DofIndexMap & index,
+			const PositionVector & X, const Point & p) :
+				Base(id, index) {
+		_X = X;
+		_point = p;
+	}
 
-    //! access reference position
-    const PositionVector & position() {return _X;}
+	ScalarFieldNode(int id, const NodeBase::DofIndexMap & index,
+			const PositionVector & X) :
+				Base(id, index) {
+		_X = _point = X;
+	}
 
-    //! access point
-    const Point & point() const {return _point;}
+	//! access reference position
+	const PositionVector & position() {
+		return _X;
+	}
 
-    //! access force
-    const Point & force() const {return _force;}
+	//! access point
+	const Point & point() const {
+		return _point;
+	}
 
-    //! set force
-    void setForce(double f) {_force = f; }
+	//! access force
+	const Point & force() const {
+		return _force;
+	}
 
-    //! add force
-    void addForce(double df) {
+	//! set force
+	void setForce(double f) {
+		_force = f;
+	}
+
+	//! add force
+	void addForce(double df) {
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-      _force = _force + df;
-    }
+		_force = _force + df;
+	}
 
-    virtual void setPosition(int i, double x) {assert(i<dim_n); _X(i) = x; }
+	virtual void setPosition(int i, double x) {
+		assert(i < dim_n);
+		_X(i) = x;
+	}
 
-    virtual double getPosition(int i) const { assert(i<dim_n); return _X(i); }
+	virtual double getPosition(int i) const {
+		assert(i < dim_n);
+		return _X(i);
+	}
 
-    // it seems like this should be inherited from Node, but GCC objects...?
-    virtual void setPoint( const Point & p ) { _point = p; }
+	// it seems like this should be inherited from Node, but GCC objects...?
+	virtual void setPoint(const Point & p) {
+		_point = p;
+	}
 
-    virtual double getPoint(int i) const { assert(i==0); return _point; }
+	virtual double getPoint(int i) const {
+		assert(i == 0);
+		return _point;
+	}
 
-    virtual void setPoint(int i, double x) {assert(i==0); _point = x; }
-   
-    virtual void addPoint(int i, double dx) {
-      assert(i==0); 
+	virtual void setPoint(int i, double x) {
+		assert(i == 0);
+		_point = x;
+	}
+
+	virtual void addPoint(int i, double dx) {
+		assert(i == 0);
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-      _point = _point + dx;
-    }
-    
-    virtual double getForce(int i) const { assert(i==0); return _force; }
+		_point = _point + dx;
+	}
 
-    virtual void setForce(int i, double f) {assert(i==0); _force = f; }
+	virtual double getForce(int i) const {
+		assert(i == 0);
+		return _force;
+	}
 
-    virtual void addForce(int i, double df) {
-      assert(i==0); 
+	virtual void setForce(int i, double f) {
+		assert(i == 0);
+		_force = f;
+	}
+
+	virtual void addForce(int i, double df) {
+		assert(i == 0);
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-      _force = _force + df;
-    }
+		_force = _force + df;
+	}
 
-    virtual void setPosition( const PositionVector & p ) { _X = p; }
+	virtual void setPosition(const PositionVector & p) {
+		_X = p;
+	}
 
-    //! update force by some increment
-    virtual void updateForce( const Point & f ) { 
+	//! update force by some increment
+	virtual void updateForce(const Point & f) {
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-      _force = _force + f;
-    }
+		_force = _force + f;
+	}
 
-    void resetPosition() {_X = _point;}
+	void resetPosition() {
+		_X = _point;
+	}
 
-    virtual int dof() const {return 1;}
+	virtual int dof() const {
+		return 1;
+	}
 
-  protected:
-    Point _point;
-    Point _force;
-    PositionVector _X;
-  };
+protected:
+	Point _point;
+	Point _force;
+	PositionVector _X;
+};
 
+//! A node with point and position of equal dimension.
+/*!
+ A DeformationNode is a PositionNode for which the point is a
+ vector of the same dimension as the position.  This is typical for
+ a finite element nodes interpolating displacements or the
+ deformation mapping of a bulk solid.
+ */
+template<int dim_n>
+class DeformationNode: public NodeBase {
 
-  //! A node with point and position of equal dimension.
-  /*!  
-    A DeformationNode is a PositionNode for which the point is a
-    vector of the same dimension as the position.  This is typical for
-    a finite element nodes interpolating displacements or the
-    deformation mapping of a bulk solid.
-  */
-  template< int dim_n >
-  class DeformationNode : public NodeBase {
-    
-  public:
-    typedef NodeBase Base;
-    typedef typename tvmet::Vector<double,dim_n> Point;
-    typedef typename tvmet::Vector<double,dim_n> PositionVector;
+public:
+	typedef NodeBase Base;
+	typedef typename tvmet::Vector<double, dim_n> Point;
+	typedef typename tvmet::Vector<double, dim_n> PositionVector;
 
-    //! default constructor
-    DeformationNode() {}
+	//! default constructor
+	DeformationNode() {
+	}
 
-    //! construct from position and point
-    DeformationNode(int id, const NodeBase::DofIndexMap & index, 
-		    const Point & X, const Point & p) : Base(id,index)
-    { _X = X; _point = p; }
+	//! construct from position and point
+	DeformationNode(int id, const NodeBase::DofIndexMap & index,
+			const Point & X, const Point & p) :
+				Base(id, index) {
+		_X = X;
+		_point = p;
+	}
 
-    DeformationNode(int id, const NodeBase::DofIndexMap & index, 
-		    const Point & X) : Base(id,index) 
-    { _X = _point = X; }
+	DeformationNode(int id, const NodeBase::DofIndexMap & index,
+			const Point & X) :
+				Base(id, index) {
+		_X = _point = X;
+	}
 
-    //! access reference position
-    const PositionVector & position() {return _X;}
+	//! access reference position
+	const PositionVector & position() {
+		return _X;
+	}
 
-    void setPosition( const PositionVector & p ) { _X = p; }
+	void setPosition(const PositionVector & p) {
+		_X = p;
+	}
 
-    //! access point
-    const Point & point() const {return _point;}
+	//! access point
+	const Point & point() const {
+		return _point;
+	}
 
-    //! access force
-    const Point & force() const {return _force;}
- 
-    virtual void setPosition(int i, double x) {assert(i<dim_n); _X(i) = x; }
+	//! access force
+	const Point & force() const {
+		return _force;
+	}
 
-    virtual double getPosition(int i) const { assert(i<dim_n); return _X(i); }
+	virtual void setPosition(int i, double x) {
+		assert(i < dim_n);
+		_X(i) = x;
+	}
 
-    // it seems like this should be inherited from Node, but GCC objects...?
-    virtual void setPoint( const Point & p ) { _point = p; }
+	virtual double getPosition(int i) const {
+		assert(i < dim_n);
+		return _X(i);
+	}
 
-    virtual double getPoint(int i) const { assert(i<dim_n); return _point(i); }
+	// it seems like this should be inherited from Node, but GCC objects...?
+	virtual void setPoint(const Point & p) {
+		_point = p;
+	}
 
-    virtual void setPoint(int i, double x) {assert(i<dim_n); _point(i) = x; }
-   
-    virtual void addPoint(int i, double dx) {
-      assert(i<dim_n); 
+	virtual double getPoint(int i) const {
+		assert(i < dim_n);
+		return _point(i);
+	}
+
+	virtual void setPoint(int i, double x) {
+		assert(i < dim_n);
+		_point(i) = x;
+	}
+
+	virtual void addPoint(int i, double dx) {
+		assert(i < dim_n);
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-      _point(i) = _point(i) + dx;//+= dx; 
-    }
-    
-    virtual double getForce(int i) const { assert(i<dim_n); return _force(i); }
+		_point(i) = _point(i) + dx; //+= dx;
+	}
 
-    virtual void setForce(int i, double f) {assert(i<dim_n); _force(i) = f; }
+	virtual double getForce(int i) const {
+		assert(i < dim_n);
+		return _force(i);
+	}
 
-    virtual void addForce(int i, double df) {
-      assert(i<dim_n); 
+	virtual void setForce(int i, double f) {
+		assert(i < dim_n);
+		_force(i) = f;
+	}
+
+	virtual void addForce(int i, double df) {
+		assert(i < dim_n);
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-      _force(i) = _force(i) + df;// += df; 
-    }
+		_force(i) = _force(i) + df; // += df;
+	}
 
-    //! update force by some increment
-    virtual void updateForce( const Point & f ) { 
-      for(int i=0; i<dim_n; i++) {
+	//! update force by some increment
+	virtual void updateForce(const Point & f) {
+		for (int i = 0; i < dim_n; i++) {
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-	_force(i) = _force(i) + f(i);
-      }
-    }
+			_force(i) = _force(i) + f(i);
+		}
+	}
 
-    void resetPosition() {_X = _point;}
+	void resetPosition() {
+		_X = _point;
+	}
 
-    virtual int dof() const {return dim_n;}
+	virtual int dof() const {
+		return dim_n;
+	}
 
+	virtual double getStiffness(int i) const {
+		assert(i < dim_n);
+		return _stiff(i);
+	}
 
-    virtual double getStiffness(int i) const { 
-      assert(i<dim_n); return _stiff(i); 
-    }
+	virtual void setStiffness(int i, double k) {
+		assert(i < dim_n);
+		_stiff(i) = k;
+	}
 
-    virtual void setStiffness(int i, double k) {
-      assert(i<dim_n); _stiff(i) = k; 
-    }
-
-    virtual void addStiffness(int i, double dk) {
-      assert(i<dim_n); 
+	virtual void addStiffness(int i, double dk) {
+		assert(i < dim_n);
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-      _stiff(i) = _stiff(i) + dk;// += df; 
-    }
+		_stiff(i) = _stiff(i) + dk; // += df;
+	}
 
-    //! update stiffness by some increment
-    virtual void updateStiffness( const Point & k ) { 
-      for(int i=0; i<dim_n; i++) {
+	//! update stiffness by some increment
+	virtual void updateStiffness(const Point & k) {
+		for (int i = 0; i < dim_n; i++) {
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-	_stiff(i) = _stiff(i) + k(i);
-      }
-    }
+			_stiff(i) = _stiff(i) + k(i);
+		}
+	}
 
+protected:
+	Point _point;
+	Point _force;
+	PositionVector _X;
 
-  protected:
-    Point _point;
-    Point _force;
-    PositionVector _X;
+	Point _stiff;
+};
 
-    Point _stiff;
-  };
+//! A DeformationNode with its point projected along a unit normal.
+/*!  The idea of this node is to allow the point to change only
+ along a specified normal direction.  To elements and bodies it
+ should appear as a typical DeformationNode, with a vector point
+ and force.  But to the Model (and Solver) it should only have one
+ dof.  Model and solver only use the methods getPoint(i),
+ setPoint(i,p), addPoint(i,dp), and getForce(i).  So each of these
+ needs to act like there is only one dof and one force component;
+ these are the projections along the normal direction of the vector
+ point and force.  Other methods that change these vectors need not
+ be modified since they are used only by elements (and maybe
+ bodies?).
+ */
+template<int dim_n>
+class ProjectedDeformationNode: public DeformationNode<dim_n> {
 
+public:
+	typedef DeformationNode<dim_n> Base;
+	typedef typename tvmet::Vector<double, dim_n> Point;
+	typedef typename tvmet::Vector<double, dim_n> PositionVector;
 
-  //! A DeformationNode with its point projected along a unit normal.
-  /*!  The idea of this node is to allow the point to change only
-    along a specified normal direction.  To elements and bodies it
-    should appear as a typical DeformationNode, with a vector point
-    and force.  But to the Model (and Solver) it should only have one
-    dof.  Model and solver only use the methods getPoint(i),
-    setPoint(i,p), addPoint(i,dp), and getForce(i).  So each of these
-    needs to act like there is only one dof and one force component;
-    these are the projections along the normal direction of the vector
-    point and force.  Other methods that change these vectors need not
-    be modified since they are used only by elements (and maybe
-    bodies?).
-  */
-  template< int dim_n >
-  class ProjectedDeformationNode : public DeformationNode< dim_n >
-  {
+	using Base::_X;
+	using Base::_point;
+	using Base::_force;
 
-  public:
-    typedef DeformationNode<dim_n> Base;
-    typedef typename tvmet::Vector<double,dim_n> Point;
-    typedef typename tvmet::Vector<double,dim_n> PositionVector;
+	//! default constructor
+	ProjectedDeformationNode(int id, const NodeBase::DofIndexMap & index) :
+		Base(id, index) {
+		const Point zero(0.0);
+		_n = zero;
+	}
 
-    using Base::_X;
-    using Base::_point;
-    using Base::_force;
+	//! yet another constructor
+	ProjectedDeformationNode(int id, const NodeBase::DofIndexMap & index,
+			const Point & X, const Point & p, const Point & n) :
+				DeformationNode<dim_n>(id, index, X, p) {
+		_n = n;
+		if (norm2(n) > 0.0)
+			_n /= norm2(n);
+	}
+	;
 
+	//! destructor
+	virtual ~ProjectedDeformationNode() {
+	}
 
-    //! default constructor
-    ProjectedDeformationNode(int id, const NodeBase::DofIndexMap & index) 
-      : Base(id,index) {
-      const Point zero(0.0);
-      _n = zero;
-    }
+	//! access normal
+	const Point & normal() const {
+		return _n;
+	}
+	//! access a component of normal
+	const double normal(int i) const {
+		assert(i < dim_n);
+		return _n(i);
+	}
+	//! assign normal
+	virtual void setNormal(const Point & n) {
+		_n = n;
+		if (norm2(n) > 0.0)
+			_n /= norm2(n);
+	}
 
-    //! yet another constructor
-    ProjectedDeformationNode(int id, const NodeBase::DofIndexMap & index, 
-	       const Point & X, const Point & p, 
-	       const Point & n ) 
-      : DeformationNode<dim_n>(id, index, X, p) { 
-      _n = n; 
-      if (norm2(n)>0.0) _n /= norm2(n);
-    };
+	//! One dof (projection of point onto normal)
+	int dof() const {
+		return 1;
+	}
 
-    //! destructor
-    virtual ~ProjectedDeformationNode() {}
+	virtual double getPoint(int i) const {
+		assert(i == 0);
+		return dot(_point, _n);
+	}
 
-    //! access normal
-    const Point & normal() const {return _n;}
-    //! access a component of normal
-    const double normal( int i ) const 
-    { assert(i<dim_n); return _n(i); }
-    //! assign normal
-    virtual void setNormal( const Point & n ) { 
-      _n = n;
-      if (norm2(n)>0.0) _n /= norm2(n);
-    }
+	virtual void setPoint(int i, double x) {
+		assert(i == 0);
+		_point = _point - _n * dot(_point, _n) + x * _n;
+	}
 
-    //! One dof (projection of point onto normal)
-    int dof() const {return 1;}
-
-    virtual double getPoint(int i) const { 
-      assert(i==0); 
-      return dot(_point,_n); 
-    }
-
-    virtual void setPoint(int i, double x) {
-      assert(i==0); 
-      _point = _point - _n*dot(_point,_n) + x*_n; 
-    }
-   
-    virtual void addPoint(int i, double dx) {
-      assert(i==0); 
+	virtual void addPoint(int i, double dx) {
+		assert(i == 0);
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-      _point = _point + _n*dx;
-    }
-    
-    virtual double getForce(int i) const { 
-      assert(i==0); 
-      return dot(_force,_n); 
-    }
+		_point = _point + _n * dx;
+	}
 
-    virtual void setForce(int i, double f) {
-      assert(i<dim_n); 
-      _force(i) = f; 
-    }
+	virtual double getForce(int i) const {
+		assert(i == 0);
+		return dot(_force, _n);
+	}
 
-    virtual void addForce(int i, double df) {
-      assert(i<dim_n); 
+	virtual void setForce(int i, double f) {
+		assert(i < dim_n);
+		_force(i) = f;
+	}
+
+	virtual void addForce(int i, double df) {
+		assert(i < dim_n);
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-      _force(i) = _force(i) + df;// += df; 
-    }
-    
-  protected:
-    Point _n;
-    
-  };
+		_force(i) = _force(i) + df; // += df;
+	}
 
-  //! A DeformationNode for dynamics.
-  /*!  
-    This node has in addition to point and position, vectors for
-    velocity and acceleration, i.e., the first and second time derivatives 
-    of point.  (All four quantities are of the same dimension.)
-  */
-  template< int dim_n >
-  class MotionNode : public DeformationNode< dim_n >
-  {
-  public:
-    typedef DeformationNode<dim_n> Base;
-    typedef typename tvmet::Vector<double,dim_n> Point;
-    typedef typename tvmet::Vector<double,dim_n> PositionVector;
+protected:
+	Point _n;
 
-    //! default constructor
-    MotionNode(int id, const NodeBase::DofIndexMap & index) : Base(id,index) {
-      const Point zero(0.0);
-      _v = _a = zero;
-    }
-    //! construct from position and point
-    MotionNode(int id, const NodeBase::DofIndexMap & index, 
-	       const Point & X, const Point & p) 
-      : DeformationNode<dim_n>(id,index,X,p) {
-      _v = _a = Point(0.0);
-    };
+};
 
-    //! construct from point
-    MotionNode(int id, const NodeBase::DofIndexMap & index, const Point & p)
-    { MotionNode( id, index, p, p ); };
+//! A DeformationNode for dynamics.
+/*!
+ This node has in addition to point and position, vectors for
+ velocity and acceleration, i.e., the first and second time derivatives
+ of point.  (All four quantities are of the same dimension.)
+ */
+template<int dim_n>
+class MotionNode: public DeformationNode<dim_n> {
+public:
+	typedef DeformationNode<dim_n> Base;
+	typedef typename tvmet::Vector<double, dim_n> Point;
+	typedef typename tvmet::Vector<double, dim_n> PositionVector;
 
-    //! yet another constructor
-    MotionNode(int id, const NodeBase::DofIndexMap & index, 
-	       const Point & X, const Point & p, 
-	       const Point & v, const Point & a ) 
-      : DeformationNode<dim_n>(id, index, X, p) { _v = v; _a = a; };
+	//! default constructor
+	MotionNode(int id, const NodeBase::DofIndexMap & index) :
+		Base(id, index) {
+		const Point zero(0.0);
+		_v = _a = zero;
+	}
+	//! construct from position and point
+	MotionNode(int id, const NodeBase::DofIndexMap & index, const Point & X,
+			const Point & p) :
+				DeformationNode<dim_n>(id, index, X, p) {
+		_v = _a = Point(0.0);
+	}
+	;
 
-    //! one more constructor
-    MotionNode(int id, const NodeBase::DofIndexMap & index, 
-	       const Point & p, const Point & v, const Point & a ) 
-    { MotionNode( id, index, p, p, v, a ); }
+	//! construct from point
+	MotionNode(int id, const NodeBase::DofIndexMap & index, const Point & p) {
+		MotionNode(id, index, p, p);
+	}
+	;
 
-    //! destructor
-    virtual ~MotionNode() {}
+	//! yet another constructor
+	MotionNode(int id, const NodeBase::DofIndexMap & index, const Point & X,
+			const Point & p, const Point & v, const Point & a) :
+				DeformationNode<dim_n>(id, index, X, p) {
+		_v = v;
+		_a = a;
+	}
+	;
 
-    //! access velocity
-    const Point & velocity() const {return _v;}
-    //! access a component of velocity
-    const double velocity( int i ) const 
-    { assert(i<dim_n); return _v(i); }
-    //! assign velocity
-    virtual void setVelocity( const Point & v ) { _v = v; }
+	//! one more constructor
+	MotionNode(int id, const NodeBase::DofIndexMap & index, const Point & p,
+			const Point & v, const Point & a) {
+		MotionNode(id, index, p, p, v, a);
+	}
 
-    //! access acceleration
-    const Point & acceleration() const {return _a;}
-    //! access a component of acceleration
-    const double acceleration( int i ) const 
-    { assert(i<dim_n); return _a(i); }
-    //! assign acceleration
-    virtual void setAcceleration( const Point & a ) { _a = a; }
+	//! destructor
+	virtual ~MotionNode() {
+	}
 
-    //! access mass
-    double getMass() const {return _M;}
-    //! assign mass
-    void setMass(double m) {_M=m;}
-    //! add mass
-    void addMass(double m){_M+=m;}
+	//! access velocity
+	const Point & velocity() const {
+		return _v;
+	}
+	//! access a component of velocity
+	const double velocity(int i) const {
+		assert(i < dim_n);
+		return _v(i);
+	}
+	//! assign velocity
+	virtual void setVelocity(const Point & v) {
+		_v = v;
+	}
 
-  protected:
-    Point _v;
-    Point _a;
-    double _M; // nodal mass 
-  };
+	//! access acceleration
+	const Point & acceleration() const {
+		return _a;
+	}
+	//! access a component of acceleration
+	const double acceleration(int i) const {
+		assert(i < dim_n);
+		return _a(i);
+	}
+	//! assign acceleration
+	virtual void setAcceleration(const Point & a) {
+		_a = a;
+	}
 
+	//! access mass
+	double getMass() const {
+		return _M;
+	}
+	//! assign mass
+	void setMass(double m) {
+		_M = m;
+	}
+	//! add mass
+	void addMass(double m) {
+		_M += m;
+	}
 
-  //! A DeformationNode for brownian dynamics.
-  /*!  
-    This node has in addition to point and position, a vector for
-    velocity and a matrix for mobility.
-  */
-  template< int dim_n >
-  class BrownianNode : public DeformationNode< dim_n >
-  {
-  public:
-    typedef DeformationNode<dim_n> Base;
-    typedef typename tvmet::Vector<double,dim_n> Point;
-    typedef typename tvmet::Vector<double,dim_n> PositionVector;
+protected:
+	Point _v;
+	Point _a;
+	double _M; // nodal mass
+};
 
-    typedef typename tvmet::Matrix<double,dim_n,dim_n> Matrix;
+//! A DeformationNode for brownian dynamics.
+/*!
+ This node has in addition to point and position, a vector for
+ velocity and a matrix for mobility.
+ */
+template<int dim_n>
+class BrownianNode: public DeformationNode<dim_n> {
+public:
+	typedef DeformationNode<dim_n> Base;
+	typedef typename tvmet::Vector<double, dim_n> Point;
+	typedef typename tvmet::Vector<double, dim_n> PositionVector;
 
-    //! default constructor
-    BrownianNode(int id, const NodeBase::DofIndexMap & index) 
-      : Base(id,index), _v(0.0), _M(0.0), _D(0.0) {
-    }
-    //! construct from position and point
-    BrownianNode(int id, const NodeBase::DofIndexMap & index, 
-	       const Point & X, const Point & p) 
-      : DeformationNode<dim_n>(id,index,X,p), _v(0.0), _M(0.0), _D(0.0) {
-      _v = Point(0.0);
-    };
+	typedef typename tvmet::Matrix<double, dim_n, dim_n> Matrix;
 
-    //! yet another constructor
-    BrownianNode(int id, const NodeBase::DofIndexMap & index, 
-	       const Point & X, const Point & p, 
-	       const Point & v ) 
-      : DeformationNode<dim_n>(id, index, X, p), _v(v), _M(0.0), _D(0.0) {};
+	//! default constructor
+	BrownianNode(int id, const NodeBase::DofIndexMap & index) :
+		Base(id, index), _v(0.0), _M(0.0), _D(0.0) {
+	}
+	//! construct from position and point
+	BrownianNode(int id, const NodeBase::DofIndexMap & index, const Point & X,
+			const Point & p) :
+				DeformationNode<dim_n>(id, index, X, p), _v(0.0), _M(0.0), _D(0.0) {
+		_v = Point(0.0);
+	}
+	;
 
-    //! destructor
-    virtual ~BrownianNode() {}
+	//! yet another constructor
+	BrownianNode(int id, const NodeBase::DofIndexMap & index, const Point & X,
+			const Point & p, const Point & v) :
+				DeformationNode<dim_n>(id, index, X, p), _v(v), _M(0.0), _D(0.0) {
+	}
+	;
 
-    //! access velocity
-    const Point & velocity() const {return _v;}
-    //! access a component of velocity
-    const double velocity( int i ) const 
-    { assert(i<dim_n); return _v(i); }
-    //! assign velocity
-    virtual void setVelocity( const Point & v ) { _v = v; }
+	//! destructor
+	virtual ~BrownianNode() {
+	}
 
-    //! access mobility
-    const Matrix & mobility() const {return _M;}
-    //! access a component of mobility
-    const double getMobility( int i, int j ) const 
-    { assert(i<dim_n && j<dim_n); return _M(i,j); }
+	//! access velocity
+	const Point & velocity() const {
+		return _v;
+	}
+	//! access a component of velocity
+	const double velocity(int i) const {
+		assert(i < dim_n);
+		return _v(i);
+	}
+	//! assign velocity
+	virtual void setVelocity(const Point & v) {
+		_v = v;
+	}
 
-    //! assign mobility
-    virtual void setMobility( const Matrix & m ) { _M = m; }
+	//! access mobility
+	const Matrix & mobility() const {
+		return _M;
+	}
+	//! access a component of mobility
+	const double getMobility(int i, int j) const {
+		assert(i < dim_n && j < dim_n);
+		return _M(i, j);
+	}
 
-    //! add mobility
-    virtual void addMobility( const Matrix & m ) { _M += m; }
+	//! assign mobility
+	virtual void setMobility(const Matrix & m) {
+		_M = m;
+	}
 
-    void addMobility( int i, int j, double m )
-    { assert(i<dim_n && j<dim_n); _M(i,j) += m; }
-	
-    //! access drag
-    const Matrix & drag() const {return _D;}
-    //! access a component of drag
-    const double getDrag( int i, int j ) const 
-    { assert(i<dim_n && j<dim_n); return _D(i,j); }
+	//! add mobility
+	virtual void addMobility(const Matrix & m) {
+		_M += m;
+	}
 
-    //! assign drag
-    virtual void setDrag( const Matrix & d ) { _D = d; }
+	void addMobility(int i, int j, double m) {
+		assert(i < dim_n && j < dim_n);
+		_M(i, j) += m;
+	}
 
-    //! add drag
-    virtual void addDrag( const Matrix & d ) { _D += d; }
+	//! access drag
+	const Matrix & drag() const {
+		return _D;
+	}
+	//! access a component of drag
+	const double getDrag(int i, int j) const {
+		assert(i < dim_n && j < dim_n);
+		return _D(i, j);
+	}
 
-    void addDrag( int i, int j, double d )
-    { assert(i<dim_n && j<dim_n); _D(i,j) += d; }
+	//! assign drag
+	virtual void setDrag(const Matrix & d) {
+		_D = d;
+	}
 
-  protected:
-    Point _v;
-    Matrix _M;
-    Matrix _D; //Drag matrix
-  };
+	//! add drag
+	virtual void addDrag(const Matrix & d) {
+		_D += d;
+	}
 
- 
-  class MultiplierNode : public NodeBase
-  {
-  public:
+	void addDrag(int i, int j, double d) {
+		assert(i < dim_n && j < dim_n);
+		_D(i, j) += d;
+	}
 
-    typedef double Point;
-    //! default constructor
-    MultiplierNode(int id, const NodeBase::DofIndexMap & index) 
-      : NodeBase(id, index),_point(0.0) {;}
+protected:
+	Point _v;
+	Matrix _M;
+	Matrix _D; //Drag matrix
+};
 
-    //! another constructor
-    MultiplierNode(int id, const NodeBase::DofIndexMap & index, const Point & p) 
-      : NodeBase(id, index), _point(p) {};
+class MultiplierNode: public NodeBase {
+public:
 
-    //! destructor
-    virtual ~MultiplierNode() {}
+	typedef double Point;
+	//! default constructor
+	MultiplierNode(int id, const NodeBase::DofIndexMap & index) :
+		NodeBase(id, index), _point(0.0) {
+		;
+	}
 
-    double point() const {return _point;}
+	//! another constructor
+	MultiplierNode(int id, const NodeBase::DofIndexMap & index, const Point & p) :
+		NodeBase(id, index), _point(p) {
+	}
+	;
 
-    double force() const {return _force;}
+	//! destructor
+	virtual ~MultiplierNode() {
+	}
 
-    int dof() const {return 1;}
-    double getPoint(int i) const {assert(i==0); return _point;}
-    void setPoint(int i, double x) {assert(i==0); _point = x;}
-    void addPoint(int i, double dx) {
-      assert(i==0); 
+	double point() const {
+		return _point;
+	}
+
+	double force() const {
+		return _force;
+	}
+
+	int dof() const {
+		return 1;
+	}
+	double getPoint(int i) const {
+		assert(i == 0);
+		return _point;
+	}
+	void setPoint(int i, double x) {
+		assert(i == 0);
+		_point = x;
+	}
+	void addPoint(int i, double dx) {
+		assert(i == 0);
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-      _point = _point + dx;//+= dx;
-    }    
-    double getForce(int i) const {assert(i==0); return _force;}
-    void setForce(int i, double f) {assert(i==0); _force = f;}
-    void addForce(int i, double df) {
-      assert(i==0); 
+		_point = _point + dx; //+= dx;
+	}
+	double getForce(int i) const {
+		assert(i == 0);
+		return _force;
+	}
+	void setForce(int i, double f) {
+		assert(i == 0);
+		_force = f;
+	}
+	void addForce(int i, double df) {
+		assert(i == 0);
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-      _force = _force + df;// += df;
-    }    
+		_force = _force + df; // += df;
+	}
 
-    // it seems like this should be inherited from Node, but GCC objects...?
-    void setPoint( double p ) { _point = p; }
+	// it seems like this should be inherited from Node, but GCC objects...?
+	void setPoint(double p) {
+		_point = p;
+	}
 
-  protected:
-    Point _point;
-    Point _force;
+protected:
+	Point _point;
+	Point _force;
 
-  };
+};
 
-  //! A node with a point which is a vector.
-  /*!  
-    A VectorNode is a node for which the point is a
-    vector of the templated dimension dim_n.
-  */
-  template< int dim_n >
-  class VectorNode 
-    : public NodeBase {
-    
-  public:
+//! A node with a point which is a vector.
+/*!
+ A VectorNode is a node for which the point is a
+ vector of the templated dimension dim_n.
+ */
+template<int dim_n>
+class VectorNode: public NodeBase {
 
-    typedef NodeBase Base;
-    typedef typename tvmet::Vector<double,dim_n> Point;
-    typedef typename tvmet::Vector<double,dim_n> Vector;
+public:
 
+	typedef NodeBase Base;
+	typedef typename tvmet::Vector<double, dim_n> Point;
+	typedef typename tvmet::Vector<double, dim_n> Vector;
 
-    //! construct from position and point
-    VectorNode(int id, const NodeBase::DofIndexMap & index, const Point & p) 
-      : Base(id,index)
-    { _point = p; }
+	//! construct from position and point
+	VectorNode(int id, const NodeBase::DofIndexMap & index, const Point & p) :
+		Base(id, index) {
+		_point = p;
+	}
 
-    double getPoint(int i) const { assert(i<dim_n); return _point(i); }
+	double getPoint(int i) const {
+		assert(i < dim_n);
+		return _point(i);
+	}
 
-    void setPoint(int i, double x) {assert(i<dim_n); _point(i) = x; }
-   
-    void addPoint(int i, double dx) {
-      assert(i<dim_n); 
+	void setPoint(int i, double x) {
+		assert(i < dim_n);
+		_point(i) = x;
+	}
+
+	void addPoint(int i, double dx) {
+		assert(i < dim_n);
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-      _point(i) = _point(i) + dx;//+= dx; 
-    }
+		_point(i) = _point(i) + dx; //+= dx;
+	}
 
-    double getForce(int i) const { assert(i<dim_n); return _force(i); }
+	double getForce(int i) const {
+		assert(i < dim_n);
+		return _force(i);
+	}
 
-    void setForce(int i, double f) {assert(i<dim_n); _force(i) = f; }
+	void setForce(int i, double f) {
+		assert(i < dim_n);
+		_force(i) = f;
+	}
 
-    void addForce(int i, double df) {
-      assert(i<dim_n); 
+	void addForce(int i, double df) {
+		assert(i < dim_n);
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-      _force(i) = _force(i) + df;// += df; 
-    }
+		_force(i) = _force(i) + df; // += df;
+	}
 
-    int dof() const {return dim_n;}
+	int dof() const {
+		return dim_n;
+	}
 
-  protected:
-    Point _point;
-    Point _force;
-  };
+protected:
+	Point _point;
+	Point _force;
+};
 
+template<int dim_n>
+class XCNode: public NodeBase {
+public:
+	typedef typename tvmet::Vector<double, dim_n> Point;
+	typedef typename tvmet::Vector<double, dim_n + 1> PointPlusOne;
 
-  template< int dim_n >
-  class XCNode:public NodeBase
-  {
-  public:
-    typedef typename tvmet::Vector<double,dim_n> Point;
-    typedef typename tvmet::Vector<double,dim_n+1> PointPlusOne;
-    
-    XCNode(int id, const NodeBase::DofIndexMap& index, const Point& X, const double& C)
-      :NodeBase(id, index)
-    {
-      //int size=index.size();
-      NodeBase::DofIndexMap xIndex(dim_n),cIndex(1);
+	XCNode(int id, const NodeBase::DofIndexMap& index, const Point& X,
+			const double& C) :
+				NodeBase(id, index) {
+		//int size=index.size();
+		NodeBase::DofIndexMap xIndex(dim_n), cIndex(1);
 
-      for(int i=0; i<dim_n; i++)
-	xIndex[i]=index[i];
+		for (int i = 0; i < dim_n; i++)
+			xIndex[i] = index[i];
 
-      cIndex[0]=index[dim_n];
+		cIndex[0] = index[dim_n];
 
-      DeformationNode<dim_n>* tempXNode = new DeformationNode<dim_n>(id, xIndex, X);
-      MultiplierNode* tempCNode= new MultiplierNode(id, cIndex, C);
+		DeformationNode<dim_n>* tempXNode = new DeformationNode<dim_n>(id,
+				xIndex, X);
+		MultiplierNode* tempCNode = new MultiplierNode(id, cIndex, C);
 
-      xNode=tempXNode;
-      cNode=tempCNode;
- 
-    }
+		xNode = tempXNode;
+		cNode = tempCNode;
 
-    XCNode(int id, const NodeBase::DofIndexMap& index, const Point& X, const Point& p, const double& C)
-      :NodeBase(id, index)
-    {
-      //int size=index.size();
-      NodeBase::DofIndexMap xIndex(dim_n),cIndex(1);
+	}
 
-      for(int i=0; i<dim_n; i++)
-	xIndex[i]=index[i];
+	XCNode(int id, const NodeBase::DofIndexMap& index, const Point& X,
+			const Point& p, const double& C) :
+				NodeBase(id, index) {
+		//int size=index.size();
+		NodeBase::DofIndexMap xIndex(dim_n), cIndex(1);
 
-      cIndex[0]=index[dim_n];
+		for (int i = 0; i < dim_n; i++)
+			xIndex[i] = index[i];
 
-      DeformationNode<dim_n>* tempXNode = new DeformationNode<dim_n>(id, xIndex, X, p);
-      MultiplierNode* tempCNode= new MultiplierNode(id, cIndex, C);
+		cIndex[0] = index[dim_n];
 
-      xNode=tempXNode;
-      cNode=tempCNode;
- 
-    }
+		DeformationNode<dim_n>* tempXNode = new DeformationNode<dim_n>(id,
+				xIndex, X, p);
+		MultiplierNode* tempCNode = new MultiplierNode(id, cIndex, C);
 
-    double getPoint(int i) const {
-      if(i<dim_n) 
-	return xNode->getPoint(i);
-      else        
-	return cNode->getPoint(0);
-    }
- 
-    void setPoint(int i, double x) {
-      if(i<dim_n) 
-	xNode->setPoint(i, x);
-      else        
-	cNode->setPoint(0, x);
-    }
+		xNode = tempXNode;
+		cNode = tempCNode;
 
-    void addPoint(int i, double dx) {
-      if(i<dim_n) 
-	xNode->addPoint(i, dx);
-      else        
-	cNode->addPoint(0, dx);
-    }
+	}
 
-    double getForce(int i) const {
-      if(i<dim_n) 
-	return xNode->getForce(i);
-      else        
-	return cNode->getForce(0);
-    }
- 
-    void setForce(int i, double f) {
-      if(i<dim_n) 
-	xNode->setForce(i, f);
-      else        
-	cNode->setForce(0, f);
-    }
+	double getPoint(int i) const {
+		if (i < dim_n)
+			return xNode->getPoint(i);
+		else
+			return cNode->getPoint(0);
+	}
 
-    void addForce(int i, double df) {
-      if(i<dim_n) 
-	xNode->addForce(i, df);
-      else        
-	cNode->addForce(0, df);
-    }
+	void setPoint(int i, double x) {
+		if (i < dim_n)
+			xNode->setPoint(i, x);
+		else
+			cNode->setPoint(0, x);
+	}
 
-    //used for update viscosity force in TwoPhaseBody.cc
-    void updateForce(const Point & f){
-      xNode->updateForce(f);
-    }
+	void addPoint(int i, double dx) {
+		if (i < dim_n)
+			xNode->addPoint(i, dx);
+		else
+			cNode->addPoint(0, dx);
+	}
 
-    const PointPlusOne force() const{
-      PointPlusOne tempForce;
+	double getForce(int i) const {
+		if (i < dim_n)
+			return xNode->getForce(i);
+		else
+			return cNode->getForce(0);
+	}
 
-      for (int i=0; i<dim_n+1; i++){
-	tempForce(i) = getForce(i);
-      }
-      return tempForce;
-    }
+	void setForce(int i, double f) {
+		if (i < dim_n)
+			xNode->setForce(i, f);
+		else
+			cNode->setForce(0, f);
+	}
 
-    void setPoint( const Point& p ) { xNode->setPoint(p); }
+	void addForce(int i, double df) {
+		if (i < dim_n)
+			xNode->addForce(i, df);
+		else
+			cNode->addForce(0, df);
+	}
 
-    void setPosition( const Point& p ) { xNode->setPosition(p); }
+	//used for update viscosity force in TwoPhaseBody.cc
+	void updateForce(const Point & f) {
+		xNode->updateForce(f);
+	}
 
-    void resetPosition(){xNode->resetPosition();}
+	const PointPlusOne force() const {
+		PointPlusOne tempForce;
 
-    int dof() const{return dim_n+1;}
+		for (int i = 0; i < dim_n + 1; i++) {
+			tempForce(i) = getForce(i);
+		}
+		return tempForce;
+	}
 
-    const Point& point() const {return xNode->point();}
+	void setPoint(const Point& p) {
+		xNode->setPoint(p);
+	}
 
-    const Point& position() const {return xNode->position();}
+	void setPosition(const Point& p) {
+		xNode->setPosition(p);
+	}
 
-    double concentration() const {return getPoint(dim_n);}
+	void resetPosition() {
+		xNode->resetPosition();
+	}
 
-    double reactionCoordinate() const {return getPoint(dim_n);}
+	int dof() const {
+		return dim_n + 1;
+	}
 
-  protected:
-    DeformationNode<dim_n>* xNode;
-    MultiplierNode* cNode;
+	const Point& point() const {
+		return xNode->point();
+	}
 
-  }; 
+	const Point& position() const {
+		return xNode->position();
+	}
+
+	double concentration() const {
+		return getPoint(dim_n);
+	}
+
+	double reactionCoordinate() const {
+		return getPoint(dim_n);
+	}
+
+protected:
+	DeformationNode<dim_n>* xNode;
+	MultiplierNode* cNode;
+
+};
+
+/**
+ * Oriented Particle System node is a node with 3-displacement and
+ * 3-orientation degrees of freedom. Thus, it represents a 3D point
+ * with an associated normal in space.
+ */
+class OPSNode: public NodeBase {
+public:
+	typedef typename tvmet::Vector<double, 6> OPSNodalForce;
+	typedef typename tvmet::Vector<double, 4> Quaternion;
+
+	static Vector3D conjugation(Quaternion q, Vector3D p) {
+		// We will assume that q and p are quaternions
+		double q0,q1,q2,q3 ;
+		double p1,p2,p3;
+		q0 = q[0]; q1 = q[1]; q2 = q[2]; q3 = q[3];
+		p1 = p[0]; p2 = p[1]; p3 = p[2];
+		Vector3D ans(0.0);
+		ans[0] = p1*q0*q0 + p1*q1*q1 - p1*q2*q2 - p1*q3*q3 - 2*p2*q0*q3 +
+				2*p2*q1*q2 + 2*p3*q0*q2 + 2*p3*q1*q3;
+		ans[1] = 2*p1*q0*q3 + 2*p1*q1*q2 + p2*q0*q0 - p2*q1*q1 + p2*q2*q2 -
+				p2*q3*q3 - 2*p3*q0*q1 + 2*p3*q2*q3;
+		ans[2] = -2*p1*q0*q2 + 2*p1*q1*q3 + 2*p2*q0*q1 + 2*p2*q2*q3 +
+				p3*q0*q0 - p3*q1*q1 - p3*q2*q2 + p3*q3*q3;
+		return ans;
+	}
+
+	//! Functions to convert from point normal to rotation vector or vice-versa
+	static Vector3D convertRotVecToNormal(Vector3D r) {
+		// Assume z-axis of Global Coord Sys is the reference for ptNormal rotation
+		tvmet::Vector<double, 3> zaxis(0.0);
+		tvmet::Vector<double, 3> ptNormal(0.0);
+		double vi = tvmet::norm2(r); // Angle of rotation
+		// Check 0-angle case
+		if (vi < 1e-10) {
+			ptNormal[2] = 1.0;
+		}
+		else if (std::abs(vi - M_PI) < 1e-10) {
+			ptNormal[2] = -1.0;
+		}
+		else {
+			// Make unit quaternion with angle vi and axis along rotVec
+			Vector3D w;
+			w = (sin(0.5 * vi) / vi) * r;
+			Quaternion q(cos(0.5 * vi), w[0], w[1], w[2]);
+			ptNormal = conjugation(q, zaxis);
+		}
+		return ptNormal;
+	}
+	static Vector3D convertNormalToRotVec(Vector3D n) {
+		double angle;
+		Vector3D axis(0.0);
+		// Cross-product of n with z-axis.
+		Vector3D cross_prod(-n[1], n[0], 0.0 );
+		double cross_prod_norm = tvmet::norm2( cross_prod );
+		// Check if n is parallel or anti-parallel to z-axis
+		double p3 = n[2];
+		if( cross_prod_norm < 1e-10){
+			axis = 1.0, 0.0, 0.0; // Arbitrarily choose the x-axis
+			angle = (p3 > 0.0)? 0.0 : M_PI;
+		}
+		else{
+			angle = asin( cross_prod_norm );
+			angle = (p3 < 0.0)? (M_PI - angle) : angle;
+			axis = cross_prod/cross_prod_norm;
+		}
+		Vector3D rotVec;
+		rotVec = angle*axis;
+		return rotVec;
+	}
+
+	//! construct from given reference and deformed positions
+	OPSNode(int id, const NodeBase::DofIndexMap & index, const Vector3D &X,
+			const Vector3D &x) :
+				NodeBase(id, index) {
+		_X = X;
+		_x = x;
+		Vector3D N;
+		N = _X / tvmet::norm2(_X);
+		_R = convertNormalToRotVec(N);
+		Vector3D n;
+		n = _x / tvmet::norm2(_x);
+		_r = convertNormalToRotVec(n);
+	}
+
+	OPSNode(int id, const NodeBase::DofIndexMap & index, const Vector3D & X) :
+		NodeBase(id, index) {
+		_X = _x = X;
+		Vector3D N;
+		N = _X / tvmet::norm2(_X);
+		_R = _r = convertNormalToRotVec(N);
+	}
+
+	//! access reference position
+	const Vector3D & referencePosition() {
+		return _X;
+	}
+
+	void setReferencePosition(const Vector3D & p) {
+		_X = p;
+	}
+
+	//! access deformed position
+	const Vector3D & deformedPosition() {
+		return _x;
+	}
+
+	//! access reference normal
+	const Vector3D & referenceRotationVector() {
+		return _R;
+	}
+
+	//! access deformed normal
+	const Vector3D & deformedRotationVector() {
+		return _r;
+	}
+
+	//! access force
+	const OPSNodalForce & force() const {
+		return _force;
+	}
+
+	void setReferencePosition(int i, double x) {
+		assert(i < 3);
+		_X(i) = x;
+	}
+
+	double getReferencePosition(int i) const {
+		assert(i < 3);
+		return _X(i);
+	}
+
+	void setDeformedPosition(const Vector3D & p) {
+		_x = p;
+	}
+
+	double getDeformedPosition(int i) const {
+		assert(i < 3);
+		return _x(i);
+	}
+
+	void setDeformedPosition(int i, double x) {
+		assert(i < 3);
+		_x(i) = x;
+	}
+
+	void addToDeformedPosition(int i, double dx) {
+		assert(i < 3);
+		_x(i) = _x(i) + dx;
+	}
+
+	void setReferenceRotationVector(const Vector3D &N) {
+		_R = N;
+	}
+
+	double getReferenceNormal(int i) {
+		assert(i < 3);
+		return _R(i);
+	}
+
+	void setDeformedRotationVector(const Vector3D &n) {
+		_r = n;
+	}
+
+	double getDeformedRotationVector(int i) {
+		assert(i < 3);
+		return _r(i);
+	}
+
+	double getForce(int i) const {
+		assert(i < 6);
+		return _force(i);
+	}
+
+	void setForce(int i, double f) {
+		assert(i < 6);
+		_force(i) = f;
+	}
+
+	void addForce(int i, double df) {
+		assert(i < 6);
+		_force(i) = _force(i) + df;
+	}
+
+	//! update force by some increment
+	void updateForce(const OPSNodalForce & f) {
+		for (int i = 0; i < 6; i++) {
+			_force(i) = _force(i) + f(i);
+		}
+	}
+
+	void resetPosition() {
+		_X = _x;
+	}
+
+	int dof() const {
+		return 6;
+	}
+
+protected:
+	Vector3D _x;
+	Vector3D _X;
+	Vector3D _r;
+	Vector3D _R;
+	OPSNodalForce _force;
+};
+
 }
-
 #endif // _NODE_

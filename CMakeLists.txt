@@ -18,6 +18,8 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 # set(blitz_DIR "/u/local/apps/blitz/current" CACHE PATH "Directory containing include/blitz/blitz.h" FORCE)
 # set(GSL_ROOT_DIR "/usr" CACHE PATH "Directory containing lib/libgsl.a" FORCE)
 
+cmake_policy(SET CMP0053 NEW)
+
 enable_language(Fortran)
 
 find_package(tvmet REQUIRED)

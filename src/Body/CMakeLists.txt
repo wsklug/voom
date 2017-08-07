@@ -1,6 +1,6 @@
 project(Body)
 
-set(SRCS Body.cc GenericBody.cc PotentialBody.cc ViscosityBody.cc ProteinBody.cc PeriodicPotentialBody.cc)
+set(SRCS Body.cc GenericBody.cc PotentialBody.cc ViscosityBody.cc ProteinBody.cc PeriodicPotentialBody.cc OPSBody.cc)
 set(INCDIRS Geometry Node Materials Elements Shape Quadrature VoomMath)
 
 add_library(Body ${SRCS})
@@ -10,8 +10,6 @@ add_library(Body ${SRCS})
 target_include_directories(Body PUBLIC ${PROJECT_SOURCE_DIR})
 target_include_directories(Body PUBLIC ${PROJECT_SOURCE_DIR}/..)
 target_include_directories(Body PUBLIC ${PROJECT_BINARY_DIR}/..)
-
-
 
 foreach(CURRD ${INCDIRS})
 	target_include_directories(Body PUBLIC ${PROJECT_SOURCE_DIR}/../${CURRD} )
