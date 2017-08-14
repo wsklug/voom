@@ -97,10 +97,10 @@ void OPSBody::updatePolyDataAndKdTree() {
 	idf->PointIdsOn();
 	idf->SetInputData(unitSphere);
 
-	d3D->SetAlpha(3.0);// Trial and error
-	d3D->AlphaLinesOff();
-	d3D->AlphaTrisOff();
-	d3D->AlphaVertsOff();
+	//d3D->SetAlpha(3.0);// Trial and error
+	//d3D->AlphaLinesOff();
+	//d3D->AlphaTrisOff();
+	//d3D->AlphaVertsOff();
 	d3D->SetInputConnection(idf->GetOutputPort());
 	dssf->SetInputConnection(d3D->GetOutputPort());
 	dssf->Update();
