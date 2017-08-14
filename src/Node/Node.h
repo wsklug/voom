@@ -923,8 +923,9 @@ protected:
  */
 class OPSNode: public NodeBase {
 public:
-	typedef typename tvmet::Vector<double, 6> OPSNodalForce;
-	typedef typename tvmet::Vector<double, 4> Quaternion;
+	typedef tvmet::Vector<double, 6> Vector6D;
+
+	typedef tvmet::Vector<double, 4> Quaternion;
 
 	static Vector3D conjugation(Quaternion q, Vector3D p) {
 		// We will assume that q and p are quaternions
@@ -945,8 +946,9 @@ public:
 	//! Functions to convert from point normal to rotation vector or vice-versa
 	static Vector3D convertRotVecToNormal(Vector3D r) {
 		// Assume z-axis of Global Coord Sys is the reference for ptNormal rotation
-		tvmet::Vector<double, 3> zaxis(0.0);
-		tvmet::Vector<double, 3> ptNormal(0.0);
+		Vector3D zaxis(0.0);
+		zaxis[2] = 1.0;
+		Vector3D ptNormal(0.0);
 		double vi = tvmet::norm2(r); // Angle of rotation
 		// Check 0-angle case
 		if (vi < 1e-10) {
@@ -990,98 +992,91 @@ public:
 	OPSNode(int id, const NodeBase::DofIndexMap & index, const Vector3D &X,
 			const Vector3D &x) :
 				NodeBase(id, index) {
-		_X = X;
-		_x = x;
-		Vector3D N;
-		N = _X / tvmet::norm2(_X);
-		_R = convertNormalToRotVec(N);
-		Vector3D n;
-		n = _x / tvmet::norm2(_x);
-		_r = convertNormalToRotVec(n);
+		Vector3D N,n,R,r;
+		N = X / tvmet::norm2(X);
+		R = convertNormalToRotVec(N);
+		n = x / tvmet::norm2(x);
+		r = convertNormalToRotVec(n);
+
+		_X = X[0], X[1], X[2], R[0], R[1], R[2];
+		_x = x[0], x[1], x[2], r[0], r[1], r[2];
 	}
 
-	OPSNode(int id, const NodeBase::DofIndexMap & index, const Vector3D & X) :
+	OPSNode(int id, const NodeBase::DofIndexMap & index, const Vector3D & X):
 		NodeBase(id, index) {
-		_X = _x = X;
-		Vector3D N;
-		N = _X / tvmet::norm2(_X);
-		_R = _r = convertNormalToRotVec(N);
+		Vector3D N, R;
+		N = X / tvmet::norm2(X);
+		R = convertNormalToRotVec(N);
+		_X = X[0], X[1], X[2], R[0], R[1], R[2];
+		_x = _X;
+	}
+
+	OPSNode(int id, const NodeBase::DofIndexMap & index, const Vector3D &X,
+			const Vector3D &x, const Vector3D &N, const Vector3D &n):
+				NodeBase(id, index){
+		Vector3D R, r;
+		R = convertNormalToRotVec(N);
+		r = convertNormalToRotVec(n);
+		_X = X[0], X[1], X[2], R[0], R[1], R[2];
+		_x = x[0], x[1], x[2], r[0], r[1], r[2];
 	}
 
 	//! access reference position
-	const Vector3D & referencePosition() {
+	const Vector6D & referenceDOFs() {
 		return _X;
 	}
 
-	void setReferencePosition(const Vector3D & p) {
+	void setReferenceDOFs(const Vector6D & p) {
 		_X = p;
 	}
 
 	//! access deformed position
-	const Vector3D & deformedPosition() {
+	const Vector6D & deformedDOFs() {
 		return _x;
 	}
 
-	//! access reference normal
-	const Vector3D & referenceRotationVector() {
-		return _R;
-	}
-
-	//! access deformed normal
-	const Vector3D & deformedRotationVector() {
-		return _r;
+	void setDeformedDOFs(const Vector6D & p) {
+			_x = p;
 	}
 
 	//! access force
-	const OPSNodalForce & force() const {
+	const Vector6D & force() const {
 		return _force;
 	}
 
-	void setReferencePosition(int i, double x) {
-		assert(i < 3);
+	void setReferenceDOF(int i, double x) {
+		assert(i < 6);
 		_X(i) = x;
 	}
 
-	double getReferencePosition(int i) const {
-		assert(i < 3);
+	double getReferenceDOF(int i) const {
+		assert(i < 6);
 		return _X(i);
 	}
 
-	void setDeformedPosition(const Vector3D & p) {
-		_x = p;
-	}
-
-	double getDeformedPosition(int i) const {
-		assert(i < 3);
+	double getDeformedDOF(int i) const {
+		assert(i < 6);
 		return _x(i);
 	}
 
-	void setDeformedPosition(int i, double x) {
-		assert(i < 3);
+	void setDeformedDOF(int i, double x) {
+		assert(i < 6);
 		_x(i) = x;
 	}
 
-	void addToDeformedPosition(int i, double dx) {
-		assert(i < 3);
+	void addToDeformedDOF(int i, double dx) {
+		assert(i < 6);
 		_x(i) = _x(i) + dx;
 	}
 
-	void setReferenceRotationVector(const Vector3D &N) {
-		_R = N;
+	virtual double getPoint(int i) const{
+		return getDeformedDOF(i);
 	}
-
-	double getReferenceNormal(int i) {
-		assert(i < 3);
-		return _R(i);
+	virtual void setPoint(int i, double x){
+		setDeformedDOF(i,x);
 	}
-
-	void setDeformedRotationVector(const Vector3D &n) {
-		_r = n;
-	}
-
-	double getDeformedRotationVector(int i) {
-		assert(i < 3);
-		return _r(i);
+	virtual void addPoint(int i, double dx){
+		addToDeformedDOF(i,dx);
 	}
 
 	double getForce(int i) const {
@@ -1099,14 +1094,50 @@ public:
 		_force(i) = _force(i) + df;
 	}
 
+	Vector3D deformedPosition(){
+		Vector3D x(_x[0],_x[1],_x[2]);
+		return x;
+	}
+
+	Vector3D referencePosition(){
+		Vector3D x(_X[0],_X[1],_X[2]);
+		return x;
+	}
+
+	Vector3D deformedRotationVector(){
+		Vector3D x(_x[3],_x[4],_x[5]);
+		return x;
+	}
+
+	Vector3D referenceRotationVector(){
+			Vector3D x(_X[3],_X[4],_X[5]);
+			return x;
+	}
+
+	void setReferencePosAndRotVec(Vector3D X){
+		Vector3D N, R;
+		N = X / tvmet::norm2(X);
+		R = convertNormalToRotVec(N);
+		for(int i=0; i < 3; i++) _X(i) = X(i);
+		for(int i=0; i < 3; i++) _X(i+3) = R(i);
+	}
+
+	void setDeformedPosAndRotVec(Vector3D X){
+		Vector3D N, R;
+		N = X / tvmet::norm2(X);
+		R = convertNormalToRotVec(N);
+		for(int i=0; i < 3; i++) _x(i) = X(i);
+		for(int i=0; i < 3; i++) _x(i+3) = R(i);
+	}
+
 	//! update force by some increment
-	void updateForce(const OPSNodalForce & f) {
+	void updateForce(const Vector6D & f) {
 		for (int i = 0; i < 6; i++) {
 			_force(i) = _force(i) + f(i);
 		}
 	}
 
-	void resetPosition() {
+	void resetDeformedToReference() {
 		_X = _x;
 	}
 
@@ -1115,11 +1146,11 @@ public:
 	}
 
 protected:
-	Vector3D _x;
-	Vector3D _X;
-	Vector3D _r;
-	Vector3D _R;
-	OPSNodalForce _force;
+	// first three DOFs are position coordinates and next 3
+	//are rotation vector
+	Vector6D _x;
+	Vector6D _X;
+	Vector6D _force;
 };
 
 }

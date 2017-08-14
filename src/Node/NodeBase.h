@@ -30,6 +30,7 @@
  
 #include <vector>
 #include <fstream>
+#include <math.h>
 #include "voom.h"
 
 namespace voom
@@ -49,7 +50,7 @@ namespace voom
     virtual int dof() const = 0;
     virtual double getPoint(int i) const = 0;
     virtual void setPoint(int i, double x) = 0;
-    virtual void addPoint(int i, double dx) = 0;    
+    virtual void addPoint(int i, double dx) = 0;
 
     virtual double getForce(int i) const = 0;
     virtual void setForce(int i, double f) = 0;

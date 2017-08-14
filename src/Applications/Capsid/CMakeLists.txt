@@ -37,7 +37,8 @@ endif(LINK_LAPACK)
 set(voom_LIBRARIES Body Solvers Materials Elements Quadrature Shape VoomMath Geometry Mesh Model)
 
 set(capsid_targets asphericityMorse annealing brownian asphericityHarm dual asphericityCont 
-    indentWparticles harmonic2D Morse2D Morse2DPeriodic reOrient twoMeshAnneal indentContinuum twoMeshIndent testLoopShell)
+    indentWparticles harmonic2D Morse2D Morse2DPeriodic reOrient twoMeshAnneal indentContinuum
+    twoMeshIndent testLoopShell OPSAsphericity OPSBrownianAnneal)
 
 IF(WIN32 AND BLA_VENDOR MATCHES "Intel[0-9]*_64lp_seq")
 	link_directories("${MKL_ROOT}/lib/intel64")

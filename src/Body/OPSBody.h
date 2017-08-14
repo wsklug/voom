@@ -17,6 +17,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <regex>
+
 #include "Body.h"
 #include "voom.h"
 #include "Node.h"
@@ -29,6 +31,12 @@
 #include <vtkDoubleArray.h>
 #include <vtkPointData.h>
 #include <vtkKdTree.h>
+#include <vtkIdFilter.h>
+#include <vtkDelaunay3D.h>
+#include <vtkDataSetSurfaceFilter.h>
+#include <vtkLoopSubdivisionFilter.h>
+#include <vtkUnstructuredGrid.h>
+#include <vtkUnstructuredGridWriter.h>
 
 #if VTK_MAJOR_VERSION < 6
 #define SetInputData SetInput
@@ -46,37 +54,46 @@ namespace voom {
  	 https://doi.org/10.1017/CBO9781107415324.004
  */
 
+struct OPSParams{
+	//Default values
+	OPSParams():alphaM(1.0), alphaP(1.0), alphaN(1.0), alphaC(1.0),
+			epsilon(1.0), r_e(1.0), s(6.9314718056),//Fracture strain = 10%
+			K(1.0), a(1.0), b(1.0){}
+
+	//Copy from another instance
+	OPSParams(const OPSParams &p){
+		alphaM = 1.0; alphaP = p.alphaP; alphaN = p.alphaN;
+		alphaC = p.alphaC;	epsilon = p.epsilon; r_e = p.r_e;
+		s = p.s; K = p.K; a = p.a; b = p.b;
+	}
+	// Initialize from a vector of doubles
+	OPSParams( double aM, double aP, double aN, double aC, double E, double r,
+			double sv, double Kv, double av, double bv):alphaM(aM),alphaP(aP),
+					alphaN(aN),alphaC(aC),epsilon(E),r_e(r),s(sv),K(Kv),a(av),
+					b(bv){}
+	// Weights for the potentials involved in total energy
+	double alphaM, alphaP, alphaN, alphaC;
+	/* Morse potential parameters:
+	 * epsilon = equilibrium energy, r_e = equilibrium separation
+	 * s = Morse potential width-controlling parameter
+	 */
+	double epsilon, r_e, s;
+	// Kernel parameters
+	double K, a, b;
+};
+
 class OPSBody: public Body {
 public:
 
 	typedef vector<OPSNode*>::const_iterator opsNodeIterator;
+	typedef tvmet::Vector<double,6> Vector6D;
 
-	struct properties{
-		//Default values
-		properties(){
-			alphaM = 1.0; alphaP = 1.0; alphaN = 1.0; alphaC = 1.0;
-			epsilon = 1.0; r_e = 1.0; s = 6.9314718056;//Fracture strain = 10%
-			K = 1.0; a = 1.0; b = 1.0;
-		}
-		// Initialize from a vector of doubles
-		properties( vector<double> val){
-			assert( val.size() > 10 );
-			alphaM = val[0]; alphaP = val[1]; alphaN = val[2]; alphaC = val[3];
-			epsilon = val[4]; r_e = val[5]; s = val[6];
-			K = val[7]; a = val[8]; b = val[9];
-		}
-		// Weights for the potentials involved in total energy
-		double alphaM, alphaP, alphaN, alphaC;
-		/* Morse potential parameters:
-		 * epsilon = equilibrium energy, r_e = equilibrium separation
-		 * s = Morse potential width-controlling parameter
-		 */
-		double epsilon, r_e, s;
-		// Kernel parameters
-		double K, a, b;
-	};
+	enum Property {aM, aP, aN, aC, E, r, sv, Kv, av, bv};
+
+	OPSBody(){}
+
 	//! Construct body from
-	OPSBody(const vector<OPSNode*> & nodes, properties p, double r);
+	OPSBody(const vector<OPSNode*> & nodes, OPSParams &p, double r);
 
 	//! Destructor
 	~OPSBody() {}
@@ -89,14 +106,22 @@ public:
 
 	void updateNeighbors();
 
+	double getAverageEdgeLength();
+
+	double getAverageRadius();
+
+	double getAsphericity();
+
+	double getLoopAsphericity();
+
 	//! Return the energy of the body
 	double energy() const { return _energy;}
 
 	//!Return the current OPS properties
-	properties getProperties(){return _prop;}
+	OPSParams getProperties(){return _prop;}
 
 	//!Update the current OPS properties
-	void updateProperties(properties p){_prop = p;}
+	void updateProperties(OPSParams p){_prop = p;}
 
 	//!Return the current search radius
 	double getSearchRadius(){return _searchR;}
@@ -126,6 +151,13 @@ public:
 		return _initialNearestNeighbor;
 	}
 
+	void updateProperty(Property p, double val);
+
+	double getMorseEnergy(){return _morseEn;}
+	double getPlanarityEnergy(){return _planarEn;}
+	double getNormalityEnergy(){return _normalEn;}
+	double getCircularityEnergy(){return _circularEn;}
+
 	//!OPS kernel and potential functions
 	double morse(Vector3D xi, Vector3D xj);
 	double psi(Vector3D vi, Vector3D xi, Vector3D xj);
@@ -154,14 +186,17 @@ public:
 	Vector3D Dphi_cDxj(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj);
 
 protected:
-	const vector<OPSNode*> & _opsNodes; // Nodes
+	const vector<OPSNode*> _opsNodes; // Nodes
 	double _searchR; // Search radius
-	properties _prop; // Parameters for the OPS
+	OPSParams _prop; // Parameters for the OPS
+	double _morseEn;
+	double _planarEn;
+	double _normalEn;
+	double _circularEn;
 	vtkSmartPointer<vtkKdTree> _kdTree;
 	vtkSmartPointer<vtkPolyData> _polyData;
 	vector<vtkSmartPointer<vtkIdList> > _neighbors;
 	std::vector<int> _initialNearestNeighbor; // Needed to find rmsd
-
 };// OPS body
 
 }

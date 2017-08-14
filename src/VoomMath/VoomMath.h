@@ -7,6 +7,10 @@
 namespace voom
 {
 
+typedef Eigen::Matrix<double,6,1> Vector6d;
+typedef Eigen::Matrix<double,6,Eigen::Dynamic> Matrix6Xd;
+typedef Eigen::Transform<double,6,Eigen::Affine> Affine6d;
+
   inline double sqr(double a) {return (a*a);}
 
 //   inline double norm2(const blitz::TinyVector<double,3> & v) { 
@@ -34,6 +38,10 @@ namespace voom
   Eigen::Affine3d Find3DAffineTransform(Eigen::Matrix3Xd in, Eigen::Matrix3Xd out);
 
   void TestFind3DAffineTransform();
+
+  Affine6d Find6DAffineTransform(Matrix6Xd in, Matrix6Xd out);
+
+  void TestFind6DAffineTransform();
 
 };
 

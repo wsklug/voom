@@ -7,9 +7,8 @@
 
 namespace voom {
 
-OPSBody::OPSBody(const vector<OPSNode*> & nodes, properties p, double r) :
+OPSBody::OPSBody(const vector<OPSNode*> & nodes, OPSParams &p, double r) :
 				_opsNodes(nodes), _prop(p), _searchR(r) {
-
 	_dof = 0;
 	// Initialize Body.h containers
 	_nodes.insert(_nodes.begin(), nodes.begin(), nodes.end());
@@ -45,31 +44,87 @@ OPSBody::OPSBody(const vector<OPSNode*> & nodes, properties p, double r) :
 *Updates _polyData with latest deformed node positions and normals
  */
 void OPSBody::updatePolyDataAndKdTree() {
-	vtkSmartPointer<vtkPoints> pts = vtkSmartPointer<vtkPoints>::New();
-	vtkSmartPointer<vtkCellArray> verts = vtkSmartPointer<vtkCellArray>::New();
+	vtkSmartPointer<vtkPoints> pts =
+			vtkSmartPointer<vtkPoints>::New();
+	vtkSmartPointer<vtkPoints> pts2 =
+				vtkSmartPointer<vtkPoints>::New();
 	vtkSmartPointer<vtkDoubleArray> normals =
 			vtkSmartPointer<vtkDoubleArray>::New();
+	vtkSmartPointer<vtkPolyData> unitSphere =
+			vtkSmartPointer<vtkPolyData>::New();
+	vtkSmartPointer<vtkPolyData> final;
+	vtkSmartPointer<vtkDataSetSurfaceFilter> dssf =
+			vtkSmartPointer<vtkDataSetSurfaceFilter>::New();
+	vtkSmartPointer<vtkIdFilter> idf =
+			vtkSmartPointer<vtkIdFilter>::New();
+	vtkSmartPointer<vtkDelaunay3D> d3D =
+			vtkSmartPointer<vtkDelaunay3D>::New();
+	vtkSmartPointer<vtkCellArray> finalCells =
+			vtkSmartPointer<vtkCellArray>::New();
+	vtkSmartPointer<vtkCellArray> interim;
+	vtkSmartPointer<vtkIdTypeArray> origIds;
+	vtkSmartPointer<vtkIdList> pointIds =
+			vtkSmartPointer<vtkIdList>::New();
+
 	normals->SetNumberOfComponents(3);
-	normals->SetNumberOfTuples(_opsNodes.size());
+	normals->SetName("PointNormals");
+	//vtkSmartPointer<vtkCellArray> verts = vtkSmartPointer<vtkCellArray>::New();
 	int ptIdx = 0;
 	for (opsNodeIterator n = _opsNodes.begin(); n != _opsNodes.end(); ++n) {
-		Vector3D coords = (*n)->deformedPosition();
-		Vector3D currNormal = (*n)->deformedRotationVector();
+		Vector3D coords, currRotVec, currNormal;
+		coords = (*n)->deformedPosition();
+		currRotVec = (*n)->deformedRotationVector();
+		currNormal = OPSNode::convertRotVecToNormal( currRotVec );
 		pts->InsertNextPoint(&(coords[0]));
 		normals->InsertNextTuple(&(currNormal[0]));
-		verts->InsertNextCell(1);
-		verts->InsertCellPoint(ptIdx++);
+		//verts->InsertNextCell(1);
+		//verts->InsertCellPoint(ptIdx++);
 	}
 	_polyData->SetPoints(pts);
-	_polyData->SetVerts(verts);
+	//_polyData->SetVerts(verts);
 	_polyData->GetPointData()->SetNormals(normals);
 	_kdTree->BuildLocatorFromPoints( _polyData );
+
+	for(int i=0; i < _polyData->GetNumberOfPoints(); i++){
+		Vector3D x(0.0), temp(0.0);
+		_polyData->GetPoint(i,&(temp[0]));
+		x = temp / tvmet::norm2(temp);
+		pts2->InsertNextPoint(&(x[0]));
+	}
+	unitSphere->SetPoints(pts2);
+
+	idf->SetIdsArrayName("PointIds");
+	idf->PointIdsOn();
+	idf->SetInputData(unitSphere);
+
+	d3D->SetAlpha(3.0);// Trial and error
+	d3D->AlphaLinesOff();
+	d3D->AlphaTrisOff();
+	d3D->AlphaVertsOff();
+	d3D->SetInputConnection(idf->GetOutputPort());
+	dssf->SetInputConnection(d3D->GetOutputPort());
+	dssf->Update();
+	final = dssf->GetOutput();
+	interim = final->GetPolys();
+	interim->InitTraversal();
+	origIds = vtkIdTypeArray::SafeDownCast(
+			final->GetPointData()->GetArray("PointIds"));
+	while(interim->GetNextCell(pointIds)){
+		int numIds = pointIds->GetNumberOfIds();
+		finalCells->InsertNextCell(numIds);
+		for(int j=0; j < numIds; j++ ){
+			int id = (double)origIds->GetTuple1( pointIds->GetId(j) );
+			finalCells->InsertCellPoint(id);
+		}
+	}
+	_polyData->SetPolys(finalCells);
 }
 
 /*
 *Store the neighbors information for each node
  */
 void OPSBody::updateNeighbors(){
+	//updatePolyDataAndKdTree();
 	for(int i=0; i < _opsNodes.size(); i++){
 		Vector3D pos(0.0);
 		_polyData->GetPoint( i, &(pos[0]) );
@@ -94,9 +149,13 @@ void OPSBody::compute(bool f0, bool f1, bool f2) {
 	K = _prop.K; a = _prop.a; b = _prop.b;
 
 	// Initialize energy to be zero
-	if (f0)
+	if (f0){
 		_energy = 0.0;
-
+		_morseEn = 0.0;
+		_planarEn = 0.0;
+		_normalEn = 0.0;
+		_circularEn = 0.0;
+	}
 	if(f0 && !f1){
 		for(int i=0; i < _opsNodes.size(); i++){
 			Vector3D vi(0.0), xi(0.0);
@@ -116,6 +175,11 @@ void OPSBody::compute(bool f0, bool f1, bool f2) {
 				Phi_pXi = phi_p( vi, xi, xj );
 				Phi_nXi = phi_n( vi, vj );
 				Phi_cXi = phi_c( vi, vj, xi, xj );
+
+				_morseEn += aM*morseEn;
+				_planarEn += aP*KerXi*Phi_pXi;
+				_normalEn += aN*KerXi*Phi_nXi;
+				_circularEn += aC*KerXi*Phi_cXi;
 
 				_energy += aM*morseEn + ( aP*Phi_pXi + aN*Phi_nXi + aC*Phi_cXi )*KerXi;
 			}
@@ -181,15 +245,21 @@ void OPSBody::compute(bool f0, bool f1, bool f2) {
 		                + aC*( dPhi_cXj*KerXi + Phi_cXi*dKerXj );
 				neighborDv = KerXi*( aN*dPhi_nVj + aC*dPhi_cVj );
 
-				OPSNode::OPSNodalForce centerForce(centerDx[0], centerDx[1], centerDx[2],
+				Vector6D centerForce(centerDx[0], centerDx[1], centerDx[2],
 						centerDv[0], centerDv[1], centerDv[2]);
-				OPSNode::OPSNodalForce neighborForce(neighborDx[0], neighborDx[1],
+				Vector6D neighborForce(neighborDx[0], neighborDx[1],
 						neighborDx[2], neighborDv[0], neighborDv[1], neighborDv[2]);
 
 				for(int k=0; k < 6; k++){
 					_opsNodes[i]->addForce( k, centerForce(k) );
 					_opsNodes[currId]->addForce( k, neighborForce(k) );
 				}
+
+				_morseEn += aM*morseEn;
+				_planarEn += aP*KerXi*Phi_pXi;
+				_normalEn += aN*KerXi*Phi_nXi;
+				_circularEn += aC*KerXi*Phi_cXi;
+
 				_energy += aM*morseEn + ( aP*Phi_pXi + aN*Phi_nXi + aC*Phi_cXi )*KerXi;
 
 			}
@@ -204,6 +274,162 @@ void OPSBody::compute(bool f0, bool f1, bool f2) {
 
 	return;
 
+}
+
+/*
+ * Print a Paraview file by generating a triangulation
+ */
+void OPSBody::printParaview( const string fileName ) const{
+
+	vtkSmartPointer<vtkPolyDataWriter> writer =
+			vtkSmartPointer<vtkPolyDataWriter>::New();
+
+	writer->SetFileName( fileName.c_str() );
+	writer->SetInputData( _polyData );
+	writer->Write();
+}
+
+/*
+ * Calculate average edge length as if the particles were
+ * triangulated
+ */
+double OPSBody::getAverageEdgeLength(){
+	double avg = 0;
+	int numEdges = 0;
+	for(int i=0; i < _opsNodes.size(); i++){
+		Vector3D center;
+		center = _opsNodes[i]->deformedPosition();
+		for(int j=0; j < _neighbors[i]->GetNumberOfIds(); j++){
+			vtkIdType currId = _neighbors[i]->GetId(j);
+			Vector3D neighbor;
+			neighbor = _opsNodes[currId]->deformedPosition();
+			avg += tvmet::norm2( center - neighbor );
+			numEdges++;
+		}
+	}
+	avg /= numEdges;
+	return avg;
+}
+
+/*
+ * Get average radius
+ */
+double OPSBody::getAverageRadius(){
+	double radius = 0.0;
+	for(int i=0; i < _opsNodes.size(); i++){
+			Vector3D x;
+			x = _opsNodes[i]->deformedPosition();
+			radius += tvmet::norm2(x);
+	}
+	radius /= _opsNodes.size();
+	return radius;
+}
+
+/*
+ *  Calculate asphericity
+ */
+double OPSBody::getAsphericity(){
+	double asphericity = 0.0;
+	double R0 = getAverageRadius();
+	for(int i=0; i < _opsNodes.size(); i++){
+		Vector3D x;
+		x = _opsNodes[i]->deformedPosition();
+		double R = tvmet::norm2(x);
+		asphericity += (R - R0)*(R - R0);
+	}
+	asphericity /= (_opsNodes.size()*R0*R0);
+	return asphericity;
+}
+/*
+ * Get Loop subdivision surface asphericity
+ */
+double OPSBody::getLoopAsphericity(){
+	double asphericity = 0;
+	vtkSmartPointer<vtkLoopSubdivisionFilter> lsf =
+			vtkSmartPointer<vtkLoopSubdivisionFilter>::New();
+	lsf->SetInputData(_polyData);
+	lsf->SetNumberOfSubdivisions(1);
+	lsf->Update();
+	vtkSmartPointer<vtkPolyData> sub = lsf->GetOutput();
+	//Quadrature order 2 for a triangle has 3 edge mid-points as Gauss points
+	vtkSmartPointer<vtkCellArray> polys = sub->GetPolys();
+	double R0 = 0.0;
+	int numQuadPoints = 0;
+	polys->InitTraversal();
+	vtkSmartPointer<vtkIdList> verts =
+			vtkSmartPointer<vtkIdList>::New();
+	int count = 0;
+	while(polys->GetNextCell(verts)){
+		int numVerts = verts->GetNumberOfIds();
+		if(numVerts == 3){
+			Vector3D A(0.0), B(0.0), C(0.0), D(0.0), E(0.0), F(0.0);
+			sub->GetPoint( verts->GetId(0), &(A[0]) );
+			sub->GetPoint( verts->GetId(1), &(B[0]) );
+			sub->GetPoint( verts->GetId(2), &(C[0]) );
+			D = 0.5*(A+B);
+			E = 0.5*(B+C);
+			F = 0.5*(C+A);
+			R0 += (tvmet::norm2(D) + tvmet::norm2(E) + tvmet::norm2(F));
+			numQuadPoints += 3;
+		}
+	}
+	R0 /= numQuadPoints;
+	verts->Reset();
+	polys->InitTraversal();
+	while(polys->GetNextCell(verts)){
+		int numVerts = verts->GetNumberOfIds();
+		if(numVerts == 3){
+			Vector3D A(0.0), B(0.0), C(0.0), D(0.0), E(0.0), F(0.0);
+			sub->GetPoint( verts->GetId(0), &(A[0]) );
+			sub->GetPoint( verts->GetId(1), &(B[0]) );
+			sub->GetPoint( verts->GetId(2), &(C[0]) );
+			D = 0.5*(A+B);
+			E = 0.5*(B+C);
+			F = 0.5*(C+A);
+			asphericity += pow((tvmet::norm2(D) - R0),2) +
+				pow((tvmet::norm2(E) - R0),2) + pow((tvmet::norm2(F) - R0),2);
+		}
+	}
+	asphericity /= (numQuadPoints/R0*R0);
+	return asphericity;
+}
+
+/*
+ * Update property of the OPSBody
+ */
+void OPSBody::updateProperty(Property p, double val) {
+	switch (p) {
+	case aM:
+		_prop.alphaM = val;
+		break;
+	case aP:
+		_prop.alphaP = val;
+		break;
+	case aN:
+		_prop.alphaN = val;
+		break;
+	case aC:
+		_prop.alphaC = val;
+		break;
+	case E:
+		_prop.epsilon = val;
+		break;
+	case r:
+		_prop.r_e = val;
+		break;
+	case sv:
+		_prop.s = val;
+		break;
+	case Kv:
+		_prop.K = val;
+		break;
+	case av:
+		_prop.a = val;
+		break;
+	case bv:
+		_prop.b = val;
+		break;
+	}
 }
 
 /*

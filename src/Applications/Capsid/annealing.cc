@@ -648,7 +648,7 @@ int main(int argc, char* argv[]) {
 				<< endl;
 
 			//********** Find bins for each particle ************//
-			putParticlesInBins(cellLimits, newCurr, defNodes, binDensity, viterMax);
+			putParticlesInBins(cellLimits, newCurr, defNodes.size(), binDensity, viterMax);
 
 			// step forward in "time", relaxing viscous energy & forces 
 			vr.step();
