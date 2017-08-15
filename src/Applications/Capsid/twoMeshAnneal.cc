@@ -435,7 +435,7 @@ int main(int argc, char* argv[]) {
 			PrBody->initialNearestNeighbor();
 			ViscousRegularizer vr(allNodes, viscosity);
 			bd->pushBack(&vr);
-			BrownianKick bk(allDefNodes, Cd, diffusionCoeff, dt, 0.75);
+			BrownianKick bk(allNodes, Cd, diffusionCoeff, dt, 0.75);
 			bd->pushBack(&bk);
 			RadialSpring rs(allDefNodes, radialSpringConstant, Ravg);
 			bd->pushBack(&rs);
@@ -638,14 +638,19 @@ int main(int argc, char* argv[]) {
 				<< endl;
 
 			//********** Find bins for each particle ************//
-			putParticlesInBins(cellLimits, newCurr, defNodes.size(), binDensity, viterMax);
+			putParticlesInBins(cellLimits, newCurr, defNodes.size(), binDensity);
 
 			// step forward in "time", relaxing viscous energy & forces 
 			vr.step();
 			delete PrBody;
 			delete bd;
 		}
-
+		for(int v=0; v < viterMax; v++){
+			double temp;
+			temp = binDensity->GetTuple1(v);
+			temp = temp / viterMax;
+			binDensity->SetTuple1(v,temp);
+		}
 		pd->GetCellData()->AddArray(binDensity);
 
 		vtkSmartPointer<vtkPolyDataWriter> wr =

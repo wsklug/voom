@@ -1,4 +1,3 @@
-
 // This code is released in public domain
 
 #include "VoomMath.h"
@@ -9,7 +8,8 @@ namespace voom {
 // Source: http://en.wikipedia.org/wiki/Kabsch_algorithm
 
 // The input 3D points are stored as columns.
-Eigen::Affine3d Find3DAffineTransform(Eigen::Matrix3Xd in, Eigen::Matrix3Xd out) {
+Eigen::Affine3d Find3DAffineTransform(Eigen::Matrix3Xd in,
+		Eigen::Matrix3Xd out) {
 
 	// Default output
 	Eigen::Affine3d A;
@@ -47,7 +47,8 @@ Eigen::Affine3d Find3DAffineTransform(Eigen::Matrix3Xd in, Eigen::Matrix3Xd out)
 
 	// SVD
 	Eigen::MatrixXd Cov = in * out.transpose();
-	Eigen::JacobiSVD<Eigen::MatrixXd> svd(Cov, Eigen::ComputeThinU | Eigen::ComputeThinV);
+	Eigen::JacobiSVD<Eigen::MatrixXd> svd(Cov,
+			Eigen::ComputeThinU | Eigen::ComputeThinV);
 
 	// Find the rotation
 	double d = (svd.matrixV() * svd.matrixU().transpose()).determinant();
@@ -61,7 +62,7 @@ Eigen::Affine3d Find3DAffineTransform(Eigen::Matrix3Xd in, Eigen::Matrix3Xd out)
 
 	// The final transform
 	A.linear() = scale * R;
-	A.translation() = scale*(out_ctr - R*in_ctr);
+	A.translation() = scale * (out_ctr - R * in_ctr);
 
 	return A;
 }
@@ -78,102 +79,21 @@ void TestFind3DAffineTransform() {
 	double scale = 2.0;
 	for (int row = 0; row < in.rows(); row++) {
 		for (int col = 0; col < in.cols(); col++) {
-			in(row, col) = log(2.0 * row + 10.0) / sqrt(1.0*col + 4.0) + sqrt(col*1.0) / (row + 1.0);
+			in(row, col) = log(2.0 * row + 10.0) / sqrt(1.0 * col + 4.0)
+					+ sqrt(col * 1.0) / (row + 1.0);
 		}
 	}
 	Eigen::Vector3d S;
 	S << -5, 6, -27;
 	for (int col = 0; col < in.cols(); col++)
-		out.col(col) = scale*R*in.col(col) + S;
+		out.col(col) = scale * R * in.col(col) + S;
 
 	Eigen::Affine3d A = Find3DAffineTransform(in, out);
 
 	// See if we got the transform we expected
-	if ((scale*R - A.linear()).cwiseAbs().maxCoeff() > 1e-13 ||
-			(S - A.translation()).cwiseAbs().maxCoeff() > 1e-13)
+	if ((scale * R - A.linear()).cwiseAbs().maxCoeff() > 1e-13
+			|| (S - A.translation()).cwiseAbs().maxCoeff() > 1e-13)
 		throw "Could not determine the affine transform accurately enough";
 }
 
-Affine6d Find6DAffineTransform(Matrix6Xd in, Matrix6Xd out) {
-
-	// Default output
-	Affine6d A;
-	A.linear() = Matrix6Xd::Identity(6, 6);
-	A.translation() = Vector6d::Zero();
-
-	if (in.cols() != out.cols())
-		throw "Find6DAffineTransform(): input data mis-match";
-
-	// First find the scale, by finding the ratio of sums of some distances,
-	// then bring the datasets to the same scale.
-	double dist_in = 0, dist_out = 0;
-	for (int col = 0; col < in.cols() - 1; col++) {
-		dist_in += (in.col(col + 1) - in.col(col)).norm();
-		dist_out += (out.col(col + 1) - out.col(col)).norm();
-	}
-	if (dist_in <= 0 || dist_out <= 0)
-		return A;
-	double scale = dist_out / dist_in;
-	out /= scale;
-
-	// Find the centroids then shift to the origin
-	Vector6d in_ctr = Vector6d::Zero();
-	Vector6d out_ctr = Vector6d::Zero();
-	for (int col = 0; col < in.cols(); col++) {
-		in_ctr += in.col(col);
-		out_ctr += out.col(col);
-	}
-	in_ctr /= in.cols();
-	out_ctr /= out.cols();
-	for (int col = 0; col < in.cols(); col++) {
-		in.col(col) -= in_ctr;
-		out.col(col) -= out_ctr;
-	}
-
-	// SVD
-	Eigen::MatrixXd Cov = in * out.transpose();
-	Eigen::JacobiSVD<Eigen::MatrixXd> svd(Cov, Eigen::ComputeThinU | Eigen::ComputeThinV);
-
-	// Find the rotation
-	double d = (svd.matrixV() * svd.matrixU().transpose()).determinant();
-	if (d > 0)
-		d = 1.0;
-	else
-		d = -1.0;
-	Matrix6Xd I = Matrix6Xd::Identity(6, 6);
-	I(5, 5) = d;
-	Matrix6Xd R = svd.matrixV() * I * svd.matrixU().transpose();
-
-	// The final transform
-	A.linear() = scale * R;
-	A.translation() = scale*(out_ctr - R*in_ctr);
-
-	return A;
-}
-
-// A function to test Find3DAffineTransform()
-
-void TestFind6DAffineTransform() {
-
-	// Create datasets with known transform
-	Matrix6Xd in(6, 100), out(6, 100);
-	Matrix6Xd R(6,6);
-	double scale = 2.0;
-	for (int row = 0; row < in.rows(); row++) {
-		for (int col = 0; col < in.cols(); col++) {
-			in(row, col) = log(2 * row + 10.0) / sqrt(1.0*col + 4.0) + sqrt(col*1.0) / (row + 1.0);
-		}
-	}
-	Vector6d S;
-	S << -5, 6, -27;
-	for (int col = 0; col < in.cols(); col++)
-		out.col(col) = scale*R*in.col(col) + S;
-
-	Affine6d A = Find6DAffineTransform(in, out);
-
-	// See if we got the transform we expected
-	if ((scale*R - A.linear()).cwiseAbs().maxCoeff() > 1e-13 ||
-			(S - A.translation()).cwiseAbs().maxCoeff() > 1e-13)
-		throw "Could not determine the affine transform accurately enough";
-}
-}
+}// NAMESPACE VOOM

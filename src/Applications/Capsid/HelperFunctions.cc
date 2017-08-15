@@ -799,7 +799,7 @@ std::vector<vector<double> > getSphCellLimits(
  */
 void putParticlesInBins(const std::vector<std::vector<double> > &cellLimits,
 		const Eigen::Matrix3Xd &newCurr, int size,
-		vtkSmartPointer<vtkDoubleArray> binDensity, int viterMax) {
+		vtkSmartPointer<vtkDoubleArray> binDensity) {
 
 	bool debug = false;
 	for (int i = 0; i < size; i++) {
@@ -851,71 +851,7 @@ void putParticlesInBins(const std::vector<std::vector<double> > &cellLimits,
 
 				double tempCount = binDensity->GetTuple1(binId);
 				//Size of fileNames vector corresponds to number of time steps
-				binDensity->SetTuple1(binId, tempCount + (1.0 / viterMax));
-				break;
-			}
-		}
-	}
-}
-
-/*
- This function classifies the particles belonging to certain bins
- */
-void putParticlesInBins(const std::vector<std::vector<double> > &cellLimits,
-		const Matrix6Xd &newCurr, int size,
-		vtkSmartPointer<vtkDoubleArray> binDensity, int viterMax) {
-
-	bool debug = false;
-	for (int i = 0; i < size; i++) {
-
-		if (debug) {
-			std::cout << "\tPoint Id = " << i << std::endl;
-		}
-
-		tvmet::Vector<double, 3> pos(0.0);
-		for (int row = 0; row < 3; row++) {
-			pos(row) = newCurr(row, i);
-		}
-
-		if (debug) {
-			std::cout << "\t\tOriginal : " << pos << std::endl;
-		}
-
-		Vector3D normalizedPos(0.0);
-		normalizedPos = pos / tvmet::norm2(pos);
-
-		if (debug) {
-			std::cout << "\t\tNormalized : " << normalizedPos << std::endl;
-		}
-
-		//Convert to spherical coordinates (phi,theta)
-		double phi = (180 / M_PI) * atan2(normalizedPos(1), normalizedPos(0));
-		double theta = (180 / M_PI) * acos(normalizedPos(2));
-
-		phi = (phi < 0) ? (360 + phi) : phi;
-
-		if (debug) {
-			std::cout << "\t\tPhi = " << phi << " Theta = " << theta
-					<< std::endl;
-		}
-
-		for (int binId = 0; binId < cellLimits.size(); binId++) {
-			double p_min, p_max, t_min, t_max;
-			p_min = cellLimits[binId][0];
-			p_max = cellLimits[binId][1];
-			t_min = cellLimits[binId][2];
-			t_max = cellLimits[binId][3];
-
-			if ((p_min <= phi && phi < p_max)
-					&& (t_min <= theta && theta < t_max)) {
-
-				if (debug) {
-					std::cout << "\t\tBin found : " << binId << std::endl;
-				}
-
-				double tempCount = binDensity->GetTuple1(binId);
-				//Size of fileNames vector corresponds to number of time steps
-				binDensity->SetTuple1(binId, tempCount + (1.0 / viterMax));
+				binDensity->SetTuple1(binId, tempCount + 1.0);
 				break;
 			}
 		}

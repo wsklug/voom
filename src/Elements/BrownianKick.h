@@ -39,8 +39,7 @@ namespace voom
     
   public:
 
-    typedef DeformationNode<3> Node; // nickname for mechanics nodes
-    typedef std::vector< Node* > NodeContainer;    
+    typedef std::vector< NodeBase* > NodeContainer;
 
     //! Constructor
 	BrownianKick(const NodeContainer &nodes, double Cd, double D, double dt);

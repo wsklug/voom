@@ -430,7 +430,7 @@ int main(int argc, char* argv[]) {
 		PrBody->initialNearestNeighbor();
 		ViscousRegularizer vr(bd->nodes(), viscosity);
 		bd->pushBack(&vr);
-		BrownianKick bk(defNodes, Cd, diffusionCoeff, dt);
+		BrownianKick bk(nodes, Cd, diffusionCoeff, dt);
 		bd->pushBack(&bk);
 		RadialSpring rs(defNodes, radialSpringConstant, Ravg);
 		bd->pushBack(&rs);
@@ -648,10 +648,16 @@ int main(int argc, char* argv[]) {
 				<< endl;
 
 			//********** Find bins for each particle ************//
-			putParticlesInBins(cellLimits, newCurr, defNodes.size(), binDensity, viterMax);
+			putParticlesInBins(cellLimits, newCurr, defNodes.size(), binDensity);
 
 			// step forward in "time", relaxing viscous energy & forces 
 			vr.step();
+		}
+		for(int v=0; v < viterMax; v++){
+			double temp;
+			temp = binDensity->GetTuple1(v);
+			temp = temp / viterMax;
+			binDensity->SetTuple1(v,temp);
 		}
 
 		pd->GetCellData()->AddArray(binDensity);

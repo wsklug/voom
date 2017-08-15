@@ -278,7 +278,7 @@ int main(int argc, char* argv[]) {
 			PotentialBody(&Mat, defNodes, PotentialSearchRF);
 		ViscousRegularizer vr(MorseBody->nodes(), viscosity);
 		MorseBody->pushBack(&vr);
-		BrownianKick bk(defNodes, Cd, diffusionCoeff, dt);
+		BrownianKick bk(nodes, Cd, diffusionCoeff, dt);
 		MorseBody->pushBack(&bk);
 
 		//Create Model

@@ -80,9 +80,6 @@ namespace voom
 		}
 	};
 
-typedef tvmet::Vector<double,6> Vector6D;
-typedef Eigen::Matrix<double,6,Eigen::Dynamic> Matrix6Xd;
-
 // Function declarations
 void writeEdgeStrainVtk(std::vector<std::string> &fileNames, \
 			double avgEdgeLen, double percentStrain);
@@ -105,11 +102,7 @@ std::vector<std::vector<double> > getSphCellLimits(const vtkSmartPointer<vtkPoly
 
 void putParticlesInBins(const std::vector<std::vector<double> > &cellLimits,
 	const Eigen::Matrix3Xd &newCurr, int size,
-	vtkSmartPointer<vtkDoubleArray> binDensity, int viterMax);
-
-void putParticlesInBins(const std::vector<std::vector<double> > &cellLimits,
-	const Matrix6Xd &newCurr, int size,
-	vtkSmartPointer<vtkDoubleArray> binDensity, int viterMax);
+	vtkSmartPointer<vtkDoubleArray> binDensity);
 
 std::vector<double> getMeshQualityInfo(const std::vector<DeformationNode<3>*> &a, 
 	const std::vector< tvmet::Vector<int, 3> > connectivities);

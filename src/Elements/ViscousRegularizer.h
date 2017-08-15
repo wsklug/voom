@@ -57,6 +57,7 @@ public:
 				n != _baseNodes.end(); n++) {
 			dof += (*n)->dof();
 		}
+		_dofPerNode = nodes[0]->dof();
 		_reference.resize(dof);
 		_reference = 0.0;
 		step();
@@ -80,7 +81,8 @@ public:
 		int I = 0;
 		for (BaseNodeIterator n = _baseNodes.begin(); n != _baseNodes.end();
 				n++) {
-			for (int i = 0; i < (*n)->dof(); i++, I++) {
+			//for (int i = 0; i < (*n)->dof(); i++, I++) {
+			for (int i = 0; i < _dofPerNode; i++, I++) {
 				double dx = (*n)->getPoint(i) - _reference(I);
 				if (f0)
 					_energy += 0.5 * _viscosity * dx * dx;
@@ -100,6 +102,11 @@ public:
 		_viscosity = v;
 	}
 
+	//! Sometimes we may not want to apply viscosity to all DOFs of a node
+	void updateDOFperNode(int newDOF){
+		_dofPerNode = newDOF;
+	}
+
 	//! compute norm of difference between reference and current
 	double velocity() const {
 		double v = 0.0;
@@ -116,6 +123,7 @@ private:
 
 	//! proportionality factor \f$k\f$ in the energy
 	double _viscosity;
+	double _dofPerNode;
 
 	//! reference state \f$\bar{x}_{ia}\f$
 	blitz::Array<double, 1> _reference;

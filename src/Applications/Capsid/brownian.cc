@@ -349,7 +349,7 @@ int main(int argc, char* argv[])
   PotentialBody * PrBody = new PotentialBody(&Mat, defNodes, PotentialSearchRF);
   ViscousRegularizer vr(bd->nodes(), viscosity);
   bd->pushBack(&vr);
-  BrownianKick bk(defNodes,Cd,diffusionCoeff,dt);
+  BrownianKick bk(nodes,Cd,diffusionCoeff,dt);
   bd->pushBack(&bk);
 
   //Create Model

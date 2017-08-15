@@ -105,15 +105,12 @@ namespace voom
             Vector3D xi(_rng.random(),
                         _rng.random(),_rng.random());
         
-            Vector3D currPoint = _nodes[i]->point();
-            
-            Vector3D tempVec( 0, 0, 0);
-            
+            Vector3D currPoint(0.0),tempVec(0.0);
+            for(int z=0; z < 3; z++) currPoint[z] = _nodes[i]->getPoint(z);
+
             tempVec = currPoint + xi*sqrt(_D*_dt);
             xi = tempVec;
-            
             tempVec = ( xi / tvmet::norm2( xi ) )*tvmet::norm2( currPoint );
-            
             xi = tempVec - currPoint;
             
             _delta_xB[i] = xi;
@@ -126,9 +123,8 @@ namespace voom
 			Vector3D xi(_rng.random(),
 				_rng.random(), _rng.random());
 
-			Vector3D currPoint = _nodes[i]->point();
-
-			Vector3D tempVec(0, 0, 0);
+			Vector3D currPoint(0.0),tempVec(0.0);
+			for(int z=0; z < 3; z++) currPoint[z] = _nodes[i]->getPoint(z);
 
 			tempVec = currPoint + xi*sqrt(_D*_dt);
 			xi = tempVec;
@@ -156,7 +152,8 @@ namespace voom
         double sin_t = sin( angle );
         
         for( int i=0; i < _nodeCount; i++ ){
-            Vector3D v = _nodes[i]->point();
+        	Vector3D v(0.0);
+        	for(int z=0; z < 3; z++) v[z] = _nodes[i]->getPoint(z);
             Vector3D v_rot, kick;
             v_rot = v*cos_t + tvmet::cross(axis,v)*sin_t +
                 tvmet::dot(axis,v)*(1-cos_t)*axis;            
@@ -192,13 +189,14 @@ namespace voom
                 }
             }
         }
-        
         if( f1 ) {
             Vector3D f;
             for(int i=0; i < _nodeCount; i++){
                 //f = -_Cd * _delta_xB[i];
 				f = -_D * _delta_xB[i];
-                _nodes[i]->updateForce(f);
+				for(int j=0; j<3; j++){
+					_nodes[i]->addForce(j,f[j]);
+				}
             }
         }
         

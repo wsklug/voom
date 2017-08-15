@@ -222,7 +222,7 @@ int main(int argc, char* argv[]) {
 			PeriodicPotentialBody(&Mat, defNodes, PotentialSearchRF,L);
 		ViscousRegularizer vr(MorsePeriodicBody->nodes(), viscosity);
 		MorsePeriodicBody->pushBack(&vr);
-		BrownianKick bk(defNodes, Cd, diffusionCoeff, dt);
+		BrownianKick bk(nodes, Cd, diffusionCoeff, dt);
 		MorsePeriodicBody->pushBack(&bk);
 
 		//Create Model

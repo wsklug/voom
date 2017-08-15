@@ -17,7 +17,7 @@
 #include "Model.h"
 #include "Lbfgsb.h"
 #include "OPSBody.h"
-#include "BrownianKickOPS.h"
+#include "BrownianKick.h"
 #include "ViscousRegularizer.h"
 
 #include <vtkPolyData.h>
@@ -31,11 +31,6 @@
 using namespace tvmet;
 using namespace std;
 using namespace voom;
-
-typedef tvmet::Vector<double,6> Vector6D;
-typedef Eigen::Matrix<double,6,1> Vector6d;
-typedef Eigen::Matrix<double,6,Eigen::Dynamic> Matrix6Xd;
-typedef Eigen::Transform<double,6,Eigen::Affine> Affine6d;
 
 int main(int argc, char* argv[])
 {
@@ -148,7 +143,8 @@ int main(int argc, char* argv[])
 	std::cout << "Radius of capsid after rescaling = " << Ravg << endl;
 
 	// Prepare Eigen matrices
-	Matrix6Xd initial(6, nodes.size()), current(6, nodes.size());
+	Eigen::Matrix3Xd initial(3, nodes.size()),
+		currentPositions(3, nodes.size()), currentNormals(3, nodes.size());
 
 	//Fill in matrix of the initial state for Kabsch algorithm
 	for (int col = 0; col < nodes.size(); col++) {
@@ -201,11 +197,12 @@ int main(int argc, char* argv[])
 	double viscosity = Cd/dt;
 
 	// Create BrownianKick element
-	BrownianKickOPS *bk = new BrownianKickOPS(nodes,Cd,diffusionCoeff,dt);
+	BrownianKick *bk = new BrownianKick(baseNodes,Cd,diffusionCoeff,dt);
 	bd->addElement( bk );
 
 	// Create ViscousRegularizer element
 	ViscousRegularizer *vr = new ViscousRegularizer(baseNodes,viscosity);
+	vr->updateDOFperNode(3);
 	bd->addElement( vr );
 
 	//Create Model
@@ -324,27 +321,35 @@ int main(int argc, char* argv[])
 
 			//Fill-in Matrix for new state for Kabsch algorithm
 			for (int col = 0; col < nodes.size(); col++) {
-				Vector3D coord = nodes[col]->deformedPosition();
+				Vector3D coord, normal;
+				coord = nodes[col]->deformedPosition();
+				normal = OPSNode::convertRotVecToNormal(
+						nodes[col]->deformedRotationVector());
 				for (int row = 0; row < 6; row++) {
-					current(row, col) = coord(row);
+					currentPositions(row, col) = coord(row);
+					currentNormals(row, col) = normal(row);
 				}
 			}
 
 			//********** Print relaxed configuration ************//
-			Affine6d A;
-			Matrix6Xd newCurr(6, nodes.size());
-			A = Find6DAffineTransform(current, initial);
-			for (int col = 0; col < current.cols(); col++) {
-				newCurr.col(col) = A.linear()*current.col(col)
-														+ A.translation();
+			Eigen::Affine3d A;
+			Eigen::Matrix3Xd newPositions(3, nodes.size()),
+					newNormals(3, nodes.size());
+			A = Find3DAffineTransform(currentPositions, initial);
+			for (int col = 0; col < currentPositions.cols(); col++) {
+				newPositions.col(col) = A.linear() * currentPositions.col(col)
+						+ A.translation();
+				newNormals.col(col) = A.linear() * currentNormals.col(col)
+										+ A.translation();
 			}
 
 			//Update the Kabsch transformed positions as new current
 			//configuration in the node container
 			for (int i = 0; i < nodes.size(); i++) {
-				Vector6D kabschPoint;
-				for (int j = 0; j < 6; j++) {
-					kabschPoint(j) = newCurr(j, i);
+				tvmet::Vector<double,6> kabschPoint(0.0);
+				for (int j = 0; j < 3; j++) {
+					kabschPoint(j) = newPositions(j, i);
+					kabschPoint(j+3) = newNormals(j, i);
 				}
 				nodes[i]->setDeformedDOFs(kabschPoint);
 			}
@@ -380,10 +385,16 @@ int main(int argc, char* argv[])
 					<< solver.function()
 					<< endl;
 			//********** Find bins for each particle ************//
-			putParticlesInBins(cellLimits, newCurr, nodes.size(), binDensity, viterMax);
+			putParticlesInBins(cellLimits, newPositions, nodes.size(), binDensity);
 
 			// step forward in "time", relaxing viscous energy & forces
 			vr->step();
+		}
+		for(int v=0; v < viterMax; v++){
+			double temp;
+			temp = binDensity->GetTuple1(v);
+			temp = temp / viterMax;
+			binDensity->SetTuple1(v,temp);
 		}
 	}
 	myfile.close();
