@@ -1667,10 +1667,11 @@ namespace voom
 		poly->SetVerts(cells);
 		vtkSmartPointer<vtkPolyDataWriter> writer =
 			vtkSmartPointer<vtkPolyDataWriter>::New();
-		//Remove duplicate points if any and return
+		/*
         writer->SetFileName("BeforeCleaning.vtk");
         writer->SetInputData(poly);
         writer->Write();
+        */
         // We need to remove points which should be ideally coincident
         // vtkCleanPolyData is not enough
         /*
