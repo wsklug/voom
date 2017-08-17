@@ -392,8 +392,8 @@ void meshSphericalPointCloud(const vtkSmartPointer<vtkPolyData> input,
 		std::vector<vtkIdType> currCapso = capsomers[i];
 		std::set<neighbors> angles;
 		tvmet::Vector<double, 3> pt0(0.0), pt1(0.0), vec0;
-		if (currCapso.size() < 7) {
-			std::cout << "Pentamer (or less) detected! Point id = " << i
+		if (currCapso.size() < 6) {
+			std::cout << "Point with valence < 5 detected! Point id = " << i
 					<< std::endl;
 			std::cout << "\tNeighbors = " << std::endl;
 			for (int z = 1; z < currCapso.size(); z++) {

@@ -1556,6 +1556,14 @@ namespace voom
 		FeElementContainer elements = _shells;
 		vtkSmartPointer<vtkPoints> newPointSet = 
 			vtkSmartPointer<vtkPoints>::New();
+		vtkSmartPointer<vtkPoints> cleanPointSet =
+				vtkSmartPointer<vtkPoints>::New();
+		vtkSmartPointer<vtkCellArray> cells =
+				vtkSmartPointer<vtkCellArray>::New();
+		vtkSmartPointer<vtkPolyData> poly =
+				vtkSmartPointer<vtkPolyData>::New();
+		double mergeRadius = 0.0;
+		int vertPtId = 0;
 		TriangleQuadrature quadPoints(1);
 		std::vector<TriangleQuadrature::Point> pts = quadPoints.points();
 
@@ -1600,9 +1608,6 @@ namespace voom
                 break;
         }
 
-		vtkSmartPointer<vtkCellArray> cells = 
-			vtkSmartPointer<vtkCellArray>::New();
-		int pointId = 0;
 		for (int e = 0; e < elements.size(); e++) {
 			const typename FeElement_t::NodeContainer 
 				eleNodes = elements[e]->nodes();
@@ -1616,15 +1621,49 @@ namespace voom
 				}
 				double currSurfPoint[] = { Xq(0), Xq(1), Xq(2) };
 				newPointSet->InsertNextPoint(currSurfPoint);
-				vtkSmartPointer<vtkVertex> currVertex =
-				  vtkSmartPointer<vtkVertex>::New();
-				currVertex->GetPointIds()->SetId(0, pointId++);
-				cells->InsertNextCell(currVertex);
 			}
 		}
-		vtkSmartPointer<vtkPolyData> poly
-			= vtkSmartPointer<vtkPolyData>::New();
-		poly->SetPoints(newPointSet);
+		//Get estimate of length within which to merge points
+		poly->SetPoints( newPointSet );
+		mergeRadius = cleanTol*poly->GetLength();
+		std::cout<<" Merge Radius = " << mergeRadius << std::endl;
+
+		//Create a KdTree out of the points to locate duplicates
+		vtkSmartPointer<vtkKdTree> kdt =
+				vtkSmartPointer<vtkKdTree>::New();
+		kdt->BuildLocatorFromPoints( newPointSet );
+		std::list<vtkIdType> uniqueIds;
+		for(vtkIdType id=0; id < newPointSet->GetNumberOfPoints(); id++){
+			uniqueIds.push_back(id);
+		}
+		while(!uniqueIds.empty()){
+			vtkIdType uniqueId = uniqueIds.back();
+			Vector3D currNode(0.0);
+			newPointSet->GetPoint( uniqueId, &(currNode[0]) );
+			vtkSmartPointer<vtkIdList> closePts =
+					vtkSmartPointer<vtkIdList>::New();
+			kdt->FindPointsWithinRadius(mergeRadius, &(currNode[0]), closePts);
+			int numIds = closePts->GetNumberOfIds();
+			if( numIds > 1 ){
+				Vector3D avgPoint(0.0), currPoint(0.0), tempPt(0.0);
+				for(int idIdx = 0; idIdx < numIds; idIdx++){
+					vtkIdType currId = closePts->GetId(idIdx);
+					newPointSet->GetPoint(currId,&(currPoint[0]));
+					tempPt = avgPoint;
+					avgPoint = tempPt + currPoint;
+					uniqueIds.remove(currId);
+				}
+				avgPoint /= numIds;
+				cleanPointSet->InsertNextPoint(&(avgPoint[0]));
+			}
+			else{
+				cleanPointSet->InsertNextPoint(&(currNode[0]));
+				uniqueIds.remove(uniqueId);
+			}
+			cells->InsertNextCell(1);
+			cells->InsertCellPoint(vertPtId++);
+		}
+		poly->SetPoints(cleanPointSet);
 		poly->SetVerts(cells);
 		vtkSmartPointer<vtkPolyDataWriter> writer =
 			vtkSmartPointer<vtkPolyDataWriter>::New();
@@ -1632,13 +1671,17 @@ namespace voom
         writer->SetFileName("BeforeCleaning.vtk");
         writer->SetInputData(poly);
         writer->Write();
+        // We need to remove points which should be ideally coincident
+        // vtkCleanPolyData is not enough
+        /*
 		vtkSmartPointer<vtkCleanPolyData> cpd
 			= vtkSmartPointer<vtkCleanPolyData>::New();
 		cpd->SetInputData(poly);
 		cpd->SetTolerance(cleanTol);
 		cpd->Update();
 		vtkSmartPointer<vtkPolyData> output = cpd->GetOutput();
-		return output;
+		*/
+		return poly;
 	}
 
 } // namespace voom

@@ -403,7 +403,6 @@ int main(int argc, char* argv[])
 		uint elementsChanged = 0;
 		bool remeshEventFlag = false;
 		int numAttempts = 0;
-		double energy_prev = energy;
 		std::vector<double> meshQuality = { 0.0,0.0,0.0 };
 		if (remesh) {
 			meshQuality = getMeshQualityInfo(defNodes, connectivities);
@@ -478,7 +477,9 @@ int main(int argc, char* argv[])
 		std::cout << "Radius of capsid after relaxation = " << Ravg << endl;
 		double asphericity = radialStats[1];
 		double capsomerSearchRad = radialStats[2];
-		double projMorseEnergy = 0.0;
+		double morseEnergy = 0.0;
+		double projParticleEnergyDiff = 0.0;
+		morseEnergy = PrBody->energy();
 
 		// Calculate the Morse energy when particles are lying on the surface.
 		vtkSmartPointer<vtkKdTree> kdt = vtkSmartPointer<vtkKdTree>::New();
@@ -496,7 +497,7 @@ int main(int argc, char* argv[])
 			defNodes[pt]->setPoint( projVal );
 		}
 		PrBody->compute(true, false, false);
-		projMorseEnergy = PrBody->energy();
+		projParticleEnergyDiff = PrBody->energy() - morseEnergy;
 
 		//Reset the particle positions to their original values
 		for(int pt=0; pt < oldValues.size(); pt++){
@@ -529,9 +530,9 @@ int main(int argc, char* argv[])
 				<< gamma << "\t"
 				<< asphericity << "\t"
 				<< bd->totalStrainEnergy() << "\t"
-				<< PrBody->energy() << "\t"
+				<< morseEnergy << "\t"
 				<< energy << "\t"
-				<< projMorseEnergy <<"\t"
+				<< projParticleEnergyDiff <<"\t"
 				<< remeshEventFlag	<< "\t"
 				<< meshQuality[2] << std::endl;
 

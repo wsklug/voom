@@ -22,6 +22,7 @@
 #include<blitz/array.h>
 #include<vector>
 #include <map>
+#include <list>
 #include <iostream>
 #include <iomanip>
 #include <iterator>
@@ -45,6 +46,7 @@
 #include <vtkPointData.h>
 #include <vtkCleanPolyData.h>
 #include <vtkVertex.h>
+#include <vtkKdTree.h>
 
 #ifdef WITH_MPI
 #include <mpi.h>
