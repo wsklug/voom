@@ -186,7 +186,7 @@ namespace voom
 		writer->Write();
 	}
 
-	//! Mean Sqaured Displacement
+	//! Mean Squared Displacement
 	double PotentialBody::rmsd() {
 		double rmsd = 0; //root Mean Squared Displacement
 		int nn = -1;
@@ -196,9 +196,9 @@ namespace voom
 			xi = (_defNodes[i]->point() - _defNodes[i]->position());
 			xj = (_defNodes[nn]->point() - _defNodes[nn]->position());
 			diff = xi - xj;
-			rmsd += tvmet::dot(xi, xi);
+			rmsd += tvmet::dot(diff, diff);
 		}
-		rmsd = rmsd / (2 * _defNodes.size());
+		rmsd = sqrt(rmsd / (2*_defNodes.size()));
 		return rmsd;
 	}
 

@@ -175,7 +175,8 @@ int main(int argc, char* argv[])
 			<< "CircularityEn" << "\t"
 			<< "BrownianEnergy" << "\t"
 			<< "ViscosityEnergy" << "\t"
-			<< "TotalFunctional"
+			<< "TotalFunctional" <<"\t"
+			<< "RMSD"
 			<< std::endl;
 
 	// Update the Morse parameters
@@ -409,7 +410,8 @@ int main(int argc, char* argv[])
 					<< bd->getCircularityEnergy() << "\t"
 					<< bk->energy() << "\t"
 					<< vr->energy() << "\t"
-					<< solver.function()
+					<< solver.function() << "\t"
+					<< bd->rmsd()
 					<< endl;
 			//********** Find bins for each particle ************//
 			//putParticlesInBins(cellLimits, newPositions, nodes.size(), binDensity);

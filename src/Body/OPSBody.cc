@@ -395,6 +395,24 @@ double OPSBody::getLoopAsphericity(){
 }
 
 /*
+ * Root mean squared displacement
+ */
+double OPSBody::rmsd() {
+		double rmsd = 0; //root Mean Squared Displacement
+		int nn = -1;
+		for (int i = 0; i < _opsNodes.size(); i++) {
+			Vector3D xi, xj, diff;
+			nn = _initialNearestNeighbor[i];
+			xi = (_opsNodes[i]->deformedPosition() - _opsNodes[i]->referencePosition());
+			xj = (_opsNodes[nn]->deformedPosition() - _opsNodes[nn]->referencePosition());
+			diff = xi - xj;
+			rmsd += tvmet::dot(diff, diff);
+		}
+		rmsd = sqrt(rmsd / (2*_opsNodes.size()));
+		return rmsd;
+}
+
+/*
  * Update property of the OPSBody
  */
 void OPSBody::updateProperty(Property p, double val) {

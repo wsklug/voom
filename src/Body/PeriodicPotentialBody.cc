@@ -108,9 +108,9 @@ namespace voom {
 					_boundaryCrossCounter[nn][k] * _boundingBox[k];
 			}
 			diff = xi - xj;
-			rmsd += tvmet::dot(xi, xi);
+			rmsd += tvmet::dot(diff, diff);
 		}
-		rmsd = rmsd / (2*_defNodes.size());
+		rmsd = sqrt(rmsd / (2*_defNodes.size()));
 		return rmsd;
 	}
 
