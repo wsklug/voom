@@ -18,7 +18,7 @@
 #include "Lbfgsb.h"
 #include "OPSBody.h"
 #include "BrownianKick.h"
-#include "ViscousRegularizer.h"
+#include "OPSViscousRegularizer.h"
 
 #include <vtkPolyData.h>
 #include <vtkPolyDataReader.h>
@@ -47,11 +47,12 @@ int main(int argc, char* argv[])
 	std::stringstream sstm;
 
 	//For Morse material
-	double epsilon, re, s, K, a, b, aM, aP, aN, aC;
+	double epsilon=1.0, re=1.0, s=7.0, K, a=1.0, b=1.0;
+	double aM=1.0, aP=1.0, aN=1.0, aC=1.0;
 	double percentStrain = 10;
 	bool projectOnSphere = false;
 	double initialSearchRad = 1.0, finalSearchRad = 1.2;
-	int lat_res, long_res, viterMax = 1000;
+	int lat_res=100, long_res=101, viterMax = 1000;
 	int nameSuffix = 0;
 	double dt = 9.76e-4;
 
@@ -65,8 +66,6 @@ int main(int argc, char* argv[])
 	miscInpFile
 	>> temp >> epsilon
 	>> temp >> re
-	>> temp >> percentStrain
-	>> temp >> K
 	>> temp >> a
 	>> temp >> b
 	>> temp >> initialSearchRad
@@ -143,14 +142,14 @@ int main(int argc, char* argv[])
 	std::cout << "Radius of capsid after rescaling = " << Ravg << endl;
 
 	// Prepare Eigen matrices
-	Eigen::Matrix3Xd initial(3, nodes.size()),
-		currentPositions(3, nodes.size()), currentNormals(3, nodes.size());
+	Eigen::Matrix3Xd initialPositions(3, nodes.size()),
+		currentPositions(3, nodes.size()), currentPseudoNormals(3, nodes.size());
 
 	//Fill in matrix of the initial state for Kabsch algorithm
 	for (int col = 0; col < nodes.size(); col++) {
 		Vector3D coord = nodes[col]->deformedPosition();
-		for (int row = 0; row < 6; row++) {
-			initial(row, col) = coord(row);
+		for (int row = 0; row < 3; row++) {
+			initialPositions(row, col) = coord(row);
 		}
 	}
 
@@ -201,8 +200,7 @@ int main(int argc, char* argv[])
 	bd->addElement( bk );
 
 	// Create ViscousRegularizer element
-	ViscousRegularizer *vr = new ViscousRegularizer(baseNodes,viscosity);
-	vr->updateDOFperNode(3);
+	OPSViscousRegularizer *vr = new OPSViscousRegularizer(nodes,viscosity);
 	bd->addElement( vr );
 
 	//Create Model
@@ -227,7 +225,7 @@ int main(int argc, char* argv[])
 	/*
 	 * In the next few lines we will identify spherical co-ordinate
 	 * limits for each cell in the sphere
-	 */
+
 	std::vector<vector<double> > cellLimits = getSphCellLimits(pd, long_res);
 
 	vtkSmartPointer<vtkDoubleArray> binDensity =
@@ -235,44 +233,50 @@ int main(int argc, char* argv[])
 	binDensity->SetNumberOfComponents(1);
 	binDensity->SetNumberOfTuples(pd->GetNumberOfCells());
 	binDensity->SetName("Density");
+	*/
 
 	//******************* READ COOLING SCHEDULE from File *******
 
 	std::ifstream coolFile("cooling.dat");
 	assert(coolFile);
 	std::vector<vector<double> > coolVec;
-	double curr_D, currAm, currPercentStrain, currViterMax, currPrintStep;
+	double curr_D, currAm, currK, currPercentStrain, currViterMax, currPrintStep;
 
 	std::string headerline;
 	std::getline(coolFile, headerline);
 
-	while (coolFile >> curr_D >> currViterMax >> currAm >>
+	while (coolFile >> curr_D >> currViterMax >> currAm >> currK >>
 			currPercentStrain >> currPrintStep) {
 		std::vector<double> currLine;
 		currLine.push_back(curr_D);
 		currLine.push_back(currViterMax);
 		currLine.push_back(currAm);
+		currLine.push_back(currK);
 		currLine.push_back(currPercentStrain);
 		currLine.push_back(currPrintStep);
 		coolVec.push_back(currLine);
 	}
 	coolFile.close();
 
+	int step=0;
 	//***************************  SOLUTION LOOP ***************************
 	for(int z=0; z < coolVec.size(); z++){
-		binDensity->FillComponent(0, 0.0);
+		//binDensity->FillComponent(0, 0.0);
 
 		diffusionCoeff = coolVec[z][0];
 		Cd = 1.0 / diffusionCoeff;
 		viterMax = coolVec[z][1];
 		currAm = coolVec[z][2];
-		percentStrain = coolVec[z][3];
-		printStep = (int)coolVec[z][4];
+		currK = coolVec[z][3];
+		percentStrain = coolVec[z][4];
+		printStep = (int)coolVec[z][5];
 		viscosity = Cd / dt;
 
 		s = (100 / (EdgeLength*percentStrain))*log(2.0);
+		bk->setDiffusionCoeff( diffusionCoeff );
 		bd->updateProperty(OPSBody::aM, currAm);
 		bd->updateProperty( OPSBody::sv, s );
+		bd->updateProperty( OPSBody::Kv, currK );
 
 		bool checkConsistency = false;
 		if (checkConsistency) {
@@ -297,20 +301,11 @@ int main(int argc, char* argv[])
 					<< endl;
 
 			bk->updateParallelKick();
-			//std::cout<<"Average kick norm: "<< bk.getKickStats()
-			//<<std::endl;
-
-			bool printBeforeSolve = false;
-			if (printBeforeSolve) {
-				//We will print only after every currPrintStep iterations
-				if (viter % printStep == 0) {
-					sstm << fname << "-initial-" << nameSuffix;
-					rName = sstm.str();
-					bd->printParaview(rName.c_str());
-					sstm.str("");
-					sstm.clear();
-				}
-			}
+			//bk->updateRotationKick();
+			std::vector<double> kickStats = bk->getKickStats();
+			std::cout<<"Largest kick norm: "<< kickStats[0] << std::endl;
+			std::cout<<"Smallest kick norm: "<< kickStats[1] << std::endl;
+			std::cout<<"Average kick norm: "<< kickStats[2] << std::endl;
 
 			solver.solve(&model);
 
@@ -319,28 +314,60 @@ int main(int argc, char* argv[])
 					<< " updated viscosity = " << vr->viscosity() << std::endl
 					<< std::endl;
 
+			bool printBeforeKabsch = false;
+			if (printBeforeKabsch) {
+				//We will print only after every currPrintStep iterations
+				if (viter % printStep == 0) {
+					bd->updatePolyDataAndKdTree();
+					bd->updateNeighbors();
+					sstm << fname << "-beforeKabsch-" << nameSuffix << ".vtk";
+					rName = sstm.str();
+					bd->printParaview(rName.c_str());
+					sstm.str("");
+					sstm.clear();
+				}
+			}
+
 			//Fill-in Matrix for new state for Kabsch algorithm
 			for (int col = 0; col < nodes.size(); col++) {
-				Vector3D coord, normal;
+				Vector3D coord, normal, pseudoNormal;
 				coord = nodes[col]->deformedPosition();
+				/*
+				 *To rotate the normals properly we need to preserve the
+				 * relative position between the particle and another
+				 * imaginary particle sitting at the tip of the unit
+				 * normal associated with the particle
+				 */
 				normal = OPSNode::convertRotVecToNormal(
 						nodes[col]->deformedRotationVector());
-				for (int row = 0; row < 6; row++) {
+				pseudoNormal = coord + normal;
+				for (int row = 0; row < 3; row++) {
 					currentPositions(row, col) = coord(row);
-					currentNormals(row, col) = normal(row);
+					currentPseudoNormals(row, col) = pseudoNormal(row);
 				}
 			}
 
 			//********** Print relaxed configuration ************//
+
 			Eigen::Affine3d A;
 			Eigen::Matrix3Xd newPositions(3, nodes.size()),
-					newNormals(3, nodes.size());
-			A = Find3DAffineTransform(currentPositions, initial);
+					newRotVecs(3, nodes.size()), newPseudoNormal(3,1);
+			A = Find3DAffineTransform(currentPositions, initialPositions);
 			for (int col = 0; col < currentPositions.cols(); col++) {
 				newPositions.col(col) = A.linear() * currentPositions.col(col)
 						+ A.translation();
-				newNormals.col(col) = A.linear() * currentNormals.col(col)
-										+ A.translation();
+				newPseudoNormal.col(0) = A.linear() * currentPseudoNormals.col(col)
+									+ A.translation();
+				Vector3D currRotVec(0.0), currTvmetNormal(0.0);
+				//Convert the pseudoNormal to normal by subtracting particle position
+				currTvmetNormal[0] = newPseudoNormal(0,0) - newPositions(0,col);
+				currTvmetNormal[1] = newPseudoNormal(1,0) - newPositions(1,col);
+				currTvmetNormal[2] = newPseudoNormal(2,0) - newPositions(2,col);
+				//Convert the new normal to a rotation vector
+				currRotVec = OPSNode::convertNormalToRotVec( currTvmetNormal );
+				newRotVecs(0,col) = currRotVec[0];
+				newRotVecs(1,col) = currRotVec[1];
+				newRotVecs(2,col) = currRotVec[2];
 			}
 
 			//Update the Kabsch transformed positions as new current
@@ -349,17 +376,17 @@ int main(int argc, char* argv[])
 				tvmet::Vector<double,6> kabschPoint(0.0);
 				for (int j = 0; j < 3; j++) {
 					kabschPoint(j) = newPositions(j, i);
-					kabschPoint(j+3) = newNormals(j, i);
+					kabschPoint(j+3) = newRotVecs(j, i);
 				}
 				nodes[i]->setDeformedDOFs(kabschPoint);
 			}
+
 			bd->updatePolyDataAndKdTree();
 			bd->updateNeighbors();
-
 			//We will print only after every currPrintStep iterations
 			if (viter % printStep == 0) {
 				paraviewStep++;
-				sstm << fname << "-relaxed-" << nameSuffix++;
+				sstm << fname << "-relaxed-" << nameSuffix++ <<".vtk";
 				rName = sstm.str();
 				bd->printParaview(rName.c_str());
 				sstm.str("");
@@ -369,7 +396,7 @@ int main(int argc, char* argv[])
 			int paraviewStepPrint;
 			paraviewStepPrint = (viter % printStep == 0) ? paraviewStep : -1;
 
-			myfile << z << "\t"
+			myfile << step++ << "\t"
 					<< paraviewStepPrint <<"\t"
 					<< diffusionCoeff <<"\t"
 					<< currAm << "\t"
@@ -385,17 +412,18 @@ int main(int argc, char* argv[])
 					<< solver.function()
 					<< endl;
 			//********** Find bins for each particle ************//
-			putParticlesInBins(cellLimits, newPositions, nodes.size(), binDensity);
+			//putParticlesInBins(cellLimits, newPositions, nodes.size(), binDensity);
 
 			// step forward in "time", relaxing viscous energy & forces
 			vr->step();
 		}
+		/*
 		for(int v=0; v < viterMax; v++){
 			double temp;
 			temp = binDensity->GetTuple1(v);
 			temp = temp / viterMax;
 			binDensity->SetTuple1(v,temp);
-		}
+		}*/
 	}
 	myfile.close();
 	t2 = clock();

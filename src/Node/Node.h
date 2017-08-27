@@ -967,13 +967,19 @@ public:
 		return ptNormal;
 	}
 	static Vector3D convertNormalToRotVec(Vector3D n) {
-		double angle;
-		Vector3D axis(0.0);
+
+		Vector3D unit_n(0.0), axis(0.0), cross_prod(0.0), rotVec(0.0);
+		double n_norm, angle, cross_prod_norm, p3;
+
+		//Normalize n
+		n_norm = tvmet::norm2(n);
+		unit_n = n / n_norm;
+
 		// Cross-product of n with z-axis.
-		Vector3D cross_prod(-n[1], n[0], 0.0 );
-		double cross_prod_norm = tvmet::norm2( cross_prod );
+		cross_prod = -unit_n[1], unit_n[0], 0.0;
+		cross_prod_norm = tvmet::norm2( cross_prod );
 		// Check if n is parallel or anti-parallel to z-axis
-		double p3 = n[2];
+		p3 = n[2];
 		if( cross_prod_norm < 1e-10){
 			axis = 1.0, 0.0, 0.0; // Arbitrarily choose the x-axis
 			angle = (p3 > 0.0)? 0.0 : M_PI;
@@ -983,7 +989,7 @@ public:
 			angle = (p3 < 0.0)? (M_PI - angle) : angle;
 			axis = cross_prod/cross_prod_norm;
 		}
-		Vector3D rotVec;
+
 		rotVec = angle*axis;
 		return rotVec;
 	}

@@ -144,10 +144,11 @@ namespace voom
 
     //Rigid rotations as kicks
     void BrownianKick::updateRotationKick(){
-        Vector3D tempAxis(_rng.random(), _rng.random(),_rng.random());
+        //Vector3D tempAxis(_rng.random(), _rng.random(),_rng.random());
+    	Vector3D tempAxis(0.0, 0.0,1.0);
         Vector3D axis;
         axis = tvmet::normalize( tempAxis );
-        double angle = M_PI_2;        
+        double angle = M_PI_2;
         double cos_t = cos( angle );
         double sin_t = sin( angle );
         

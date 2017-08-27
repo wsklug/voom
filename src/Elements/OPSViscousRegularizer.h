@@ -1,21 +1,19 @@
-// -*- C++ -*-
-//----------------------------------------------------------------------
-//
-//                         William S. Klug
-//                University of California Los Angeles
-//                   (C) 2008 All Rights Reserved
-//
-//----------------------------------------------------------------------
-// 
+/*
+ * OPSViscousRegularizer.h
+ *
+ *  Created on: Aug 22, 2017
+ *      Author: amit
+ */
 
-#if !defined(__ViscousRegularizer_h__)
-#define __ViscousRegularizer_h__
+#ifndef SRC_ELEMENTS_OPSVISCOUSREGULARIZER_H_
+#define SRC_ELEMENTS_OPSVISCOUSREGULARIZER_H_
 
 #include <vector>
 #include <cstdio>
 #include <ctime>
 
 #include "Element.h"
+#include "Node.h"
 
 namespace voom {
 
@@ -40,22 +38,23 @@ namespace voom {
  k_{iajb} = k\delta_{ab}\delta_{ij}
  \f]
  */
-class ViscousRegularizer: public Element {
+
+typedef std::vector<OPSNode*> OPSNodeContainer;
+typedef std::vector<OPSNode*>::const_iterator OPSIterator;
+
+class OPSViscousRegularizer: public Element {
 
 public:
-	using Element::BaseNodeContainer;
-	using Element::BaseNodeIterator;
-	using Element::ConstBaseNodeIterator;
 
 	//! Construct from a set of nodes and a "viscosity" proportionality factor
-	ViscousRegularizer(const BaseNodeContainer & nodes, double viscosity) {
-		_baseNodes = nodes;
+	OPSViscousRegularizer(const OPSNodeContainer & nodes, double viscosity) {
+		//_baseNodes = nodes;
+		_nodes = nodes;
 		_viscosity = viscosity;
 		_energy = 0.0;
 		int dof = 0;
-		for (ConstBaseNodeIterator n = _baseNodes.begin();
-				n != _baseNodes.end(); n++) {
-			dof += (*n)->dof();
+		for (OPSIterator n = _nodes.begin(); n != _nodes.end(); n++) {
+			dof += 3; // OPSNode has 3 position DOFs per node
 		}
 		_reference.resize(dof);
 		_reference = 0.0;
@@ -65,9 +64,8 @@ public:
 	//! Assign the current state to the reference state
 	void step() {
 		int I = 0;
-		for (ConstBaseNodeIterator n = _baseNodes.begin();
-				n != _baseNodes.end(); n++) {
-			for (int i = 0; i < (*n)->dof(); i++, I++) {
+		for (OPSIterator n = _nodes.begin(); n != _nodes.end(); n++) {
+			for (int i = 0; i < 3; i++, I++) {
 				_reference(I) = (*n)->getPoint(i);
 			}
 		}
@@ -78,10 +76,8 @@ public:
 		if (f0)
 			_energy = 0.0;
 		int I = 0;
-		for (BaseNodeIterator n = _baseNodes.begin(); n != _baseNodes.end();
-				n++) {
-			//for (int i = 0; i < (*n)->dof(); i++, I++) {
-			for (int i = 0; i < (*n)->dof(); i++, I++) {
+		for (OPSIterator n = _nodes.begin(); n != _nodes.end();	n++) {
+			for (int i = 0; i < 3; i++, I++) {
 				double dx = (*n)->getPoint(i) - _reference(I);
 				if (f0)
 					_energy += 0.5 * _viscosity * dx * dx;
@@ -105,9 +101,8 @@ public:
 	double velocity() const {
 		double v = 0.0;
 		int I = 0;
-		for (ConstBaseNodeIterator n = _baseNodes.begin();
-				n != _baseNodes.end(); n++) {
-			for (int i = 0; i < (*n)->dof(); i++, I++) {
+		for (OPSIterator n = _nodes.begin(); n != _nodes.end(); n++) {
+			for (int i = 0; i < 3; i++, I++) {
 				v = std::max(v, std::abs(_reference(I) - (*n)->getPoint(i)));
 			}
 		}
@@ -117,6 +112,7 @@ private:
 
 	//! proportionality factor \f$k\f$ in the energy
 	double _viscosity;
+	std::vector<OPSNode*> _nodes;
 
 	//! reference state \f$\bar{x}_{ia}\f$
 	blitz::Array<double, 1> _reference;
@@ -124,4 +120,6 @@ private:
 
 } // end namespace
 
-#endif // __ViscousRegularizer_h__
+
+
+#endif /* SRC_ELEMENTS_OPSVISCOUSREGULARIZER_H_ */
