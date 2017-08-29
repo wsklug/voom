@@ -279,7 +279,7 @@ int main(int argc, char* argv[])
 		bd->updateProperty( OPSBody::sv, s );
 		bd->updateProperty( OPSBody::Kv, currK );
 
-		bool checkConsistency = false;
+        bool checkConsistency = false;
 		if (checkConsistency) {
 			std::cout << "Checking consistency......" << std::endl;
 			bk->updateParallelKick();
