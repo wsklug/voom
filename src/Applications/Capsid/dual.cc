@@ -47,7 +47,7 @@ int main(int argc, char* argv[])
   // Input section
   ////////////////////////////////////////////////////////////////////
 
-  bool debug=true;
+  bool debug=false;
 
   // read in vtk file
   string inputFileName = argv[1];  
@@ -103,19 +103,20 @@ int main(int argc, char* argv[])
   //Can we add displacements to vertex positions before generatinng
   //the dual mesh - Amit
   
-  //get displacements
+  //get displacements, if they exist
   //std::vector< tvmet::Vector<double,3> > displacements( npts );
   string vectorName="displacements";
   vtkSmartPointer<vtkDataArray> displacements = vtkMeshOld->GetPointData()->
     GetVectors(vectorName.c_str());
-  double currDisp[3];
-  for(int a=0; a<npts; a++){
-    displacements->GetTuple(a,currDisp);
-    points[a][0] += currDisp[0];
-    points[a][1] += currDisp[1];
-    points[a][2] += currDisp[2];
+  if( displacements.GetPointer() != NULL){
+      double currDisp[3];
+      for(int a=0; a<npts; a++){
+          displacements->GetTuple(a,currDisp);
+          points[a][0] += currDisp[0];
+          points[a][1] += currDisp[1];
+          points[a][2] += currDisp[2];
+      }
   }
-
 
   // get connectivities
   int ntriOld=vtkMeshOld->GetNumberOfCells();  

@@ -862,7 +862,6 @@ void putParticlesInBins(const std::vector<std::vector<double> > &cellLimits,
  The method insertValenceInVtk() inserts valence information in a vtk file.
  The calling method must ensure that 'fileName' exists and is a valid vtk file.
  MUST use the extension '.vtk' in 'fileName'.
- 'mesh' is a pointer to a vtkPolyData
  */
 void insertValenceInVtk(std::vector<std::string> &fileNames) {
 

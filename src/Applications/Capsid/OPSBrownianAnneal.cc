@@ -176,7 +176,7 @@ int main(int argc, char* argv[])
 			<< "BrownianEnergy" << "\t"
 			<< "ViscosityEnergy" << "\t"
 			<< "TotalFunctional" <<"\t"
-			<< "RMSD"
+            << "MSD"
 			<< std::endl;
 
 	// Update the Morse parameters
@@ -396,6 +396,8 @@ int main(int argc, char* argv[])
 
 			int paraviewStepPrint;
 			paraviewStepPrint = (viter % printStep == 0) ? paraviewStep : -1;
+            double rmsd = bd->rmsd();
+            double msd = rmsd*rmsd;
 
 			myfile << step++ << "\t"
 					<< paraviewStepPrint <<"\t"
@@ -411,7 +413,7 @@ int main(int argc, char* argv[])
 					<< bk->energy() << "\t"
 					<< vr->energy() << "\t"
 					<< solver.function() << "\t"
-					<< bd->rmsd()
+                    << msd
 					<< endl;
 			//********** Find bins for each particle ************//
 			//putParticlesInBins(cellLimits, newPositions, nodes.size(), binDensity);

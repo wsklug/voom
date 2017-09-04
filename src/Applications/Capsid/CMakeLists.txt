@@ -38,7 +38,7 @@ set(voom_LIBRARIES Body Solvers Materials Elements Quadrature Shape VoomMath Geo
 
 set(capsid_targets asphericityMorse annealing brownian asphericityHarm dual asphericityCont 
     indentWparticles harmonic2D Morse2D Morse2DPeriodic reOrient twoMeshAnneal indentContinuum
-    twoMeshIndent testLoopShell OPSAsphericity OPSBrownianAnneal)
+    twoMeshIndent testLoopShell OPSAsphericity OPSBrownianAnneal dual2)
 
 IF(WIN32 AND BLA_VENDOR MATCHES "Intel[0-9]*_64lp_seq")
 	link_directories("${MKL_ROOT}/lib/intel64")
@@ -63,6 +63,12 @@ foreach(curr_target ${capsid_targets})
 	target_link_libraries(${curr_target} PRIVATE ${VTK_LIBRARIES})
 	
 endforeach(curr_target)
+
+find_package(OpenMP)
+if(OPENMP_FOUND)
+    target_compile_options(dual2 PRIVATE ${OPENMP_CXX_FLAGS})
+    target_link_libraries(dual2 PRIVATE "gomp")
+endif(OPENMP_FOUND)
 
 set (helper_targets densityPlot rotatePoints createTfromOutline rmsd sphHarmCoeff)
 

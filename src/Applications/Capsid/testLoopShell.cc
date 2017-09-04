@@ -86,7 +86,7 @@ int main(int argc, char* argv[] ){
 
 
 	//Project points to a sphere of radius Ravg
-	Ravg = 0.5;
+    Ravg = 1.0;
 	for (int i = 0; i < defNodes.size(); i++) {
 		DeformationNode<3>::Point X;
 		X = defNodes[i]->position();
@@ -97,7 +97,7 @@ int main(int argc, char* argv[] ){
 
     double KC = 10.0;
     double KG = 10.0;
-    double C0 = 10.0;
+    double C0 = 0.0;
     
     int quadOrder = 1;
     
