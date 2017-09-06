@@ -187,6 +187,7 @@ public:
 
 protected:
 	const vector<OPSNode*> _opsNodes; // Nodes
+    int _numNodes;
 	double _searchR; // Search radius
 	OPSParams _prop; // Parameters for the OPS
 	double _morseEn;

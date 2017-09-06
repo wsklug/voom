@@ -12,13 +12,12 @@ foreach(CURRL ${voom_LIBRARIES})
 	target_include_directories(HelperFunctions PRIVATE $<TARGET_PROPERTY:${CURRL},INTERFACE_INCLUDE_DIRECTORIES>)
 		if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
 			target_include_directories(HelperFunctions PRIVATE ${PROJECT_BINARY_DIR})
-		endif()
+                endif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
 endforeach(CURRL)
 
-#set(ENV{LIB} $ENV{LIB} "C:/Software/OpenBLAS/lib" PATH)
 if(NOT BLAS_FOUND)
 	find_package(BLAS REQUIRED)
-endif()
+endif(NOT BLAS_FOUND)
 #OpenBLAS library provides some lapack functions as well. Otherwise we need to link
 # lapack separately
 set(LINK_LAPACK TRUE)
@@ -33,8 +32,6 @@ if(LINK_LAPACK)
 endif(LINK_LAPACK)
 
 #find_package(Threads)
-
-set(voom_LIBRARIES Body Solvers Materials Elements Quadrature Shape VoomMath Geometry Mesh Model)
 
 set(capsid_targets asphericityMorse annealing brownian asphericityHarm dual asphericityCont 
     indentWparticles harmonic2D Morse2D Morse2DPeriodic reOrient twoMeshAnneal indentContinuum
@@ -64,7 +61,9 @@ foreach(curr_target ${capsid_targets})
 	
 endforeach(curr_target)
 
-find_package(OpenMP)
+if(NOT OPENMP_FOUND)
+    find_package(OpenMP)
+endif(NOT OPENMP_FOUND)
 if(OPENMP_FOUND)
     target_compile_options(dual2 PRIVATE ${OPENMP_CXX_FLAGS})
     target_link_libraries(dual2 PRIVATE "gomp")
@@ -81,6 +80,5 @@ foreach(curr_target ${helper_targets})
 endforeach(curr_target)
 
 #Using BOOST header files
-#set(BOOST_ROOT "C:/Software/intel/boost_1_62_0")
 find_package(Boost REQUIRED)
 target_include_directories(sphHarmCoeff PRIVATE ${Boost_INCLUDE_DIRS})
