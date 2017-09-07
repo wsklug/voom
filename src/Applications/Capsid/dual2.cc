@@ -16,8 +16,6 @@ using namespace tvmet;
 using namespace std;
 using namespace voom;
 
-typedef tvmet::Vector<double,3> Vector3D;
-
 int main(int argc, char* argv[])
 {
     if( argc != 5 ) {
