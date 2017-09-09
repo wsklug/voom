@@ -1,12 +1,13 @@
 #include "HelperFunctions.h"
 
+using namespace std;
+
 /*
  The method writeEdgeStrainVtk() inserts edge strain information in a vtk file
  The calling method must ensure that 'fileName' exists and is a valid vtk file.
  MUST use the extension '.vtk' in 'fileName'.
  */
 namespace voom {
-using namespace std;
 
 void writeEdgeStrainVtk(std::vector<std::string> &fileNames, double avgEdgeLen,
 		double percentStrain) {
@@ -345,9 +346,76 @@ vector<tvmet::Vector<int, 3> > delaunay3DSurf(
 			<< " seconds" << std::endl;
 	return connectivities;
 }
+/*
+ * An alternative of delaunay3DSurf() using kdTree and writes to file
+*/
+
+void delaunay3DSurf(vtkSmartPointer<vtkPoints> pts, string fileName ) {
+
+    vtkSmartPointer<vtkPoints> pts2 =
+            vtkSmartPointer<vtkPoints>::New();
+    vtkSmartPointer<vtkPolyData> unitSphere =
+            vtkSmartPointer<vtkPolyData>::New();
+    vtkSmartPointer<vtkPolyData> final;
+    vtkSmartPointer<vtkDataSetSurfaceFilter> dssf =
+            vtkSmartPointer<vtkDataSetSurfaceFilter>::New();
+    vtkSmartPointer<vtkIdFilter> idf =
+            vtkSmartPointer<vtkIdFilter>::New();
+    vtkSmartPointer<vtkDelaunay3D> d3D =
+            vtkSmartPointer<vtkDelaunay3D>::New();
+    vtkSmartPointer<vtkCellArray> finalCells =
+            vtkSmartPointer<vtkCellArray>::New();
+    vtkSmartPointer<vtkCellArray> interim;
+    vtkSmartPointer<vtkIdTypeArray> origIds;
+    vtkSmartPointer<vtkIdList> pointIds =
+            vtkSmartPointer<vtkIdList>::New();
+    vtkSmartPointer<vtkPolyData> poly =
+            vtkSmartPointer<vtkPolyData>::New();
+    vtkSmartPointer<vtkPolyDataWriter> w =
+            vtkSmartPointer<vtkPolyDataWriter>::New();
+    vtkSmartPointer<vtkKdTree> kdTree =
+            vtkSmartPointer<vtkKdTree>::New();
+
+    kdTree->BuildLocatorFromPoints( pts );
+
+    for(int i=0; i < pts->GetNumberOfPoints(); i++){
+        Vector3D x(0.0), temp(0.0);
+        pts->GetPoint(i,&(temp[0]));
+        x = temp / tvmet::norm2(temp);
+        pts2->InsertNextPoint(&(x[0]));
+    }
+    unitSphere->SetPoints(pts2);
+
+    idf->SetIdsArrayName("PointIds");
+    idf->PointIdsOn();
+    idf->SetInputData(unitSphere);
+
+    d3D->SetInputConnection(idf->GetOutputPort());
+    dssf->SetInputConnection(d3D->GetOutputPort());
+    dssf->Update();
+    final = dssf->GetOutput();
+    interim = final->GetPolys();
+    interim->InitTraversal();
+    origIds = vtkIdTypeArray::SafeDownCast(
+                final->GetPointData()->GetArray("PointIds"));
+    while(interim->GetNextCell(pointIds)){
+        int numIds = pointIds->GetNumberOfIds();
+        finalCells->InsertNextCell(numIds);
+        for(int j=0; j < numIds; j++ ){
+            int id = (int)origIds->GetTuple1( pointIds->GetId(j) );
+            finalCells->InsertCellPoint(id);
+        }
+    }
+
+    poly->SetPoints(pts);
+    poly->SetPolys(finalCells);
+    w->SetInputData(poly);
+    w->SetFileName(fileName.c_str());
+    w->Write();
+}
 
 /*
- Overloaded version of delaunay3DSurf(). It prints surface to a file and uses a
+ An alternative of delaunay3DSurf(). It prints surface to a file and uses a
  vtkPolyData as an input.
  */
 void meshSphericalPointCloud(const vtkSmartPointer<vtkPolyData> input,

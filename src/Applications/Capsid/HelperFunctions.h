@@ -42,6 +42,7 @@
 #include <vtkCleanPolyData.h>
 #include <vtkKdTree.h>
 #include <vtkIdList.h>
+#include <vtkIdFilter.h>
 
 #if defined(_OPENMP)
 #include <omp.h>
@@ -91,6 +92,8 @@ std::vector<double> calcEdgeLenAndStdDev(const std::vector<DeformationNode<3>*> 
 	const std::vector< tvmet::Vector<int,3> > &b);
 
 std::vector<tvmet::Vector<int, 3> > delaunay3DSurf(const std::vector<DeformationNode<3>*> &a);
+
+void delaunay3DSurf(vtkSmartPointer<vtkPoints> pts, std::string fileName );
 
 void meshSphericalPointCloud(const vtkSmartPointer<vtkPolyData> pd, double searchRad, 
 	const std::string fileName);

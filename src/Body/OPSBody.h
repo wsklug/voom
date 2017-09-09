@@ -29,6 +29,7 @@
 #include <vtkPolyData.h>
 #include <vtkPolyDataWriter.h>
 #include <vtkDoubleArray.h>
+#include <vtkFloatArray.h>
 #include <vtkPointData.h>
 #include <vtkKdTree.h>
 #include <vtkIdFilter.h>
@@ -144,7 +145,7 @@ public:
 	void pushBack(Element* e) { _elements.push_back(e);}
 
 	//! Return the mean squared displacement
-	double rmsd();
+    double msd();
 
 	//!Get nearest neighbor for rmsd calculation
 	std::vector<int> getInitialNearestNeighbor(){
@@ -188,6 +189,7 @@ public:
 protected:
 	const vector<OPSNode*> _opsNodes; // Nodes
     int _numNodes;
+    int _numBadTri;
 	double _searchR; // Search radius
 	OPSParams _prop; // Parameters for the OPS
 	double _morseEn;

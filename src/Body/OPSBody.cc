@@ -17,6 +17,7 @@ OPSBody::OPSBody(const vector<OPSNode*> & nodes, OPSParams &p, double r) :
     }
 
     _numNodes = nodes.size();
+    _numBadTri = 0;
 
     // Construct vtkPolyData from nodes
     _polyData = vtkSmartPointer<vtkPolyData>::New();
@@ -70,7 +71,7 @@ void OPSBody::updatePolyDataAndKdTree() {
 
     normals->SetNumberOfComponents(3);
     normals->SetName("PointNormals");
-    //vtkSmartPointer<vtkCellArray> verts = vtkSmartPointer<vtkCellArray>::New();
+
     int ptIdx = 0;
     for (opsNodeIterator n = _opsNodes.begin(); n != _opsNodes.end(); ++n) {
         Vector3D coords, currRotVec, currNormal;
@@ -78,12 +79,9 @@ void OPSBody::updatePolyDataAndKdTree() {
         currRotVec = (*n)->deformedRotationVector();
         currNormal = OPSNode::convertRotVecToNormal( currRotVec );
         pts->InsertNextPoint(&(coords[0]));
-        normals->InsertNextTuple(&(currNormal[0]));
-        //verts->InsertNextCell(1);
-        //verts->InsertCellPoint(ptIdx++);
+        normals->InsertNextTuple(&(currNormal[0]));        
     }
-    _polyData->SetPoints(pts);
-    //_polyData->SetVerts(verts);
+    _polyData->SetPoints(pts);    
     _polyData->GetPointData()->SetNormals(normals);
     _kdTree->BuildLocatorFromPoints( _polyData );
 
@@ -99,10 +97,20 @@ void OPSBody::updatePolyDataAndKdTree() {
     idf->PointIdsOn();
     idf->SetInputData(unitSphere);
 
+    //Calculate ideal number of triangles. If after delaunay triangulation we get a
+    //different number of triangles we will print out some intermediate files and try to re-run.
+    int idealTriCount, pentCount = 12, hexCount;
+    hexCount = _numNodes - pentCount;
+    idealTriCount = (6*hexCount + 5*pentCount)/3;
+
     d3D->SetInputConnection(idf->GetOutputPort());
     dssf->SetInputConnection(d3D->GetOutputPort());
     dssf->Update();
-    final = dssf->GetOutput();
+    final = dssf->GetOutput();    
+    if( final->GetNumberOfPolys() != idealTriCount){
+        cout<< "Bad Delaunay triangulation detected!" <<std::endl;
+        cout<< "Printing the unit sphere generated." <<std::endl;        
+    }
     interim = final->GetPolys();
     interim->InitTraversal();
     origIds = vtkIdTypeArray::SafeDownCast(
@@ -111,7 +119,7 @@ void OPSBody::updatePolyDataAndKdTree() {
         int numIds = pointIds->GetNumberOfIds();
         finalCells->InsertNextCell(numIds);
         for(int j=0; j < numIds; j++ ){
-            int id = (double)origIds->GetTuple1( pointIds->GetId(j) );
+            int id = (int)origIds->GetTuple1( pointIds->GetId(j) );
             finalCells->InsertCellPoint(id);
         }
     }
@@ -393,10 +401,10 @@ double OPSBody::getLoopAsphericity(){
 }
 
 /*
- * Root mean squared displacement
+ * The mean squared displacement
  */
-double OPSBody::rmsd() {
-    double rmsd = 0; //root Mean Squared Displacement
+double OPSBody::msd() {
+    double msd = 0; //Mean Squared Displacement
     int nn = -1;
     for (int i = 0; i < _numNodes; i++) {
         Vector3D xi, xj, diff;
@@ -404,10 +412,10 @@ double OPSBody::rmsd() {
         xi = (_opsNodes[i]->deformedPosition() - _opsNodes[i]->referencePosition());
         xj = (_opsNodes[nn]->deformedPosition() - _opsNodes[nn]->referencePosition());
         diff = xi - xj;
-        rmsd += tvmet::dot(diff, diff);
+        msd += tvmet::dot(diff, diff);
     }
-    rmsd = sqrt(rmsd / (2*_numNodes));
-    return rmsd;
+    msd = msd / (2*_numNodes);
+    return msd;
 }
 
 /*

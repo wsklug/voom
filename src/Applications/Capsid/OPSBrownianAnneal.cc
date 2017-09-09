@@ -28,8 +28,6 @@
 
 #include <Eigen/Dense>
 
-using namespace tvmet;
-using namespace std;
 using namespace voom;
 
 int main(int argc, char* argv[])
@@ -50,9 +48,9 @@ int main(int argc, char* argv[])
 	double epsilon=1.0, re=1.0, s=7.0, K, a=1.0, b=1.0;
 	double aM=1.0, aP=1.0, aN=1.0, aC=1.0;
 	double percentStrain = 10;
-	bool projectOnSphere = false;
-	double initialSearchRad = 1.0, finalSearchRad = 1.2;
-	int lat_res=100, long_res=101, viterMax = 1000;
+    double initialSearchRad = 1.0, finalSearchRad = 1.2;
+    //int lat_res=100, long_res=101;
+    int viterMax = 1000;
 	int nameSuffix = 0;
 	double dt = 9.76e-4;
 
@@ -69,9 +67,8 @@ int main(int argc, char* argv[])
 	>> temp >> a
 	>> temp >> b
 	>> temp >> initialSearchRad
-	>> temp >> finalSearchRad
-	>> temp >> lat_res
-	>> temp >> long_res;
+    >> temp >> finalSearchRad;
+
 	miscInpFile.close();
 
 	s = (100 / (re*percentStrain))*log(2.0);
@@ -83,12 +80,9 @@ int main(int argc, char* argv[])
 
 	reader->SetFileName(inputFileName.c_str());
 	reader->Update();
-	mesh = reader->GetOutput();
-	std::cout << "mesh->GetNumberOfPoints() = " << mesh->GetNumberOfPoints()
-  	    												<< std::endl;
-
+    mesh = reader->GetOutput();
 	// create vector of nodes
-	int dof = 0;
+    int numNodes, dof = 0;
 	std::vector<OPSNode* > nodes;
 	std::vector<NodeBase*> baseNodes;
 	double Ravg = 0.0;
@@ -107,8 +101,9 @@ int main(int argc, char* argv[])
 		baseNodes.push_back(n);
 	}
 	assert(nodes.size() != 0);
-	Ravg /= nodes.size();
-	cout << "Number of nodes: " << nodes.size() << endl
+    numNodes = nodes.size();
+    Ravg /= numNodes;
+    std::cout << "Number of nodes: " << numNodes << endl
 			<< "Initial radius: " << Ravg << endl;
 
 	OPSBody* bd = new OPSBody( nodes, props, initialSearchRad );
@@ -117,7 +112,7 @@ int main(int argc, char* argv[])
 	double EdgeLength = bd->getAverageEdgeLength();
 
 	// Rescale size of the capsid by the average equilateral edge length
-	for (int i = 0; i < nodes.size(); i++) {
+    for (int i = 0; i < numNodes; i++) {
 		Vector3D X;
 		X = nodes[i]->referencePosition();
 		X *= 1.0 / EdgeLength;
@@ -131,22 +126,22 @@ int main(int argc, char* argv[])
 	bd->updateNeighbors();
 
 	Ravg = 0.0;
-	for (int i = 0; i < nodes.size(); i++) {
+    for (int i = 0; i < numNodes; i++) {
 		Vector3D x;
 		x = nodes[i]->deformedPosition();
 		double tempRadius = tvmet::norm2(x);
 		Ravg += tempRadius;
 	}
-	Ravg /= nodes.size();
+    Ravg /= numNodes;
 
 	std::cout << "Radius of capsid after rescaling = " << Ravg << endl;
 
 	// Prepare Eigen matrices
-	Eigen::Matrix3Xd initialPositions(3, nodes.size()),
-		currentPositions(3, nodes.size()), currentPseudoNormals(3, nodes.size());
+    Eigen::Matrix3Xd initialPositions(3, numNodes),
+        currentPositions(3, numNodes), currentPseudoNormals(3, numNodes);
 
 	//Fill in matrix of the initial state for Kabsch algorithm
-	for (int col = 0; col < nodes.size(); col++) {
+    for (int col = 0; col < numNodes; col++) {
 		Vector3D coord = nodes[col]->deformedPosition();
 		for (int row = 0; row < 3; row++) {
 			initialPositions(row, col) = coord(row);
@@ -155,14 +150,14 @@ int main(int argc, char* argv[])
 
 	//Prepare output data file
 	std::string dataOutputFile;
-	sstm << fname << "-output.dat";
+    sstm << fname << "-DetailOutput.dat";
 	dataOutputFile = sstm.str();
 	sstm.str("");
 	sstm.clear();
 
-	ofstream myfile;
-	myfile.open(dataOutputFile.c_str());
-	myfile << "#Step" << "\t"
+    ofstream innerLoopFile;
+    innerLoopFile.open(dataOutputFile.c_str());
+    innerLoopFile << "#Step" << "\t"
 			<<"ParaviewStep" << "\t"
 			<< "DiffusionCoeff" << "\t"
 			<< "alphaM" << "\t"
@@ -179,6 +174,21 @@ int main(int argc, char* argv[])
             << "MSD"
 			<< std::endl;
 
+    ofstream outerLoopFile;
+    sstm << fname << "-AverageOutput.dat";
+    dataOutputFile = sstm.str();
+    sstm.str("");
+    sstm.clear();
+    outerLoopFile.open(dataOutputFile.c_str());
+    outerLoopFile << "#BigStep" <<"\t"
+                  << "DiffusionCoeff" <<"\t"
+                  << "PercentStrain" <<"\t"
+                  << "Alpha_M" <<"\t"
+                  << "K" << "\t"
+                  << "Radius"  <<"\t"
+                  << "Asphericity" <<"\t"
+                  << std::endl;
+
 	// Update the Morse parameters
 	s = (100 / (EdgeLength*percentStrain))*log(2.0);
 	bd->updateProperty( OPSBody::r, EdgeLength );
@@ -190,7 +200,7 @@ int main(int argc, char* argv[])
 	double factr = 10.0;
 	double pgtol = 1e-7;
 	int iprint = 2000;
-	Lbfgsb solver(6 * nodes.size(), m, factr, pgtol, iprint, maxIter, true);
+    Lbfgsb solver(6 * numNodes, m, factr, pgtol, iprint, maxIter, true);
 
 	double diffusionCoeff = 4.0*EdgeLength*EdgeLength;
 	double Cd = 1.0/diffusionCoeff;
@@ -211,30 +221,6 @@ int main(int argc, char* argv[])
 
 	int printStep, stepCount = 0;
 	int paraviewStep = -1;
-
-	vtkSmartPointer<vtkSphereSource> sp =
-			vtkSmartPointer<vtkSphereSource>::New();
-	sp->SetRadius(1.0);
-	sp->SetThetaResolution(lat_res);
-	sp->SetPhiResolution(long_res);
-	sp->LatLongTessellationOn();
-
-	vtkSmartPointer<vtkPolyData> pd =
-			sp->GetOutput();
-	sp->Update();
-
-	/*
-	 * In the next few lines we will identify spherical co-ordinate
-	 * limits for each cell in the sphere
-
-	std::vector<vector<double> > cellLimits = getSphCellLimits(pd, long_res);
-
-	vtkSmartPointer<vtkDoubleArray> binDensity =
-			vtkSmartPointer<vtkDoubleArray>::New();
-	binDensity->SetNumberOfComponents(1);
-	binDensity->SetNumberOfTuples(pd->GetNumberOfCells());
-	binDensity->SetName("Density");
-	*/
 
 	//******************* READ COOLING SCHEDULE from File *******
 
@@ -279,58 +265,40 @@ int main(int argc, char* argv[])
 		bd->updateProperty( OPSBody::sv, s );
 		bd->updateProperty( OPSBody::Kv, currK );
 
+        /*
         bool checkConsistency = false;
 		if (checkConsistency) {
 			std::cout << "Checking consistency......" << std::endl;
 			bk->updateParallelKick();
 			bd->checkConsistency(true);
 		}
-
+        */
 		std::cout << "Viscosity Input Parameters:" << std::endl
 				<< " Cd = " << Cd << std::endl
 				<< "  D = " << diffusionCoeff << std::endl
 				<< " dt = " << dt << std::endl;
 
 		//***************************  INNER SOLUTION LOOP ***************************//
+        std::vector<Vector3D> averagePosition( numNodes, Vector3D(0.0) );
 
 		for (int viter = 0; viter < viterMax; viter++) {
 
 			cout << endl
-					<< "VISCOUS ITERATION: " << viter + stepCount
-					<< "\t viscosity = " << vr->viscosity()
+					<< "VISCOUS ITERATION: " << viter + stepCount					
 					<< endl
 					<< endl;
 
-			bk->updateParallelKick();
-			//bk->updateRotationKick();
+            bk->updateParallelKick();
+
 			std::vector<double> kickStats = bk->getKickStats();
-			std::cout<<"Largest kick norm: "<< kickStats[0] << std::endl;
-			std::cout<<"Smallest kick norm: "<< kickStats[1] << std::endl;
-			std::cout<<"Average kick norm: "<< kickStats[2] << std::endl;
+            std::cout<<"\tLargest kick norm: "<< kickStats[0] << std::endl;
+            std::cout<<"\tSmallest kick norm: "<< kickStats[1] << std::endl;
+            std::cout<<"\tAverage kick norm: "<< kickStats[2] << std::endl;
 
 			solver.solve(&model);
 
-			std::cout << "VISCOSITY: " << std::endl
-					<< "          velocity = " << vr->velocity() << std::endl
-					<< " updated viscosity = " << vr->viscosity() << std::endl
-					<< std::endl;
-
-			bool printBeforeKabsch = false;
-			if (printBeforeKabsch) {
-				//We will print only after every currPrintStep iterations
-				if (viter % printStep == 0) {
-					bd->updatePolyDataAndKdTree();
-					bd->updateNeighbors();
-					sstm << fname << "-beforeKabsch-" << nameSuffix << ".vtk";
-					rName = sstm.str();
-					bd->printParaview(rName.c_str());
-					sstm.str("");
-					sstm.clear();
-				}
-			}
-
-			//Fill-in Matrix for new state for Kabsch algorithm
-			for (int col = 0; col < nodes.size(); col++) {
+            //Fill-in Matrix for new state for Kabsch algorithm
+            for (int col = 0; col < numNodes; col++) {
 				Vector3D coord, normal, pseudoNormal;
 				coord = nodes[col]->deformedPosition();
 				/*
@@ -351,8 +319,8 @@ int main(int argc, char* argv[])
 			//********** Print relaxed configuration ************//
 
 			Eigen::Affine3d A;
-			Eigen::Matrix3Xd newPositions(3, nodes.size()),
-					newRotVecs(3, nodes.size()), newPseudoNormal(3,1);
+            Eigen::Matrix3Xd newPositions(3, numNodes),
+                    newRotVecs(3, numNodes), newPseudoNormal(3,1);
 			A = Find3DAffineTransform(currentPositions, initialPositions);
 			for (int col = 0; col < currentPositions.cols(); col++) {
 				newPositions.col(col) = A.linear() * currentPositions.col(col)
@@ -373,9 +341,10 @@ int main(int argc, char* argv[])
 
 			//Update the Kabsch transformed positions as new current
 			//configuration in the node container
-			for (int i = 0; i < nodes.size(); i++) {
+            for (int i = 0; i < numNodes; i++) {
 				tvmet::Vector<double,6> kabschPoint(0.0);
 				for (int j = 0; j < 3; j++) {
+                    averagePosition[i][j] += newPositions(j, i);
 					kabschPoint(j) = newPositions(j, i);
 					kabschPoint(j+3) = newRotVecs(j, i);
 				}
@@ -383,7 +352,8 @@ int main(int argc, char* argv[])
 			}
 
 			bd->updatePolyDataAndKdTree();
-			bd->updateNeighbors();
+            bd->updateNeighbors();
+
 			//We will print only after every currPrintStep iterations
 			if (viter % printStep == 0) {
 				paraviewStep++;
@@ -396,15 +366,13 @@ int main(int argc, char* argv[])
 
 			int paraviewStepPrint;
 			paraviewStepPrint = (viter % printStep == 0) ? paraviewStep : -1;
-            double rmsd = bd->rmsd();
-            double msd = rmsd*rmsd;
+            double msd = bd->msd();
 
-			myfile << step++ << "\t"
+            innerLoopFile << step++ << "\t"
 					<< paraviewStepPrint <<"\t"
 					<< diffusionCoeff <<"\t"
 					<< currAm << "\t"
-					<< bd->getAsphericity() << "\t"
-					//<< bd->getLoopAsphericity() << "\t"
+					<< bd->getAsphericity() << "\t"					
 					<< bd->getAverageRadius() << "\t"
 					<< bd->getMorseEnergy() << "\t"
 					<< bd->getPlanarityEnergy() << "\t"
@@ -415,21 +383,53 @@ int main(int argc, char* argv[])
 					<< solver.function() << "\t"
                     << msd
 					<< endl;
-			//********** Find bins for each particle ************//
-			//putParticlesInBins(cellLimits, newPositions, nodes.size(), binDensity);
 
 			// step forward in "time", relaxing viscous energy & forces
 			vr->step();
-		}
-		/*
-		for(int v=0; v < viterMax; v++){
-			double temp;
-			temp = binDensity->GetTuple1(v);
-			temp = temp / viterMax;
-			binDensity->SetTuple1(v,temp);
-		}*/
-	}
-	myfile.close();
+        }                   //  INNER SOLUTION LOOP ENDS
+
+        // Calculate the average particle positions
+        double avgShapeRad = 0.0, avgShapeasph = 0.0;
+        vtkSmartPointer<vtkPoints> avgPos =
+                vtkSmartPointer<vtkPoints>::New();
+        for(int av=0; av < numNodes; av++){
+            Vector3D tempPos;
+            tempPos = averagePosition[av] / viterMax;
+            averagePosition[av] = tempPos;
+            avgShapeRad += tvmet::norm2( tempPos );
+            avgPos->InsertNextPoint( &(tempPos[0]) );
+        }
+        avgShapeRad /= numNodes;
+
+        sstm << fname << "-AvgShape-"<< z << ".vtk";
+        dataOutputFile = sstm.str();
+        sstm.str("");
+        sstm.clear();
+
+        // Print the average shape
+        delaunay3DSurf(avgPos, dataOutputFile);
+
+        // Calculate the asphericity of the average shape
+        for(int av=0; av < numNodes; av++){
+            Vector3D tempPos;
+            tempPos = averagePosition[av];
+            double currRad = tvmet::norm2(tempPos);
+            avgShapeasph += (currRad - avgShapeRad)*(currRad - avgShapeRad);
+        }
+        avgShapeasph /= (numNodes*avgShapeRad*avgShapeRad);
+        outerLoopFile << z <<"\t"
+                      << diffusionCoeff <<"\t"
+                      << percentStrain <<"\t"
+                      << currAm <<"\t"
+                      << currK << "\t"
+                      << avgShapeRad  <<"\t"
+                      << avgShapeasph <<"\t"
+                      << std::endl;
+
+    }                      // SOLUTION LOOP ENDS
+
+    innerLoopFile.close();
+    outerLoopFile.close();
 	t2 = clock();
 	float diff((float)t2 - (float)t1);
 	std::cout << "Solution loop execution time: " << diff / CLOCKS_PER_SEC
