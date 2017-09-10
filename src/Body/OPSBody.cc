@@ -404,13 +404,29 @@ double OPSBody::getLoopAsphericity(){
  * The mean squared displacement
  */
 double OPSBody::msd() {
-    double msd = 0; //Mean Squared Displacement
+    double msd = 0;
     int nn = -1;
+    // We will subtract off the radial displacement.
     for (int i = 0; i < _numNodes; i++) {
-        Vector3D xi, xj, diff;
+        Vector3D xi, xj, diff, xi_diff, xj_diff;
+        Vector3D xi0, xj0, xi1, xj1, ni0, nj0;
+
         nn = _initialNearestNeighbor[i];
-        xi = (_opsNodes[i]->deformedPosition() - _opsNodes[i]->referencePosition());
-        xj = (_opsNodes[nn]->deformedPosition() - _opsNodes[nn]->referencePosition());
+
+        xi0 = _opsNodes[i]->referencePosition();
+        xi1 = _opsNodes[i]->deformedPosition();
+        ni0 = xi0 / norm2( xi0 );
+
+        xj0 = _opsNodes[nn]->referencePosition();
+        xj1 = _opsNodes[nn]->deformedPosition();
+        nj0 = xj0 / norm2( xj0 );
+
+        xi_diff = (xi1 - xi0);
+        xj_diff = (xj1 - xj0);
+
+        xi = xi_diff - (tvmet::dot(xi_diff, ni0)*ni0);
+        xj = xj_diff - (tvmet::dot(xj_diff, nj0)*nj0);
+
         diff = xi - xj;
         msd += tvmet::dot(diff, diff);
     }
