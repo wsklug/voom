@@ -186,7 +186,7 @@ int main(int argc, char* argv[])
                   << "Alpha_M" <<"\t"
                   << "K" << "\t"
                   << "Radius"  <<"\t"
-                  << "Asphericity" <<"\t"
+                  << "Asphericity"
                   << std::endl;
 
 	// Update the Morse parameters
@@ -423,7 +423,7 @@ int main(int argc, char* argv[])
                       << currAm <<"\t"
                       << currK << "\t"
                       << avgShapeRad  <<"\t"
-                      << avgShapeasph <<"\t"
+                      << avgShapeasph
                       << std::endl;
 
     }                      // SOLUTION LOOP ENDS

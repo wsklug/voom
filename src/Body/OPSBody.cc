@@ -108,8 +108,7 @@ void OPSBody::updatePolyDataAndKdTree() {
     dssf->Update();
     final = dssf->GetOutput();    
     if( final->GetNumberOfPolys() != idealTriCount){
-        cout<< "Bad Delaunay triangulation detected!" <<std::endl;
-        cout<< "Printing the unit sphere generated." <<std::endl;        
+        cout<< "Bad Delaunay triangulation detected!" <<std::endl;               
     }
     interim = final->GetPolys();
     interim->InitTraversal();
