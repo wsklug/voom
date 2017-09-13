@@ -1,6 +1,6 @@
 project(Body)
 
-set(SRCS Body.cc GenericBody.cc PotentialBody.cc ViscosityBody.cc ProteinBody.cc PeriodicPotentialBody.cc OPSBody.cc)
+set(SRCS Body.cc GenericBody.cc PotentialBody.cc ViscosityBody.cc ProteinBody.cc PeriodicPotentialBody.cc OPSBody.cc SimpleOPSBody.cc)
 set(INCDIRS Geometry Node Materials Elements Shape Quadrature VoomMath)
 
 add_library(Body ${SRCS})

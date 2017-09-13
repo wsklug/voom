@@ -49,7 +49,7 @@ int main(int argc, char* argv[])
 
     //Default-values
     aM = 1.0;
-    aP = 1.0;
+    aP = 0.0;
     aC = 1.0;
     aN = 1.0;
     K = 10.0;
@@ -126,14 +126,7 @@ int main(int argc, char* argv[])
     bd->updatePolyDataAndKdTree();
     bd->updateNeighbors();
 
-    Ravg = 0.0;
-    for (int i = 0; i < nodes.size(); i++) {
-        Vector3D x;
-        x = nodes[i]->deformedPosition();
-        double tempRadius = tvmet::norm2(x);
-        Ravg += tempRadius;
-    }
-    Ravg /= nodes.size();
+    Ravg = bd->getAverageRadius();
 
     std::cout << "Radius of capsid after rescaling = " << Ravg << endl;
 

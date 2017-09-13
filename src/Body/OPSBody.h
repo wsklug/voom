@@ -36,8 +36,6 @@
 #include <vtkDelaunay3D.h>
 #include <vtkDataSetSurfaceFilter.h>
 #include <vtkLoopSubdivisionFilter.h>
-#include <vtkUnstructuredGrid.h>
-#include <vtkUnstructuredGridWriter.h>
 
 #if VTK_MAJOR_VERSION < 6
 #define SetInputData SetInput
@@ -109,7 +107,9 @@ public:
 
 	double getAverageEdgeLength();
 
-	double getAverageRadius();
+    double getAverageRadius(){return _radius;}
+
+    void calcAverageRadius();
 
 	double getAsphericity();
 
@@ -190,6 +190,7 @@ protected:
 	const vector<OPSNode*> _opsNodes; // Nodes
     int _numNodes;
     int _numBadTri;
+    double _radius;
 	double _searchR; // Search radius
 	OPSParams _prop; // Parameters for the OPS
 	double _morseEn;

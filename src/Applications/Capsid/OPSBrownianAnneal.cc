@@ -46,7 +46,7 @@ int main(int argc, char* argv[])
 
 	//For Morse material
 	double epsilon=1.0, re=1.0, s=7.0, K, a=1.0, b=1.0;
-	double aM=1.0, aP=1.0, aN=1.0, aC=1.0;
+    double aM=1.0, aP=1.0, aN=1.0, aC=1.0;
 	double percentStrain = 10;
     double initialSearchRad = 1.0, finalSearchRad = 1.2;
     //int lat_res=100, long_res=101;
@@ -72,7 +72,7 @@ int main(int argc, char* argv[])
 	miscInpFile.close();
 
 	s = (100 / (re*percentStrain))*log(2.0);
-	struct OPSParams props = {aM, aP, aN, aC, epsilon, re, s, K, a, b};
+    struct OPSParams props = {aM, aP, aN, aC, epsilon, re, s, K, a, b};
 
 	vtkSmartPointer<vtkPolyDataReader> reader =
 			vtkSmartPointer<vtkPolyDataReader>::New();
@@ -106,7 +106,7 @@ int main(int argc, char* argv[])
     std::cout << "Number of nodes: " << numNodes << endl
 			<< "Initial radius: " << Ravg << endl;
 
-	OPSBody* bd = new OPSBody( nodes, props, initialSearchRad );
+    OPSBody* bd = new OPSBody( nodes, props, initialSearchRad );
 
 	// Calculate side lengths average of the imaginary equilateral triangles
 	double EdgeLength = bd->getAverageEdgeLength();
@@ -125,14 +125,7 @@ int main(int argc, char* argv[])
 	bd->updatePolyDataAndKdTree();
 	bd->updateNeighbors();
 
-	Ravg = 0.0;
-    for (int i = 0; i < numNodes; i++) {
-		Vector3D x;
-		x = nodes[i]->deformedPosition();
-		double tempRadius = tvmet::norm2(x);
-		Ravg += tempRadius;
-	}
-    Ravg /= numNodes;
+    Ravg = bd->getAverageRadius();
 
 	std::cout << "Radius of capsid after rescaling = " << Ravg << endl;
 
@@ -165,9 +158,9 @@ int main(int argc, char* argv[])
 			//<< "LoopAsphericity" << "\t"
 			<< "Radius" << "\t"
 			<< "MorseEnergy" << "\t"
-			<< "PlanarityEn" << "\t"
-			<< "NormalityEn" << "\t"
-			<< "CircularityEn" << "\t"
+            << "PlanarityEn" << "\t"
+            << "NormalityEn" << "\t"
+            << "CircularityEn" << "\t"
 			<< "BrownianEnergy" << "\t"
 			<< "ViscosityEnergy" << "\t"
 			<< "TotalFunctional" <<"\t"
@@ -191,8 +184,8 @@ int main(int argc, char* argv[])
 
 	// Update the Morse parameters
 	s = (100 / (EdgeLength*percentStrain))*log(2.0);
-	bd->updateProperty( OPSBody::r, EdgeLength );
-	bd->updateProperty( OPSBody::sv, s );
+    bd->updateProperty( OPSBody::r, EdgeLength );
+    bd->updateProperty( OPSBody::sv, s );
 
 	//Create a l-BFGS-b solver
 	int m = 7;
@@ -261,9 +254,9 @@ int main(int argc, char* argv[])
 
 		s = (100 / (EdgeLength*percentStrain))*log(2.0);
 		bk->setDiffusionCoeff( diffusionCoeff );
-		bd->updateProperty(OPSBody::aM, currAm);
-		bd->updateProperty( OPSBody::sv, s );
-		bd->updateProperty( OPSBody::Kv, currK );
+        bd->updateProperty( OPSBody::aM, currAm);
+        bd->updateProperty( OPSBody::sv, s );
+        bd->updateProperty( OPSBody::Kv, currK );
 
         /*
         bool checkConsistency = false;
@@ -376,8 +369,8 @@ int main(int argc, char* argv[])
 					<< bd->getAverageRadius() << "\t"
 					<< bd->getMorseEnergy() << "\t"
 					<< bd->getPlanarityEnergy() << "\t"
-					<< bd->getNormalityEnergy() << "\t"
-					<< bd->getCircularityEnergy() << "\t"
+                    << bd->getNormalityEnergy() << "\t"
+                    << bd->getCircularityEnergy() << "\t"
 					<< bk->energy() << "\t"
 					<< vr->energy() << "\t"
 					<< solver.function() << "\t"
