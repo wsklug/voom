@@ -29,7 +29,7 @@ using namespace voom;
 
 int main(int argc, char* argv[])
 {
-    clock_t t1, t2, t3;
+    clock_t t1, t2;
     t1 = clock();
     if (argc != 2) {
         cout << "usage: " << argv[0] << " <filename>\n";
@@ -42,17 +42,16 @@ int main(int argc, char* argv[])
     std::stringstream sstm;
 
     //For Morse material
-    double epsilon, re, s, K, a, b, aM, aP, aN, aC;
+    double D_e, re, s, b, gamma;
     double percentStrain = 10;
-    bool projectOnSphere = false;
-    double initialSearchRad = 1.0, finalSearchRad = 1.2;
+    bool projectOnSphere = false, volumeConstraintOn = false;
+    double initialSearchRad = 1.0, finalSearchRad = 1.2;       
 
-    //Default-values
-    aM = 1.0;
-    aP = 0.0;
-    aC = 1.0;
-    aN = 1.0;
-    K = 10.0;
+    //Default Values
+    s = log(2.0)*(100/14);
+    D_e = 1.0;
+    re = 1.0;
+    gamma = 1.0;
 
     //Read epsilon and percentStrain from input file. percentStrain is
     //calculated so as to set the inflection point of Morse potential
@@ -62,18 +61,18 @@ int main(int argc, char* argv[])
     assert(miscInpFile);
     string temp;
     miscInpFile
-            >> temp >> epsilon
+            >> temp >> D_e
             >> temp >> re
-            >> temp >> percentStrain
-            >> temp >> a
-            >> temp >> b
+            >> temp >> percentStrain            
+            >> temp >> b           
             >> temp >> initialSearchRad
             >> temp >> finalSearchRad
-            >> temp >> projectOnSphere;
+            >> temp >> projectOnSphere
+            >> temp >> volumeConstraintOn;
     miscInpFile.close();
 
-    s = (100 / (re*percentStrain))*log(2.0);
-    struct OPSParams props = {aM, aP, aN, aC, epsilon, re, s, K, a, b};
+    s = (100 / (re*percentStrain))*log(2.0);   
+    struct OPSParams props = {D_e, re, s, b, 0.0, 0.0, gamma};
 
     vtkSmartPointer<vtkPolyDataReader> reader =
             vtkSmartPointer<vtkPolyDataReader>::New();
@@ -103,8 +102,9 @@ int main(int argc, char* argv[])
         baseNodes.push_back(n);
     }
     assert(nodes.size() != 0);
-    Ravg /= nodes.size();
-    cout << "Number of nodes: " << nodes.size() << endl
+    int numNodes = nodes.size();
+    Ravg /= numNodes;
+    cout << "Number of nodes: " << numNodes << endl
          << "Initial radius: " << Ravg << endl;
 
     OPSBody* bd = new OPSBody( nodes, props, initialSearchRad );
@@ -113,7 +113,7 @@ int main(int argc, char* argv[])
     double EdgeLength = bd->getAverageEdgeLength();
 
     // Rescale size of the capsid by the average equilateral edge length
-    for (int i = 0; i < nodes.size(); i++) {
+    for (int i = 0; i < numNodes; i++) {
         Vector3D X;
         X = nodes[i]->referencePosition();
         X *= 1.0 / EdgeLength;
@@ -128,11 +128,27 @@ int main(int argc, char* argv[])
 
     Ravg = bd->getAverageRadius();
 
+    int numSolverDOFs = 6*numNodes;
+    //********************************* ENABLE VOLUME CONSTRAINT ***********************//
+    double volConstraint = 0.0;
+    if(volumeConstraintOn){
+        volConstraint = bd->calcAvgVolume();
+        cout << "Prescribed Volume = "<< volConstraint << std::endl;
+        NodeBase::DofIndexMap idx(1);
+        idx[0] = dof++;
+       MultiplierNode *pressNode = new MultiplierNode(numNodes,idx,1.0);
+       baseNodes.push_back( pressNode );
+       bd->setVolumeConstraint( pressNode, volConstraint);
+       numSolverDOFs++;
+    }
+    //----------------------------------------------------------------------------------//
+
+
     std::cout << "Radius of capsid after rescaling = " << Ravg << endl;
 
     if (projectOnSphere) {
         //Project points to a sphere of radius Ravg
-        for (int i = 0; i < nodes.size(); i++) {
+        for (int i = 0; i < numNodes; i++) {
             Vector3D X;
             X = nodes[i]->referencePosition();
             X *= Ravg / (tvmet::norm2(X));
@@ -149,13 +165,10 @@ int main(int argc, char* argv[])
     //***************** READ ENERGY COEFFICIENTS FROM FILE ********************
     std::ifstream coeffsFile("coeffs.dat");
     assert(coeffsFile);
-    std::vector<vector<double> > coeffVec;
-    double currAm, currK;
-    while (coeffsFile >> currAm >> currK) {
-        std::vector<double> currLine;
-        currLine.push_back(currAm);
-        currLine.push_back(currK);
-        coeffVec.push_back(currLine);
+    std::vector<double> coeffVec;
+    double currGamma;
+    while (coeffsFile >> currGamma) {
+        coeffVec.push_back(currGamma);
     }
     coeffsFile.close();
 
@@ -168,21 +181,21 @@ int main(int argc, char* argv[])
     ofstream myfile;
     myfile.open(dataOutputFile.c_str());
     myfile << "#Step" << "\t"
-           << "alphaM" << "\t"
-           << "K" << "\t"
-           << "Asphericity" << "\t"
+           << "Gamma" << "\t"
            << "Radius" << "\t"
-           << "MorseEnergy" << "\t"
-           << "PlanarityEn" << "\t"
+           << "Asphericity" << "\t"
+           << "Volume" << "\t"
+           << "MorseEnergy" << "\t"           
            << "NormalityEn" << "\t"
            << "CircularityEn" << "\t"
+           << "PressureEnergy" << "\t"
            << "TotalFunctional"
            << std::endl;
 
     // Update the Morse parameters
-    s = (100 / (EdgeLength*percentStrain))*log(2.0);
+    s = (100 / (EdgeLength*percentStrain))*log(2.0);    
     bd->updateProperty( OPSBody::r, EdgeLength );
-    bd->updateProperty( OPSBody::sv, s );
+    bd->updateProperty( OPSBody::av, s );
 
     //Create Model
     Model::BodyContainer bdc;
@@ -195,7 +208,16 @@ int main(int argc, char* argv[])
     double factr = 10.0;
     double pgtol = 1e-7;
     int iprint = 2000;
-    Lbfgsb solver(6 * nodes.size(), m, factr, pgtol, iprint, maxIter, true);
+    Lbfgsb solver(numSolverDOFs, m, factr, pgtol, iprint, maxIter, false);
+
+
+    bool checkConsistency = true;
+    if (checkConsistency) {
+        std::cout << "Checking consistency......" << std::endl;
+        //bd->checkConsistency(true);
+        model.checkConsistency(true,false);
+    }
+
 
     //***************************  SOLUTION LOOP ***************************
     for(int z=0; z < coeffVec.size(); z++){
@@ -203,24 +225,22 @@ int main(int argc, char* argv[])
         cout<<"ITERATION: Z = "<< z <<std::endl;
         cout<<std::endl;
 
-        currAm = coeffVec[z][0];
-        bd->updateProperty(OPSBody::aM, currAm);
-        currK = coeffVec[z][1];
-        bd->updateProperty(OPSBody::Kv, currK);
+        currGamma = coeffVec[z];
+        bd->updateProperty(OPSBody::G, currGamma);
 
         solver.solve( &model );
         bd->updatePolyDataAndKdTree();
         bd->updateNeighbors();
 
         myfile << z << "\t"
-               << currAm << "\t"
-               << currK << "\t"
-               << bd->getAsphericity() << "\t"
+               << currGamma << "\t"
                << bd->getAverageRadius() << "\t"
-               << bd->getMorseEnergy() << "\t"
-               << bd->getPlanarityEnergy() << "\t"
+               << bd->getAsphericity() << "\t"               
+               << bd->calcAvgVolume() << "\t"
+               << bd->getMorseEnergy() << "\t"               
                << bd->getNormalityEnergy() << "\t"
                << bd->getCircularityEnergy() << "\t"
+               << bd->getPVEnergy() << "\t"
                << solver.function()
                << std::endl;
 

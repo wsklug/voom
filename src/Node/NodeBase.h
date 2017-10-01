@@ -61,19 +61,19 @@ namespace voom
     }
     virtual void setStiffness(const NodeBase* b, int kb, int ia, double k) {;}
     virtual void addStiffness(const NodeBase* b, int kb, int ia, double k) {;}    
-    virtual double getStiffness(int b, int kb, int ia) const {return 0;};
-    virtual void setStiffness(int b, int kb, int ia, double k) {;};
-    virtual void addStiffness(int b, int kb, int ia, double k) {;};    
+    virtual double getStiffness(int b, int kb, int ia) const {return 0;}
+    virtual void setStiffness(int b, int kb, int ia, double k) {;}
+    virtual void addStiffness(int b, int kb, int ia, double k) {;}
 
     virtual double getStiffness(int ia) const { return 0; }
-    virtual void setStiffness(int ia, double k) {};
-    virtual void addStiffness(int ia, double k) {};    
+    virtual void setStiffness(int ia, double k) {}
+    virtual void addStiffness(int ia, double k) {}
 
     virtual double getMass() const {return 0;}
 
-    virtual void setMass(double m) {};
+    virtual void setMass(double m) {}
     
-    virtual void addMass(double m) {};
+    virtual void addMass(double m) {}
     
     
     //! assign id

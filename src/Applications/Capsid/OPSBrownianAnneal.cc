@@ -17,7 +17,7 @@
 #include "Model.h"
 #include "Lbfgsb.h"
 #include "OPSBody.h"
-#include "BrownianKick.h"
+#include "OPSBrownianKick.h"
 #include "OPSViscousRegularizer.h"
 
 #include <vtkPolyData.h>
@@ -45,14 +45,15 @@ int main(int argc, char* argv[])
 	std::stringstream sstm;
 
 	//For Morse material
-	double epsilon=1.0, re=1.0, s=7.0, K, a=1.0, b=1.0;
-    double aM=1.0, aP=1.0, aN=1.0, aC=1.0;
+    double D_e=1.0, re=1.0, s=7.0, b=1.0;
+    double alpha=1.0, beta=1.0, gamma=1.0;
 	double percentStrain = 10;
-    double initialSearchRad = 1.0, finalSearchRad = 1.2;
+    double initialSearchRad = 1.0, finalSearchRad = 1.2, searchRadFactor = 1.3;
     //int lat_res=100, long_res=101;
     int viterMax = 1000;
 	int nameSuffix = 0;
 	double dt = 9.76e-4;
+    bool volumeConstraintOn = false;
 
 	//Read epsilon and percentStrain from input file. percentStrain is
 	//calculated so as to set the inflection point of Morse potential
@@ -62,17 +63,18 @@ int main(int argc, char* argv[])
 	assert(miscInpFile);
 	string temp;
 	miscInpFile
-	>> temp >> epsilon
-	>> temp >> re
-	>> temp >> a
-	>> temp >> b
+    >> temp >> D_e
+	>> temp >> re    
+    >> temp >> b
 	>> temp >> initialSearchRad
-    >> temp >> finalSearchRad;
+    >> temp >> finalSearchRad
+    >> temp >> searchRadFactor
+    >> temp >> volumeConstraintOn;
 
 	miscInpFile.close();
 
-	s = (100 / (re*percentStrain))*log(2.0);
-    struct OPSParams props = {aM, aP, aN, aC, epsilon, re, s, K, a, b};
+	s = (100 / (re*percentStrain))*log(2.0);  
+    struct OPSParams props = {D_e, re, s, b, alpha, beta, gamma};
 
 	vtkSmartPointer<vtkPolyDataReader> reader =
 			vtkSmartPointer<vtkPolyDataReader>::New();
@@ -102,10 +104,12 @@ int main(int argc, char* argv[])
 	}
 	assert(nodes.size() != 0);
     numNodes = nodes.size();
+    int numSolverDOFs = numNodes*6;
     Ravg /= numNodes;
     std::cout << "Number of nodes: " << numNodes << endl
 			<< "Initial radius: " << Ravg << endl;
 
+    //OPSBody* bd = new OPSBody( nodes, props, initialSearchRad );
     OPSBody* bd = new OPSBody( nodes, props, initialSearchRad );
 
 	// Calculate side lengths average of the imaginary equilateral triangles
@@ -122,8 +126,23 @@ int main(int argc, char* argv[])
 	//Recalculate edge lengths and capsid radius
 	bd->updateSearchRadius(finalSearchRad);
 	EdgeLength = bd->getAverageEdgeLength();
+    bd->updateSearchRadius(searchRadFactor*EdgeLength);
 	bd->updatePolyDataAndKdTree();
 	bd->updateNeighbors();
+
+    //********************************* ENABLE VOLUME CONSTRAINT ***********************//
+    double volConstraint = 0.0;
+    if(volumeConstraintOn){
+        volConstraint = bd->calcAvgVolume();
+        cout << "Prescribed Volume = "<< volConstraint << std::endl;
+        NodeBase::DofIndexMap idx(1);
+        idx[0] = dof++;
+       MultiplierNode *pressNode = new MultiplierNode(numNodes,idx,1.0);
+       baseNodes.push_back( pressNode );
+       bd->setVolumeConstraint( pressNode, volConstraint);
+       numSolverDOFs++;
+    }
+    //----------------------------------------------------------------------------------//
 
     Ravg = bd->getAverageRadius();
 
@@ -152,19 +171,21 @@ int main(int argc, char* argv[])
     innerLoopFile.open(dataOutputFile.c_str());
     innerLoopFile << "#Step" << "\t"
 			<<"ParaviewStep" << "\t"
-			<< "DiffusionCoeff" << "\t"
-			<< "alphaM" << "\t"
+            << "Alpha" << "\t"
+            << "Beta" << "\t"
+            << "Gamma" << "\t"
 			<< "Asphericity" << "\t"
-			//<< "LoopAsphericity" << "\t"
 			<< "Radius" << "\t"
+            << "Volume" << "\t"
 			<< "MorseEnergy" << "\t"
-            << "PlanarityEn" << "\t"
             << "NormalityEn" << "\t"
             << "CircularityEn" << "\t"
 			<< "BrownianEnergy" << "\t"
 			<< "ViscosityEnergy" << "\t"
+            << "PressureVolEn" << "\t"
 			<< "TotalFunctional" <<"\t"
-            << "MSD"
+            << "MSD" << "\t"
+            << "Neighbors"
 			<< std::endl;
 
     ofstream outerLoopFile;
@@ -174,33 +195,32 @@ int main(int argc, char* argv[])
     sstm.clear();
     outerLoopFile.open(dataOutputFile.c_str());
     outerLoopFile << "#BigStep" <<"\t"
-                  << "DiffusionCoeff" <<"\t"
                   << "PercentStrain" <<"\t"
-                  << "Alpha_M" <<"\t"
-                  << "K" << "\t"
+                  << "Alpha" << "\t"
+                  << "Beta" << "\t"
+                  << "Gamma" << "\t"
                   << "Radius"  <<"\t"
                   << "Asphericity"
                   << std::endl;
 
 	// Update the Morse parameters
-	s = (100 / (EdgeLength*percentStrain))*log(2.0);
+	s = (100 / (EdgeLength*percentStrain))*log(2.0);    
     bd->updateProperty( OPSBody::r, EdgeLength );
-    bd->updateProperty( OPSBody::sv, s );
+    bd->updateProperty( OPSBody::av, s );
 
 	//Create a l-BFGS-b solver
 	int m = 7;
 	int maxIter = 1e5;
 	double factr = 10.0;
 	double pgtol = 1e-7;
-	int iprint = 2000;
-    Lbfgsb solver(6 * numNodes, m, factr, pgtol, iprint, maxIter, true);
+    int iprint = 10000;
+    Lbfgsb solver(numSolverDOFs, m, factr, pgtol, iprint, maxIter, false);
 
-	double diffusionCoeff = 4.0*EdgeLength*EdgeLength;
-	double Cd = 1.0/diffusionCoeff;
-	double viscosity = Cd/dt;
+    double brownCoeff = beta*D_e/(alpha*EdgeLength) ;
+    double viscosity = brownCoeff/(alpha*EdgeLength);
 
-	// Create BrownianKick element
-	BrownianKick *bk = new BrownianKick(baseNodes,Cd,diffusionCoeff,dt);
+    // Create OPSBrownianKick element
+    OPSBrownianKick *bk = new OPSBrownianKick(nodes, brownCoeff);
 	bd->addElement( bk );
 
 	// Create ViscousRegularizer element
@@ -220,19 +240,20 @@ int main(int argc, char* argv[])
 	std::ifstream coolFile("cooling.dat");
 	assert(coolFile);
 	std::vector<vector<double> > coolVec;
-	double curr_D, currAm, currK, currPercentStrain, currViterMax, currPrintStep;
+    double currAlpha, currBeta, currGamma, currPercentStrain,
+            currViterMax, currPrintStep;
 
 	std::string headerline;
 	std::getline(coolFile, headerline);
 
-	while (coolFile >> curr_D >> currViterMax >> currAm >> currK >>
-			currPercentStrain >> currPrintStep) {
+    while (coolFile >> currAlpha >> currBeta >> currGamma >>
+            currPercentStrain >> currViterMax >> currPrintStep) {
 		std::vector<double> currLine;
-		currLine.push_back(curr_D);
-		currLine.push_back(currViterMax);
-		currLine.push_back(currAm);
-		currLine.push_back(currK);
-		currLine.push_back(currPercentStrain);
+        currLine.push_back(currAlpha);
+        currLine.push_back(currBeta);
+        currLine.push_back(currGamma);
+        currLine.push_back(currPercentStrain);
+        currLine.push_back(currViterMax);
 		currLine.push_back(currPrintStep);
 		coolVec.push_back(currLine);
 	}
@@ -243,50 +264,51 @@ int main(int argc, char* argv[])
 	for(int z=0; z < coolVec.size(); z++){
 		//binDensity->FillComponent(0, 0.0);
 
-		diffusionCoeff = coolVec[z][0];
-		Cd = 1.0 / diffusionCoeff;
-		viterMax = coolVec[z][1];
-		currAm = coolVec[z][2];
-		currK = coolVec[z][3];
-		percentStrain = coolVec[z][4];
-		printStep = (int)coolVec[z][5];
-		viscosity = Cd / dt;
+        alpha = coolVec[z][0];
+        beta = coolVec[z][1];
+        gamma = coolVec[z][2];
+        percentStrain = coolVec[z][3];
+        viterMax = coolVec[z][4];
+        printStep = (int)coolVec[z][5];
 
 		s = (100 / (EdgeLength*percentStrain))*log(2.0);
-		bk->setDiffusionCoeff( diffusionCoeff );
-        bd->updateProperty( OPSBody::aM, currAm);
-        bd->updateProperty( OPSBody::sv, s );
-        bd->updateProperty( OPSBody::Kv, currK );
+        brownCoeff = beta*D_e/(alpha*EdgeLength);
+        viscosity = brownCoeff/(alpha*EdgeLength);
+        cout<< "Viscosity = " << viscosity << std::endl;
+        cout<< "BrownCoefficient = " << brownCoeff << std::endl;
+        bk->setCoefficient(brownCoeff);
+        vr->setViscosity(viscosity);
 
-        /*
-        bool checkConsistency = false;
+        bd->updateProperty( OPSBody::A, alpha);
+        bd->updateProperty( OPSBody::B, beta );
+        bd->updateProperty( OPSBody::G, gamma );
+        bd->updateProperty( OPSBody::av, s);
+
+
+        bool checkConsistency = true;
 		if (checkConsistency) {
 			std::cout << "Checking consistency......" << std::endl;
 			bk->updateParallelKick();
-			bd->checkConsistency(true);
+            //bd->checkConsistency(true);
+            model.checkConsistency(true, false);
+            //exit(EXIT_SUCCESS);
 		}
-        */
-		std::cout << "Viscosity Input Parameters:" << std::endl
-				<< " Cd = " << Cd << std::endl
-				<< "  D = " << diffusionCoeff << std::endl
-				<< " dt = " << dt << std::endl;
 
 		//***************************  INNER SOLUTION LOOP ***************************//
         std::vector<Vector3D> averagePosition( numNodes, Vector3D(0.0) );
 
 		for (int viter = 0; viter < viterMax; viter++) {
 
+            //Ensure only next nearest neighbor interactions
+            EdgeLength = bd->getAverageEdgeLength();
+            bd->updateSearchRadius(searchRadFactor*EdgeLength);
+
 			cout << endl
 					<< "VISCOUS ITERATION: " << viter + stepCount					
 					<< endl
 					<< endl;
 
-            bk->updateParallelKick();
-
-			std::vector<double> kickStats = bk->getKickStats();
-            std::cout<<"\tLargest kick norm: "<< kickStats[0] << std::endl;
-            std::cout<<"\tSmallest kick norm: "<< kickStats[1] << std::endl;
-            std::cout<<"\tAverage kick norm: "<< kickStats[2] << std::endl;
+            bk->updateParallelKick();			
 
 			solver.solve(&model);
 
@@ -346,6 +368,7 @@ int main(int argc, char* argv[])
 
 			bd->updatePolyDataAndKdTree();
             bd->updateNeighbors();
+            EdgeLength = bd->getAverageEdgeLength();
 
 			//We will print only after every currPrintStep iterations
 			if (viter % printStep == 0) {
@@ -363,18 +386,21 @@ int main(int argc, char* argv[])
 
             innerLoopFile << step++ << "\t"
 					<< paraviewStepPrint <<"\t"
-					<< diffusionCoeff <<"\t"
-					<< currAm << "\t"
+                    << currAlpha <<"\t"
+                    << currBeta << "\t"
+                    << currGamma << "\t"
 					<< bd->getAsphericity() << "\t"					
 					<< bd->getAverageRadius() << "\t"
+                    << bd->calcVolume() << "\t"
 					<< bd->getMorseEnergy() << "\t"
-					<< bd->getPlanarityEnergy() << "\t"
                     << bd->getNormalityEnergy() << "\t"
-                    << bd->getCircularityEnergy() << "\t"
+                    << bd->getCircularityEnergy() << "\t"                       
 					<< bk->energy() << "\t"
 					<< vr->energy() << "\t"
+                    << bd->getPVEnergy() << "\t"
 					<< solver.function() << "\t"
-                    << msd
+                    << msd << "\t"
+                    << bd->getAvgNumNeighbors()
 					<< endl;
 
 			// step forward in "time", relaxing viscous energy & forces
@@ -411,11 +437,11 @@ int main(int argc, char* argv[])
         }
         avgShapeasph /= (numNodes*avgShapeRad*avgShapeRad);
         outerLoopFile << z <<"\t"
-                      << diffusionCoeff <<"\t"
-                      << percentStrain <<"\t"
-                      << currAm <<"\t"
-                      << currK << "\t"
-                      << avgShapeRad  <<"\t"
+                      << percentStrain << "\t"
+                      << currAlpha << "\t"
+                      << currBeta << "\t"
+                      << currGamma << "\t"
+                      << avgShapeRad  << "\t"
                       << avgShapeasph
                       << std::endl;
 
@@ -429,9 +455,10 @@ int main(int argc, char* argv[])
 			<< " seconds" << std::endl;
 
 	//Release the dynamically allocated memory
+    delete vr;
+    delete bk;
 	delete bd;
-	delete bk;
-	delete vr;
+
 	for(vector<OPSNode*>::const_iterator i=nodes.begin(); i!=nodes.end(); ++i){
 		delete *i;
 	}

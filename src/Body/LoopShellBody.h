@@ -138,8 +138,8 @@ namespace voom
       }
     }
 
-    FeElementContainer & shells() {return _shells;};
-    FeNodeContainer & shellsNodes() {return _shellNodes;};
+    FeElementContainer & shells() {return _shells;}
+    FeNodeContainer & shellsNodes() {return _shellNodes;}
     
     //! Do mechanics on Body
     void compute( bool f0, bool f1, bool f2 );
@@ -311,12 +311,12 @@ namespace voom
 
     //Get Maximum Principal Strains
     std::vector<double> getMaxPrincipalStrains()
-    {return _maxPrincipalStrain;};
+    {return _maxPrincipalStrain;}
 
     void setAreaConstraint(GlobalConstraint AreaConstr) 
-    {_areaConstraint = AreaConstr;};
+    {_areaConstraint = AreaConstr;}
     void setVolumeConstraint(GlobalConstraint VolConstr) 
-    {_volumeConstraint = VolConstr;};
+    {_volumeConstraint = VolConstr;}
     // ----------------------------------------- //
 
 

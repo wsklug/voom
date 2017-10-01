@@ -31,7 +31,9 @@
 #include <vector>
 #include <fstream>
 #include "NodeBase.h"
-
+#include <vtkSmartPointer.h>
+#include <vtkPoints.h>
+#include <vtkDoubleArray.h>
 namespace voom {
 
 //! A node with point representing a value of a scalar field at
@@ -656,7 +658,7 @@ public:
 
 	//! destructor
 	virtual ~MultiplierNode() {
-	}
+    }
 
 	double point() const {
 		return _point;
@@ -924,7 +926,6 @@ protected:
 class OPSNode: public NodeBase {
 public:
 	typedef tvmet::Vector<double, 6> Vector6D;
-
 	typedef tvmet::Vector<double, 4> Quaternion;
 
 	static Vector3D conjugation(Quaternion q, Vector3D p) {
@@ -1158,6 +1159,5 @@ protected:
 	Vector6D _X;
 	Vector6D _force;
 };
-
 }
 #endif // _NODE_

@@ -80,9 +80,9 @@ public:
 			for (int i = 0; i < 3; i++, I++) {
 				double dx = (*n)->getPoint(i) - _reference(I);
 				if (f0)
-					_energy += 0.5 * _viscosity * dx * dx;
+                    _energy += 0.5 * _viscosity * dx * dx;
 				if (f1)
-					(*n)->addForce(i, _viscosity * dx);
+                    (*n)->addForce(i, _viscosity * dx);
 			}
 		}
 	}

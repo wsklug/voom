@@ -1,8 +1,3 @@
-/*
-*OPSBody.cc
-** Created on: Aug 5, 2017
-*     Author: amit
- */
 #include "OPSBody.h"
 
 namespace voom {
@@ -17,8 +12,14 @@ OPSBody::OPSBody(const vector<OPSNode*> & nodes, OPSParams &p, double r) :
     }
 
     _numNodes = nodes.size();
-    _numBadTri = 0;
     _radius = 0.0;
+    _volume = 0.0;
+    _volConstraintOn = false;
+    _volConstraint = 0.0;
+    _PVen = 0.0;
+
+    std::vector<Vector3D> volDiff(_numNodes, Vector3D(0.0));
+    _volDiff = volDiff;
 
     // Construct vtkPolyData from nodes
     _polyData = vtkSmartPointer<vtkPolyData>::New();
@@ -79,9 +80,9 @@ void OPSBody::updatePolyDataAndKdTree() {
         currRotVec = (*n)->deformedRotationVector();
         currNormal = OPSNode::convertRotVecToNormal( currRotVec );
         pts->InsertNextPoint(&(coords[0]));
-        normals->InsertNextTuple(&(currNormal[0]));        
+        normals->InsertNextTuple(&(currNormal[0]));
     }
-    _polyData->SetPoints(pts);    
+    _polyData->SetPoints(pts);
     _polyData->GetPointData()->SetNormals(normals);
     _kdTree->BuildLocatorFromPoints( _polyData );
 
@@ -102,8 +103,7 @@ void OPSBody::updatePolyDataAndKdTree() {
     idf->PointIdsOn();
     idf->SetInputData(unitSphere);
 
-    //Calculate ideal number of triangles. If after delaunay triangulation we get a
-    //different number of triangles we will print out some intermediate files and try to re-run.
+    //Calculate ideal number of triangles.
     int idealTriCount, pentCount = 12, hexCount;
     hexCount = _numNodes - pentCount;
     idealTriCount = (6*hexCount + 5*pentCount)/3;
@@ -111,9 +111,15 @@ void OPSBody::updatePolyDataAndKdTree() {
     d3D->SetInputConnection(idf->GetOutputPort());
     dssf->SetInputConnection(d3D->GetOutputPort());
     dssf->Update();
-    final = dssf->GetOutput();    
+    final = dssf->GetOutput();
     if( final->GetNumberOfPolys() != idealTriCount){
+        cout<<"The mesh has " << final->GetNumberOfPolys() << " triangles." << std::endl;
         cout<< "Bad Delaunay triangulation detected!" <<std::endl;
+        vtkSmartPointer<vtkPolyDataWriter> writer =
+                vtkSmartPointer<vtkPolyDataWriter>::New();
+        writer->SetInputData(final);
+        writer->SetFileName("BadMesh.vtk");
+        writer->Write();
         exit(EXIT_FAILURE);
     }
     interim = final->GetPolys();
@@ -129,7 +135,13 @@ void OPSBody::updatePolyDataAndKdTree() {
         }
     }
     _polyData->SetPolys(finalCells);
-    calcAverageRadius();
+/*
+    vtkSmartPointer<vtkMassProperties> props =
+            vtkSmartPointer<vtkMassProperties>::New();
+    props->SetInputData(_polyData);
+    props->Update();
+    _volume = props->GetVolume();
+*/
 }
 
 /*
@@ -146,113 +158,161 @@ void OPSBody::updateNeighbors(){
 }
 
 /*
-*Compute the OPSbody energy and energy contribution due to some other elements
+*Compute the OPSBody energy and energy contribution due to some other elements
 *inherited from the parent Body class _elements container
  */
 void OPSBody::compute(bool f0, bool f1, bool f2) {
 
-    double aM, aP, aN, aC;
-    double E, re, s;
-    double K, a, b;
+    double E, re, a, b;
+    double A, B, G;
 
-    aM = _prop.alphaM; aP = _prop.alphaP; aN = _prop.alphaN; aC = _prop.alphaC;
-    E = _prop.epsilon; re = _prop.r_e; s = _prop.s;
-    K = _prop.K; a = _prop.a; b = _prop.b;
+    E = _prop.D_e; re = _prop.r_e; a = _prop.a; b = _prop.b;
+    A = _prop.alpha; B = _prop.beta; G = _prop.gamma;
 
     // Initialize energy to be zero
     if (f0){
         _energy = 0.0;
-        _morseEn = 0.0;
-        _planarEn = 0.0;
+        _morseEn = 0.0;        
         _normalEn = 0.0;
-        _circularEn = 0.0;
+        _circEn = 0.0;
+        _PVen = 0.0;
     }
     if(f0 && !f1){
+        if(_volConstraintOn){
+            double volume = calcAvgVolume();
+            double dV = volume - _volConstraint; //Change in volume
+            double P = _PV->point(); //Pressure
+            _PVen = -P*dV;
+            _energy += _PVen ;
+        }
         for(int i=0; i < _numNodes; i++){
-            Vector3D vi(0.0), xi(0.0);
+            Vector3D vi(0.0), xi(0.0), p(0.0);
+            Matrix3X3 M(0.0);
+
             xi = _opsNodes[i]->deformedPosition();
             vi = _opsNodes[i]->deformedRotationVector();
+            p = OPSNode::convertRotVecToNormal(vi);
+            M = diffNormalRotVec(vi);
 
             for(int j=0; j < _neighbors[i]->GetNumberOfIds(); j++){
-                Vector3D vj(0.0), xj(0.0);
-                double morseEn, KerXi, Phi_pXi, Phi_nXi, Phi_cXi;
+                double r, n_dot_rij, exp1, exp2;
+                double morseEn, Ker, Phi_n, Phi_c;
+                Vector3D vj(0.0), xj(0.0), q(0.0), m(0.0), n(0.0), rij(0.0);
+                Matrix3X3 N(0.0);
                 vtkIdType currId = _neighbors[i]->GetId(j);
 
                 xj = _opsNodes[currId]->deformedPosition();
                 vj = _opsNodes[currId]->deformedRotationVector();
+                q = OPSNode::convertRotVecToNormal(vj);
+                N = diffNormalRotVec(vj);
+                rij = xj - xi;
+                m = p - q;
+                n = p + q;
+                r = tvmet::norm2(rij);
+                n_dot_rij = tvmet::dot(n,rij);
 
-                morseEn = morse(xi,xj);
-                KerXi = psi( vi, xi, xj);
-                Phi_pXi = phi_p( vi, xi, xj );
-                Phi_nXi = phi_n( vi, vj );
-                Phi_cXi = phi_c( vi, vj, xi, xj );
-                _morseEn += aM*morseEn;
-                _planarEn += aP*KerXi*Phi_pXi;
-                _normalEn += aN*KerXi*Phi_nXi;
-                _circularEn += aC*KerXi*Phi_cXi;
-                _energy += aM*morseEn + ( aP*Phi_pXi + aN*Phi_nXi + aC*Phi_cXi )*KerXi;
+                exp1 = exp( -2*a*(r - re) );
+                exp2 = exp( -a*(r - re) );
+
+                morseEn = E*( exp1 - 2*exp2 );
+                Ker = (E/G)*exp( -r*r/(2*b*b) );
+                Phi_n = tvmet::norm2(m);
+                Phi_n *= Phi_n;
+                Phi_c = n_dot_rij/r;
+                Phi_c *= Phi_c;
+
+                _morseEn += morseEn;                
+                _normalEn += Ker*Phi_n;
+                _circEn += Ker*Phi_c;
+                _energy += morseEn + Ker*(Phi_n + Phi_c);
             }
         }
     }
     else{
+        std::vector<Vector3D> volDiff(_numNodes, Vector3D(0.0));
+        if(_volConstraintOn){
+            //Take care of the volume constraint first
+            volDiff = calcAvgVolDerivative();
+            double volume = calcAvgVolume();
+            double dV = volume - _volConstraint; //Change in volume
+            double P = _PV->point(); //Pressure
+            _PVen = -P*dV;
+            _energy += _PVen ;
+            _PV->setForce(0, -dV );
+        }
         for(int i=0; i < _numNodes; i++){
-            Vector3D vi(0.0), xi(0.0);
+            Vector3D vi(0.0), xi(0.0), p(0.0);
+            Matrix3X3 M(0.0);
+
+            if(_volConstraintOn){
+                //Add the Volume constraint force to the node
+                Vector6D pvF(volDiff[i][0], volDiff[i][1], volDiff[i][2],0,0,0);
+                _opsNodes[i]->updateForce(pvF);
+            }
+
             xi = _opsNodes[i]->deformedPosition();
             vi = _opsNodes[i]->deformedRotationVector();
+            p = OPSNode::convertRotVecToNormal(vi);
+            M = diffNormalRotVec(vi);
 
             for(int j=0; j < _neighbors[i]->GetNumberOfIds(); j++){
-                Vector3D vj(0.0), xj(0.0);
-                double morseEn, KerXi, Phi_pXi, Phi_nXi, Phi_cXi;
-                Vector3D dMorseXi, dMorseXj, dKerXi, dKerXj, dKerVi;
-                Vector3D dPhi_pXi, dPhi_pXj, dPhi_pVi, dPhi_nVi, dPhi_nVj;
-                Vector3D dPhi_cXi, dPhi_cXj, dPhi_cVi, dPhi_cVj;
+                double r, n_dot_rij, exp1, exp2;
+                double morseEn, Ker, Phi_n, Phi_c;
+                Vector3D vj(0.0), xj(0.0), q(0.0), m(0.0), n(0.0), rij(0.0);
+                Vector3D dMorseXi, dMorseXj, dKerXi, dKerXj;
+                Vector3D dPhi_nVi(0.0), dPhi_nVj(0.0);
+                Vector3D dPhi_cVi(0.0), dPhi_cVj(0.0);
+                Vector3D dPhi_cXi(0.0), dPhi_cXj(0.0);
+                Matrix3X3 N(0.0);
                 vtkIdType currId = _neighbors[i]->GetId(j);
 
                 xj = _opsNodes[currId]->deformedPosition();
                 vj = _opsNodes[currId]->deformedRotationVector();
+                q = OPSNode::convertRotVecToNormal(vj);
+                N = diffNormalRotVec(vj);
+                rij = xj - xi;
+                m = p - q;
+                n = p + q;
+                r = tvmet::norm2(rij);
+                n_dot_rij = tvmet::dot(n,rij);                
 
-                // Evaluate morse potential derivatives
-                morseEn = morse(xi,xj);
-                dMorseXi = DmorseDxi( xi, xj );
-                dMorseXj = DmorseDxj( xi, xj );
+                exp1 = exp( -2*a*(r - re) );
+                exp2 = exp( -a*(r - re) );
 
-                // Evaluate kernel and its derivatives
-                KerXi = psi( vi, xi, xj );
-                dKerXi = DpsiDxi( vi, xi, xj );
-                dKerXj = DpsiDxj( vi, xi, xj );
-                dKerVi = DpsiDvi( vi, xi, xj );
+                morseEn = E*( exp1 - 2*exp2 );
+                Ker = (E/G)*exp( -r*r/(2*b*b) );
+                Phi_n = tvmet::norm2(m);
+                Phi_n *= Phi_n;
+                Phi_c = n_dot_rij/r;
+                Phi_c *= Phi_c;
 
-                // Evaluate co-planarity potential and its derivatives
-                Phi_pXi = phi_p( vi, xi, xj );
-                dPhi_pXi = Dphi_pDxi( vi, xi, xj );
-                dPhi_pXj = Dphi_pDxj( vi, xi, xj );
-                dPhi_pVi = Dphi_pDvi( vi, xi, xj );
+                // Evaluate morse derivatives
+                dMorseXi = (2*E*a/r)*( exp1 - exp2 )*rij;
+                dMorseXj = -dMorseXi;
 
-                // Evaluate co-normality potential and its derivatives
-                Phi_nXi = phi_n( vi, vj );
-                dPhi_nVi = Dphi_nDvi( vi, vj );
-                dPhi_nVj = Dphi_nDvj( vi, vj );
+                // Evaluate kernel derivatives
+                dKerXi = (Ker/(b*b))*rij;
+                dKerXj = -dKerXi;
 
-                // Evaluate co-circularity potential and its derivatives
-                Phi_cXi = phi_c( vi, vj, xi, xj );
-                dPhi_cXi = Dphi_cDxi( vi, vj, xi, xj );
-                dPhi_cXj = Dphi_cDxj( vi, vj, xi, xj );
-                dPhi_cVi = Dphi_cDvi( vi, vj, xi, xj );
-                dPhi_cVj = Dphi_cDvj( vi, vj, xi, xj );
+                //Evaluate co-normality derivatives
+                dPhi_nVi = 2*M*m;
+                dPhi_nVj = -2*N*m;
+
+                //Evaluate co-circularity derivatives
+                dPhi_cXi = (2*n_dot_rij/(r*r*r*r))*( n_dot_rij*rij -r*r*n );
+                dPhi_cXj = -dPhi_cXi;
+                dPhi_cVi = (2*n_dot_rij/(r*r))*M*rij;
+                dPhi_cVj = (2*n_dot_rij/(r*r))*N*rij;
 
                 Vector3D centerDx(0.0), centerDv(0.0), neighborDx(0.0), neighborDv(0.0);
 
-                centerDx = aM*dMorseXi + aP*( dPhi_pXi*KerXi + Phi_pXi*dKerXi )
-                        + aN*( Phi_nXi*dKerXi ) + aC*( dPhi_cXi*KerXi
-                                                       + Phi_cXi*dKerXi );
-                centerDv = aP*( dPhi_pVi*KerXi + Phi_pXi*dKerVi ) +
-                        aN*( dPhi_nVi*KerXi + Phi_nXi*dKerVi ) +
-                        aC*( dPhi_cVi*KerXi + Phi_cXi*dKerVi );
+                centerDx = dMorseXi + Ker*dPhi_cXi
+                        + dKerXi*(Phi_n + Phi_c );
+                centerDv = Ker*(dPhi_nVi + dPhi_cVi );
 
-                neighborDx = aM*dMorseXj + aP*( dPhi_pXj*KerXi +
-                                                Phi_pXi*dKerXj ) + aN*( Phi_nXi*dKerXj )
-                        + aC*( dPhi_cXj*KerXi + Phi_cXi*dKerXj );
-                neighborDv = KerXi*( aN*dPhi_nVj + aC*dPhi_cVj );
+                neighborDx = dMorseXj + Ker*(dPhi_cXj)
+                        + dKerXj*(Phi_n + Phi_c );
+                neighborDv = Ker*(dPhi_nVj + dPhi_cVj);
 
                 Vector6D centerForce(centerDx[0], centerDx[1], centerDx[2],
                         centerDv[0], centerDv[1], centerDv[2]);
@@ -264,13 +324,12 @@ void OPSBody::compute(bool f0, bool f1, bool f2) {
                     _opsNodes[currId]->addForce( k, neighborForce(k) );
                 }
 
-                _morseEn += aM*morseEn;
-                _planarEn += aP*KerXi*Phi_pXi;
-                _normalEn += aN*KerXi*Phi_nXi;
-                _circularEn += aC*KerXi*Phi_cXi;
-                _energy += aM*morseEn + ( aP*Phi_pXi + aN*Phi_nXi + aC*Phi_cXi )*KerXi;
+                _morseEn += morseEn;
+                _normalEn += Ker*Phi_n;
+                _circEn += Ker*Phi_c;
+                _energy += morseEn + Ker*(Phi_n + Phi_c);
             }
-        }
+        }        
     }
 
     //If the inherited _elements container is non-empty
@@ -287,12 +346,17 @@ void OPSBody::compute(bool f0, bool f1, bool f2) {
  * Print a Paraview file by generating a triangulation
  */
 void OPSBody::printParaview( const string fileName ) const{
-
     vtkSmartPointer<vtkPolyDataWriter> writer =
             vtkSmartPointer<vtkPolyDataWriter>::New();
+    vtkSmartPointer<vtkIdFilter> idf =
+            vtkSmartPointer<vtkIdFilter>::New();
+    idf->SetInputData(_polyData);
+    idf->PointIdsOn();
+    idf->SetIdsArrayName("PointIds");
+    idf->Update();
 
     writer->SetFileName( fileName.c_str() );
-    writer->SetInputData( _polyData );
+    writer->SetInputConnection(idf->GetOutputPort());
     writer->Write();
 }
 
@@ -321,7 +385,7 @@ double OPSBody::getAverageEdgeLength(){
 /*
  * Get average radius
  */
-void OPSBody::calcAverageRadius(){
+double OPSBody::getAverageRadius(){
     _radius = 0.0;
     for(int i=0; i < _numNodes; i++){
         Vector3D x;
@@ -329,6 +393,122 @@ void OPSBody::calcAverageRadius(){
         _radius += tvmet::norm2(x);
     }
     _radius /= _numNodes;
+    return _radius;
+}
+
+/*
+ * Calculate volume of the polydata and derivative
+ */
+void OPSBody::calcVolumeAndDerivative(){
+    _volume = 0.0;
+    vtkSmartPointer<vtkCellArray> cells = _polyData->GetPolys();
+    vtkSmartPointer<vtkIdList> verts =
+            vtkSmartPointer<vtkIdList>::New();
+    cells->InitTraversal();
+    while( cells->GetNextCell(verts) ){
+        assert(verts->GetNumberOfIds() == 3);
+        int ida, idb, idc;
+        ida = verts->GetId(0);
+        idb = verts->GetId(1);
+        idc = verts->GetId(2);
+        Vector3D a(0.0), b(0.0), c(0.0), crossTemp(0.0);
+        _polyData->GetPoint( ida, &a[0] );
+        _polyData->GetPoint( idb, &b[0] );
+        _polyData->GetPoint( idc, &c[0] );
+
+        //Calculate volume
+        crossTemp = tvmet::cross(b,c);
+        _volume += (tvmet::dot( a, crossTemp ))/6.0;
+
+        //Calculate derivative wrt volume
+        Vector3D dVa( b[1]*c[2]-b[2]*c[1],b[2]*c[0]-b[0]*c[2],b[0]*c[1]-b[1]*c[0] );
+        Vector3D dVb( a[2]*c[1]-a[1]*c[2],a[0]*c[2]-a[2]*c[0],a[1]*c[0]-a[0]*c[1] );
+        Vector3D dVc( a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0] );
+        Vector3D temp;
+
+        temp = _volDiff[ida];
+        _volDiff[ida] = temp + (1/6)*dVa;
+        temp = _volDiff[idb];
+        _volDiff[idb] = temp + (1/6)*dVb;
+        temp = _volDiff[idc];
+        _volDiff[idc] = temp + (1/6)*dVc;
+    }
+}
+
+/*
+ * Calculate volume of the polydata
+ */
+double OPSBody::calcVolume(){
+    double volume = 0.0;
+    vtkSmartPointer<vtkCellArray> cells = _polyData->GetPolys();
+    vtkSmartPointer<vtkIdList> verts =
+            vtkSmartPointer<vtkIdList>::New();
+    cells->InitTraversal();
+    while( cells->GetNextCell(verts) ){
+        assert(verts->GetNumberOfIds() == 3);
+        int ida, idb, idc;
+        ida = verts->GetId(0);
+        idb = verts->GetId(1);
+        idc = verts->GetId(2);
+        Vector3D a(0.0), b(0.0), c(0.0), crossTemp(0.0);
+        _polyData->GetPoint( ida, &a[0] );
+        _polyData->GetPoint( idb, &b[0] );
+        _polyData->GetPoint( idc, &c[0] );
+
+        //Calculate volume
+        crossTemp = tvmet::cross(b,c);
+        volume += (tvmet::dot( a, crossTemp ))/6.0;
+    }
+    return volume;
+}
+
+/*
+ * Calculate volume derivative
+ */
+std::vector<Vector3D> OPSBody::calcVolumeDerivative(){
+    vtkSmartPointer<vtkCellArray> cells = _polyData->GetPolys();
+    vtkSmartPointer<vtkIdList> verts =
+            vtkSmartPointer<vtkIdList>::New();
+    std::vector<Vector3D> dV( _polyData->GetNumberOfPoints(), Vector3D(0.0) );
+    cells->InitTraversal();
+    while( cells->GetNextCell(verts) ){
+        assert(verts->GetNumberOfIds() == 3);
+        int ida, idb, idc;
+        ida = verts->GetId(0);
+        idb = verts->GetId(1);
+        idc = verts->GetId(2);
+        Vector3D a(0.0), b(0.0), c(0.0);
+        _polyData->GetPoint( ida, &a[0] );
+        _polyData->GetPoint( idb, &b[0] );
+        _polyData->GetPoint( idc, &c[0] );
+
+        //Calculate derivative wrt volume
+        Vector3D dVa( b[1]*c[2]-b[2]*c[1],b[2]*c[0]-b[0]*c[2],b[0]*c[1]-b[1]*c[0] );
+        Vector3D dVb( a[2]*c[1]-a[1]*c[2],a[0]*c[2]-a[2]*c[0],a[1]*c[0]-a[0]*c[1] );
+        Vector3D dVc( a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0] );        
+
+        dV[ida] += (1/6)*dVa;
+        dV[idb] += (1/6)*dVb;
+        dV[idc] += (1/6)*dVc;
+    }
+    return dV;
+}
+/*
+ * Calculate derivative of the average volume that does not need triangulation
+ */
+std::vector<Vector3D> OPSBody::calcAvgVolDerivative(){
+    std::vector<Vector3D> dV( _numNodes, Vector3D(0.0) );
+    double R = getAverageRadius();
+    double factor = 12.5663706144*R*R/_numNodes; //4*pi*R^2/N
+
+    for(int i=0; i < _numNodes; i++){
+        double x_norm;
+        Vector3D x;
+        x = _opsNodes[i]->deformedPosition();
+        x_norm = tvmet::norm2(x);
+        dV[i] = (factor/x_norm)*x;
+    }
+    return dV;
 }
 
 /*
@@ -336,7 +516,7 @@ void OPSBody::calcAverageRadius(){
  */
 double OPSBody::getAsphericity(){
     double asphericity = 0.0;
-    double R0 = getAverageRadius();
+    double R0 = _radius;
     for(int i=0; i < _numNodes; i++){
         Vector3D x;
         x = _opsNodes[i]->deformedPosition();
@@ -393,11 +573,11 @@ double OPSBody::getLoopAsphericity(){
             D = 0.5*(A+B);
             E = 0.5*(B+C);
             F = 0.5*(C+A);
-            
+
             term1 = (tvmet::norm2(D) - R0);
             term2 = (tvmet::norm2(E) - R0);
             term3 = (tvmet::norm2(F) - R0);
-            
+
             asphericity += (term1*term1 + term2*term2 + term3*term3);
         }
     }
@@ -444,1858 +624,370 @@ double OPSBody::msd() {
  */
 void OPSBody::updateProperty(Property p, double val) {
     switch (p) {
-    case aM:
-        _prop.alphaM = val;
-        break;
-    case aP:
-        _prop.alphaP = val;
-        break;
-    case aN:
-        _prop.alphaN = val;
-        break;
-    case aC:
-        _prop.alphaC = val;
-        break;
     case E:
-        _prop.epsilon = val;
+        _prop.D_e = val;
         break;
     case r:
         _prop.r_e = val;
         break;
-    case sv:
-        _prop.s = val;
-        break;
-    case Kv:
-        _prop.K = val;
-        break;
     case av:
         _prop.a = val;
-        break;
+        break;    
     case bv:
         _prop.b = val;
         break;
+    case A:
+        _prop.alpha = val;
+        break;
+    case B:
+        _prop.beta = val;
+        break;
+    case G:
+        _prop.gamma = val;
+        break;
     }
+}
+
+/*
+ * Convert rotation vector to unit normal. A similar function
+ * exists in OPSNode. We need to verify if they are equal.
+ */
+Vector3D OPSBody::rotVecToNormal(Vector3D U){
+    // Assume z-axis of Global Coord Sys is the reference for ptNormal rotation
+    Vector3D zaxis(0.0);
+    zaxis[2] = 1.0;
+    Vector3D p(0.0);
+    double u = tvmet::norm2(U); // Angle of rotation
+    // Check 0-angle case
+    if (u < 1e-10) {
+        p[2] = 1.0;
+    }
+    else if (std::abs(u - M_PI) < 1e-10) {
+        p[2] = -1.0;
+    }
+    else {
+        double sinA = sin( 0.5*u );
+        double cosA = cos( 0.5*u );
+        p[0] = (2*sinA/(u*u))*( U[1]*u*cosA + U[0]*U[2]*sinA );
+        p[1] = (2*sinA/(u*u))*( U[1]*U[2]*sinA - U[0]*u*cosA );
+        p[2] = cosA*cosA + (sinA*sinA/(u*u))*( U[2]*U[2] - U[1]*U[1] - U[0]*U[0] );
+    }
+    return p;
+}
+
+/*
+ * Differentiate normal vector with respect to components of
+ * rotation vector
+ */
+OPSBody::Matrix3X3 OPSBody::diffNormalRotVec(Vector3D vi){
+    double u0, u1, u2, u0_2, u1_2, u2_2;
+    double u, u_2, u_3, u_4;
+    double sin_alpha, cos_alpha, sin_alpha_2;
+    double dp0du0, dp1du0, dp2du0;
+    double dp0du1, dp1du1, dp2du1;
+    double dp0du2, dp1du2, dp2du2;
+    Matrix3X3 finalMat(0.0);
+
+    u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
+    u0_2 = u0*u0; u1_2 = u1*u1; u2_2 = u2*u2;
+    u_2 = u0_2 + u1_2 + u2_2;
+    u = sqrt(u_2);
+    u_3 = u_2*u;
+    u_4 = u_3*u;
+    sin_alpha = sin( 0.5*u );
+    sin_alpha_2 = sin_alpha*sin_alpha;
+    cos_alpha = cos( 0.5*u );
+
+    dp0du0 = 2*(-u0*u1*sin_alpha/2 + u2*sin_alpha + u0_2*u2*cos_alpha/(2*u) +
+                u0*u1*cos_alpha/u)*sin_alpha/u_2 +
+            u0*(u*u1*cos_alpha + u0*u2*sin_alpha)*cos_alpha/u_3 -
+            4*u0*(u*u1*cos_alpha + u0*u2*sin_alpha)*sin_alpha/u_4;
+
+    dp1du0 = 2*(-u*cos_alpha + u0_2*sin_alpha/2 - u0_2*cos_alpha/u +
+                u0*u1*u2*cos_alpha/(2*u))*sin_alpha/u_2 +
+            u0*(-u*u0*cos_alpha + u1*u2*sin_alpha)*cos_alpha/u_3 -
+            4*u0*(-u*u0*cos_alpha + u1*u2*sin_alpha)*sin_alpha/u_4;
+
+    dp2du0 = -u0*sin_alpha*cos_alpha/u - 2*u0*sin_alpha_2/u_2 +
+            u0*(-u0_2 - u1_2 + u2_2)*sin_alpha*cos_alpha/u_3 -
+            2*u0*(-u0_2 - u1_2 + u2_2)*sin_alpha_2/u_4;
+
+    dp0du1 = 2*(u*cos_alpha - u1_2*sin_alpha/2 + u0*u1*u2*cos_alpha/(2*u) +
+                u1_2*cos_alpha/u)*sin_alpha/u_2 +
+            u1*(u*u1*cos_alpha + u0*u2*sin_alpha)*cos_alpha/u_3 -
+            4*u1*(u*u1*cos_alpha + u0*u2*sin_alpha)*sin_alpha/u_4;
+
+    dp1du1 = 2*(u0*u1*sin_alpha/2 + u2*sin_alpha - u0*u1*cos_alpha/u +
+                u1_2*u2*cos_alpha/(2*u))*sin_alpha/u_2 +
+            u1*(-u*u0*cos_alpha + u1*u2*sin_alpha)*cos_alpha/u_3 -
+            4*u1*(-u*u0*cos_alpha + u1*u2*sin_alpha)*sin_alpha/u_4;
+
+    dp2du1 = -u1*sin_alpha*cos_alpha/u - 2*u1*sin_alpha_2/u_2 +
+            u1*(-u0_2 - u1_2 + u2_2)*sin_alpha*cos_alpha/u_3 -
+            2*u1*(-u0_2 - u1_2 + u2_2)*sin_alpha_2/u_4;
+
+    dp0du2 = 2*(u0*sin_alpha - u1*u2*sin_alpha/2 + u0*u2_2*cos_alpha/(2*u) +
+                u1*u2*cos_alpha/u)*sin_alpha/u_2 +
+            u2*(u*u1*cos_alpha + u0*u2*sin_alpha)*cos_alpha/u_3 -
+            4*u2*(u*u1*cos_alpha + u0*u2*sin_alpha)*sin_alpha/u_4;
+
+    dp1du2 = 2*(u0*u2*sin_alpha/2 + u1*sin_alpha - u0*u2*cos_alpha/u +
+                u1*u2_2*cos_alpha/(2*u))*sin_alpha/u_2 +
+            u2*(-u*u0*cos_alpha + u1*u2*sin_alpha)*cos_alpha/u_3 -
+            4*u2*(-u*u0*cos_alpha + u1*u2*sin_alpha)*sin_alpha/u_4;
+
+    dp2du2 = -u2*sin_alpha*cos_alpha/u + 2*u2*sin_alpha_2/u_2 +
+            u2*(-u0_2 - u1_2 + u2_2)*sin_alpha*cos_alpha/u_3 -
+            2*u2*(-u0_2 - u1_2 + u2_2)*sin_alpha_2/u_4;
+
+    finalMat = dp0du0, dp1du0, dp2du0,
+            dp0du1, dp1du1, dp2du1,
+            dp0du2, dp1du2, dp2du2;
+    return finalMat;
 }
 
 /*
 *Morse function
  */
 double OPSBody::morse(Vector3D xi, Vector3D xj){
-    double E, re, s, r, potential;
-    E = _prop.epsilon; re = _prop.r_e; s = _prop.s;
+    double E, re, a, r, potential;
+    E = _prop.D_e; re = _prop.r_e; a = _prop.a;
     r = tvmet::norm2(xi - xj);
-    potential = E*( -2*exp( -s*(r-re) ) + exp( -2*s*(r-re) ) );
+    potential = E*( -2*exp( -a*(r-re) ) + exp( -2*a*(r-re) ) );
     return potential;
 }
 
 /*
 *The kernel function
  */
-double OPSBody::psi(Vector3D vi, Vector3D xi, Vector3D xj){
-    double K, a, b, psi0;
-    double u0, u1, u2, x0, x1, x2, y0, y1, y2;
-    double vi_mag_sqr, vi_mag, sin_alpha_i, cos_alpha_i;
-    double sin_alpha_i_2, cos_alpha_i_2;
-    double term1, term2, term3;
-    
-    K = _prop.K; a = _prop.a; b = _prop.b;
-    u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
-    x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
-    y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+double OPSBody::psi(Vector3D xi, Vector3D xj){
+    double K, b, r, psi0;
+    Vector3D rij(0.0);
 
-    vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
-    vi_mag = sqrt(vi_mag_sqr);
-    sin_alpha_i = sin( 0.5*vi_mag );
-    cos_alpha_i = cos( 0.5*vi_mag );
-    sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
-    cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
+    rij = xj - xi;
+    r = tvmet::norm2(rij);
+    K = (_prop.D_e/_prop.gamma); b = _prop.b;
+    psi0 = K*exp(- (r*r) / (2*b*b) );
 
-    term1 = cos_alpha_i_2*(-x2 + y2) + cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1) / vi_mag
-            + cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0) / vi_mag	- sin_alpha_i_2*u0*u0*(-x2 + y2)/ vi_mag_sqr
-            + sin_alpha_i_2*u0*u2*(-2*x0 + 2*y0) / vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/ vi_mag_sqr
-            + sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1) / vi_mag_sqr + sin_alpha_i_2*u2*u2*(-x2 + y2)/ vi_mag_sqr;
-    
-    term2 = cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 + 2*y2)/ vi_mag
-            - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)	/ vi_mag
-            + sin_alpha_i_2*u0*u0 *(-x0 + y0) / vi_mag_sqr + sin_alpha_i_2*u0*u1 *(-2*x1 + 2*y1)/ vi_mag_sqr
-            + sin_alpha_i_2*u0*u2 *(-2*x2 + 2*y2)/ vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0) / vi_mag_sqr
-            - sin_alpha_i_2*u2*u2*(-x0 + y0) / vi_mag_sqr;
-
-    term3 = cos_alpha_i_2*(-x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/ vi_mag
-            + cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/ vi_mag
-            - sin_alpha_i_2*u0*u0*(-x1 + y1)/ vi_mag_sqr + sin_alpha_i_2*u0*u1*(-2*x0 + 2*y0)/ vi_mag_sqr
-            + sin_alpha_i_2*u1*u1*(-x1 + y1) / vi_mag_sqr + sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/ vi_mag_sqr
-            - sin_alpha_i_2*u2*u2*(-x1 + y1)/ vi_mag_sqr;
-
-    psi0 = K*exp(-(term1*term1) / (2*b*b) + (-(term2*term2) - (term3*term3))/ (2*a*a));
     return psi0;
-
 }
+
 /*
-*The co-planarity function
- */
+ * The Co-Circularity function
+
 double OPSBody::phi_p(Vector3D vi, Vector3D xi, Vector3D xj){
-    double u0, u1, u2, x0, x1, x2, y0, y1, y2;
-    double vi_mag_sqr, vi_mag, sin_alpha_i, cos_alpha_i;
-    double sin_alpha_i_2, cos_alpha_i_2, phi_p0;
-    double term1;
+    double r, phi_p0;
+    Vector3D p(0.0), rij(0.0);
 
-    u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
-    x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
-    y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+    p = OPSNode::convertRotVecToNormal(vi);
+    rij = xj - xi;
+    r = tvmet::norm2(rij);
+    phi_p0 = tvmet::dot(rij, p)/r;
+    phi_p0 *= phi_p0;
 
-    vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
-    vi_mag = sqrt(vi_mag_sqr);
-    sin_alpha_i = sin( 0.5*vi_mag );
-    cos_alpha_i = cos( 0.5*vi_mag );
-    sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
-    cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
-
-    term1 = (-x0 + y0)*(2*cos_alpha_i*sin_alpha_i*u1 / vi_mag + 2*sin_alpha_i_2*u0*u2 / vi_mag_sqr)
-            + (-x1 + y1)*(-2*cos_alpha_i*sin_alpha_i*u0 / vi_mag + 2*sin_alpha_i_2*u1*u2 / vi_mag_sqr)
-            + (-x2 + y2)*(cos_alpha_i_2	- sin_alpha_i_2*u0*u0 / vi_mag_sqr
-                          - sin_alpha_i_2*u1*u1 / vi_mag_sqr	+ sin_alpha_i_2*u2*u2 / vi_mag_sqr);
-    
-    phi_p0 = term1*term1;
     return phi_p0;
 }
+*/
+
 /*
-*The co-normality function
+ * The Co-Normality function
  */
 double OPSBody::phi_n(Vector3D vi, Vector3D vj){
-    double u0, u1, u2, v0, v1, v2;
-    double vi_mag_sqr, vi_mag, vj_mag_sqr, vj_mag;
-    double sin_alpha_i, cos_alpha_i, sin_alpha_j, cos_alpha_j;
-    double sin_alpha_i_2, cos_alpha_i_2, sin_alpha_j_2, cos_alpha_j_2, phi_n0;
-    double term1, term2, term3;
-    
-    u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
-    v0 = vj[0]; v1 = vj[1]; v2 = vj[2];
-
-    vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
-    vj_mag_sqr = v0*v0 + v1*v1 + v2*v2;
-    vi_mag = sqrt(vi_mag_sqr);
-    vj_mag = sqrt(vj_mag_sqr);
-    sin_alpha_i = sin( 0.5*vi_mag );
-    cos_alpha_i = cos( 0.5*vi_mag );
-    sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
-    cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
-    sin_alpha_j = sin( 0.5*vj_mag );
-    cos_alpha_j = cos( 0.5*vj_mag );
-    sin_alpha_j_2 = sin_alpha_j*sin_alpha_j;
-    cos_alpha_j_2 = cos_alpha_j*cos_alpha_j;
-
-    term1 = -2*cos_alpha_i*sin_alpha_i*u0 / vi_mag
-            + 2*cos_alpha_j*sin_alpha_j*v0 / vj_mag
-            + 2*sin_alpha_i_2*u1*u2 / vi_mag_sqr
-            - 2*sin_alpha_j_2*v1*v2 / vj_mag_sqr;
-    
-    term2 = 2*cos_alpha_i*sin_alpha_i*u1 / vi_mag
-            - 2*cos_alpha_j*sin_alpha_j*v1 / vj_mag
-            + 2*sin_alpha_i_2*u0*u2 / vi_mag_sqr
-            - 2*sin_alpha_j_2*v0*v2 / vj_mag_sqr;
-    
-    term3 = cos_alpha_i_2 - cos_alpha_j_2
-            - sin_alpha_i_2*u0*u0 / vi_mag_sqr
-            - sin_alpha_i_2*u1*u1 / vi_mag_sqr
-            + sin_alpha_i_2*u2*u2 / vi_mag_sqr
-            + sin_alpha_j_2*v0*v0 / vj_mag_sqr
-            + sin_alpha_j_2*v1*v1 / vj_mag_sqr
-            - sin_alpha_j_2*v2*v2 / vj_mag_sqr;
-    
-    phi_n0 = term1*term1 + term2*term2 + term3*term3;
+    double phi_n0;
+    Vector3D p(0.0), q(0.0);
+    p = OPSNode::convertRotVecToNormal(vi);
+    q = OPSNode::convertRotVecToNormal(vj);
+    phi_n0 = tvmet::norm2( p - q );
+    phi_n0 *= phi_n0;
     return phi_n0;
 }
 
 /*
-*The co-circularity function
+ * The Co-Circularity function
  */
 double OPSBody::phi_c(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj){
-    double u0, u1, u2, v0, v1, v2, x0, x1, x2, y0, y1, y2;
-    double vi_mag_sqr, vi_mag, vj_mag_sqr, vj_mag;
-    double sin_alpha_i, cos_alpha_i, sin_alpha_j, cos_alpha_j;
-    double sin_alpha_i_2, cos_alpha_i_2, sin_alpha_j_2, cos_alpha_j_2, phi_c0;
-    double term1;
+    double r, phi_c0;
+    Vector3D p(0.0), q(0.0), n(0.0), rij(0.0);
 
-    u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
-    v0 = vj[0]; v1 = vj[1]; v2 = vj[2];
-    x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
-    y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
-
-    vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
-    vj_mag_sqr = v0*v0 + v1*v1 + v2*v2;
-    vi_mag = sqrt(vi_mag_sqr);
-    vj_mag = sqrt(vj_mag_sqr);
-    sin_alpha_i = sin( 0.5*vi_mag );
-    cos_alpha_i = cos( 0.5*vi_mag );
-    sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
-    cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
-    sin_alpha_j = sin( 0.5*vj_mag );
-    cos_alpha_j = cos( 0.5*vj_mag );
-    sin_alpha_j_2 = sin_alpha_j*sin_alpha_j;
-    cos_alpha_j_2 = cos_alpha_j*cos_alpha_j;
-    
-    term1 = (-x0 + y0)*(2*cos_alpha_i*sin_alpha_i*u1 / vi_mag
-                        + 2*cos_alpha_j*sin_alpha_j*v1 / vj_mag
-                        + 2*sin_alpha_i_2*u0*u2 / vi_mag_sqr
-                        + 2*sin_alpha_j_2*v0*v2 / vj_mag_sqr)
-            + (-x1 + y1)*(-2*cos_alpha_i*sin_alpha_i*u0 / vi_mag
-                          - 2*cos_alpha_j*sin_alpha_j*v0/ vj_mag
-                          + 2*sin_alpha_i_2*u1*u2 / vi_mag_sqr
-                          + 2*sin_alpha_j_2*v1*v2 / vj_mag_sqr)
-            + (-x2 + y2)*(cos_alpha_i_2 + cos_alpha_j_2
-                          - sin_alpha_i_2*u0*u0 / vi_mag_sqr
-                          - sin_alpha_i_2*u1*u1 / vi_mag_sqr
-                          + sin_alpha_i_2*u2*u2 / vi_mag_sqr
-                          - sin_alpha_j_2*v0*v0 / vj_mag_sqr
-                          - sin_alpha_j_2*v1*v1 / vj_mag_sqr
-                          + sin_alpha_j_2*v2*v2 / vj_mag_sqr);
-
-    phi_c0 = term1*term1;
+    p = OPSNode::convertRotVecToNormal(vi);
+    q = OPSNode::convertRotVecToNormal(vj);
+    n = p + q;
+    rij = xj - xi;
+    r = tvmet::norm2(rij);
+    phi_c0 = tvmet::dot(rij, n)/r;
+    phi_c0 *= phi_c0;
 
     return phi_c0;
 }
 
 /*
-*Derivative of Morse with respect to xi
+ * Derivative of Morse with respect to xi
  */
 Vector3D OPSBody::DmorseDxi(Vector3D xi, Vector3D xj){
-    double epsilon, l0, a, rij, DmorseDxi0, DmorseDxi1, DmorseDxi2;
-    double x0, x1, x2, y0, y1, y2;
+    double epsilon, l0, a, r;
+    Vector3D rij(0.0), DmorseDxi( 0.0 );;
+    epsilon = _prop.D_e; l0 = _prop.r_e; a = _prop.a;
 
-    epsilon = _prop.epsilon; l0 = _prop.r_e; a = _prop.s;
-    rij = tvmet::norm2( xi-xj );
-
-    x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
-    y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
-
-    DmorseDxi0 = epsilon
-            *(2*a*(x0 - y0)*exp(-a*(-l0 + rij)) / rij
-              - 2*a*(x0 - y0)*exp(-2*a*(-l0 + rij)) / rij);
-
-    DmorseDxi1 = epsilon
-            *(2*a*(x1 - y1)*exp(-a*(-l0 + rij)) / rij
-              - 2*a*(x1 - y1)*exp(-2*a*(-l0 + rij)) / rij);
-
-    DmorseDxi2 = epsilon
-            *(2*a*(x2 - y2)*exp(-a*(-l0 + rij)) / rij
-              - 2*a*(x2 - y2)*exp(-2*a*(-l0 + rij)) / rij);
-
-    Vector3D DmorseDxi( DmorseDxi0, DmorseDxi1, DmorseDxi2 );
+    rij = xj-xi;
+    r = tvmet::norm2( rij );
+    DmorseDxi = -(2/r)*epsilon*a*( exp(-a*(-l0+r)) - exp(-2*a*(-l0+r)) )*rij;
 
     return DmorseDxi;
 }
 
 /*
-*Derivative of Morse with respect to xj
+ * Derivative psi wrt xi
  */
-Vector3D OPSBody::DmorseDxj(Vector3D xi, Vector3D xj){
-    double epsilon, l0, a, rij, DmorseDxj0, DmorseDxj1, DmorseDxj2;
-    double x0, x1, x2, y0, y1, y2;
+Vector3D OPSBody::DpsiDxi(Vector3D xi, Vector3D xj){
+    double K, b, r;
+    Vector3D DpsiDxi0(0.0), rij(0.0);
 
-    epsilon = _prop.epsilon; l0 = _prop.r_e; a = _prop.s;
-    rij = tvmet::norm2( xi-xj );
-
-    x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
-    y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
-
-    DmorseDxj0 = epsilon
-            *(2*a*(-x0 + y0)*exp(-a*(-l0 + rij)) / rij
-              - 2*a*(-x0 + y0)*exp(-2*a*(-l0 + rij)) / rij);
-
-    DmorseDxj1 = epsilon
-            *(2*a*(-x1 + y1)*exp(-a*(-l0 + rij)) / rij
-              - 2*a*(-x1 + y1)*exp(-2*a*(-l0 + rij)) / rij);
-
-    DmorseDxj2 = epsilon
-            *(2*a*(-x2 + y2)*exp(-a*(-l0 + rij)) / rij
-              - 2*a*(-x2 + y2)*exp(-2*a*(-l0 + rij)) / rij);
-
-    Vector3D DmorseDxj( DmorseDxj0, DmorseDxj1, DmorseDxj2 );
-
-    return DmorseDxj;
+    K = (_prop.D_e/_prop.gamma); b = _prop.b;
+    rij = xj - xi;
+    r = tvmet::norm2(rij);
+    DpsiDxi0 = (K/(b*b))*exp(-r*r/(2*b*b))*rij;
+    return DpsiDxi0;
 }
 
 /*
-*Derivative of kernel psi wrt vi
- */
-Vector3D OPSBody::DpsiDvi(Vector3D vi, Vector3D xi, Vector3D xj){
-    double K, a, b, psi0;
-    double u0, u1, u2, x0, x1, x2, y0, y1, y2;
-    double vi_mag_sqr, vi_mag, sin_alpha_i, cos_alpha_i;
-    double sin_alpha_i_2, cos_alpha_i_2;
-    double DpsiDu0, DpsiDu1, DpsiDu2;
-    double vi_mag_3, vi_mag_4;
-    double u0_3, u1_3, u2_3;
-    double t1,t2,t3,t4,t5,t6,t7,t8,t9;
+ * Derivative of phi_p wrt xi
 
-    K = _prop.K; a = _prop.a; b = _prop.b;
-    u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
-    x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
-    y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
-    
-    u0_3 = u0*u0*u0;
-    u1_3 = u1*u1*u1;
-    u2_3 = u2*u2*u2;
-    
-    vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
-    vi_mag = sqrt(vi_mag_sqr);
-    vi_mag_3 = vi_mag*vi_mag*vi_mag;
-    vi_mag_4 = vi_mag*vi_mag*vi_mag*vi_mag;
-    sin_alpha_i = sin( 0.5*vi_mag );
-    cos_alpha_i = cos( 0.5*vi_mag );
-    sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
-    cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
-    
-    t1 = cos_alpha_i_2*(-x2 + y2) +
-            cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
-            cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
-            sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
-                                                                             2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
-            sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-            sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr;
-    t2 = cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
-                                                                2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
-            sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                             2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
-                                                                                                                            2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
-            sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr;
-    t3 = cos_alpha_i_2*(-x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
-            cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
-            sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                             2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
-            sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-            sin_alpha_i_2*u2*u2*(-x1 +
-                                 y1)/vi_mag_sqr;
-
-    DpsiDu0 = K*(-(cos_alpha_i_2*(-x2 + y2) +
-                   cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
-                   cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
-                   sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
-                                                                                    2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
-                   sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-                   sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr)*(cos_alpha_i_2*u0*u0*(-
-                                                                                    2*x1 + 2*y1)/vi_mag_sqr + cos_alpha_i_2*u0*u1*(2*x0 -
-                                                                                                                                   2*y0)/vi_mag_sqr - 2*cos_alpha_i*sin_alpha_i*u0_3*(-x2 +
-                                                                                                                                                                                      y2)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u0*u2*(-2*x0 +
-                                                                                                                                                                                                                                           2*y0)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u0*u0*(-2*x1 +
-                                                                                                                                                                                                                                                                                               2*y1)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u0*u1*u1*(-x2 +
-                                                                                                                                                                                                                                                                                                                                                      y2)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u1*u2*(-2*x1 +
-                                                                                                                                                                                                                                                                                                                                                                                                           2*y1)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u0*u1*(2*x0 -
-                                                                                                                                                                                                                                                                                                                                                                                                                                                               2*y0)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u2*u2*(-x2 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      y2)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u0*(-x2 + y2)/vi_mag +
-                                                               2*cos_alpha_i*sin_alpha_i*(-2*x1 + 2*y1)/vi_mag +
-                                                               4*sin_alpha_i_2*u0_3*(-x2 + y2)/(vi_mag_4) -
-                                                               4*sin_alpha_i_2*u0*u0*u2*(-2*x0 + 2*y0)/(vi_mag_4) -
-                                                               sin_alpha_i_2*u0*u0*(-2*x1 + 2*y1)/vi_mag_sqr +
-                                                               4*sin_alpha_i_2*u0*u1*u1*(-x2 + y2)/(vi_mag_4) -
-                                                               4*sin_alpha_i_2*u0*u1*u2*(-2*x1 + 2*y1)/(vi_mag_4) -
-                                                               sin_alpha_i_2*u0*u1*(2*x0 - 2*y0)/vi_mag_sqr -
-                                                               4*sin_alpha_i_2*u0*u2*u2*(-x2 + y2)/(vi_mag_4) -
-                                                               4*sin_alpha_i_2*u0*(-x2 + y2)/vi_mag_sqr + 2*sin_alpha_i_2*u2*(-
-                                                                                                                              2*x0 + 2*y0)/vi_mag_sqr)/(2*b*b) + (-(cos_alpha_i_2*(-x0 + y0) +
-                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u1*(-2*x2 + 2*y2)/vi_mag -
-                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
-                                                                                                                                                                    sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                                                                     2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
-                                                                                                                                                                                                                                                                                    2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
-                                                                                                                                                                    sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr)*(cos_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                                                                     2*x2 + 2*y2)/vi_mag_sqr - cos_alpha_i_2*u0*u2*(-2*x1 +
-                                                                                                                                                                                                                                                                                    2*y1)/vi_mag_sqr + 2*cos_alpha_i*sin_alpha_i*u0_3*(-x0 +
-                                                                                                                                                                                                                                                                                                                                       y0)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u0*u1*(-2*x1 +
-                                                                                                                                                                                                                                                                                                                                                                                            2*y1)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u0*u2*(-2*x2 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                   2*y2)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u0*u1*u1*(-x0 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          y0)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u0*u1*(-2*x2 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            2*y2)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u0*u2*u2*(-x0 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   y0)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u2*(-2*x1 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     2*y1)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u0*(-x0 + y0)/vi_mag -
-                                                                                                                                                                                                                4*sin_alpha_i_2*u0_3*(-x0 + y0)/(vi_mag_4) -
-                                                                                                                                                                                                                4*sin_alpha_i_2*u0*u0*u1*(-2*x1 + 2*y1)/(vi_mag_4) -
-                                                                                                                                                                                                                4*sin_alpha_i_2*u0*u0*u2*(-2*x2 + 2*y2)/(vi_mag_4) +
-                                                                                                                                                                                                                4*sin_alpha_i_2*u0*u1*u1*(-x0 + y0)/(vi_mag_4) -
-                                                                                                                                                                                                                sin_alpha_i_2*u0*u1*(-2*x2 + 2*y2)/vi_mag_sqr +
-                                                                                                                                                                                                                4*sin_alpha_i_2*u0*u2*u2*(-x0 + y0)/(vi_mag_4) +
-                                                                                                                                                                                                                sin_alpha_i_2*u0*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-                                                                                                                                                                                                                4*sin_alpha_i_2*u0*(-x0 + y0)/vi_mag_sqr + 2*sin_alpha_i_2*u1*(-
-                                                                                                                                                                                                                                                                               2*x1 + 2*y1)/vi_mag_sqr + 2*sin_alpha_i_2*u2*(-2*x2 +
-                                                                                                                                                                                                                                                                                                                             2*y2)/vi_mag_sqr) - (cos_alpha_i_2*(-x1 + y1) -
-                                                                                                                                                                                                                                                                                                                                                  cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
-                                                                                                                                                                                                                                                                                                                                                  cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
-                                                                                                                                                                                                                                                                                                                                                  sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                                                                                                                                                                                                                                                   2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
-                                                                                                                                                                                                                                                                                                                                                  sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-                                                                                                                                                                                                                                                                                                                                                  sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr)*(-cos_alpha_i_2*u0*u0*(-
-                                                                                                                                                                                                                                                                                                                                                                                                                    2*x2 + 2*y2)/vi_mag_sqr + cos_alpha_i_2*u0*u2*(-2*x0 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                   2*y0)/vi_mag_sqr - 2*cos_alpha_i*sin_alpha_i*u0_3*(-x1 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      y1)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u0*u1*(-2*x0 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           2*y0)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u0*(-2*x2 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               2*y2)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u1*u1*(-x1 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      y1)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u1*u2*(-2*x2 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           2*y2)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u0*u2*u2*(-x1 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  y1)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u0*u2*(-2*x0 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    2*y0)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u0*(-x1 + y1)/vi_mag -
-                                                                                                                                                                                                                                                                                                                                                                                              2*cos_alpha_i*sin_alpha_i*(-2*x2 + 2*y2)/vi_mag +
-                                                                                                                                                                                                                                                                                                                                                                                              4*sin_alpha_i_2*u0_3*(-x1 + y1)/(vi_mag_4) -
-                                                                                                                                                                                                                                                                                                                                                                                              4*sin_alpha_i_2*u0*u0*u1*(-2*x0 + 2*y0)/(vi_mag_4) +
-                                                                                                                                                                                                                                                                                                                                                                                              sin_alpha_i_2*u0*u0*(-2*x2 + 2*y2)/vi_mag_sqr -
-                                                                                                                                                                                                                                                                                                                                                                                              4*sin_alpha_i_2*u0*u1*u1*(-x1 + y1)/(vi_mag_4) -
-                                                                                                                                                                                                                                                                                                                                                                                              4*sin_alpha_i_2*u0*u1*u2*(-2*x2 + 2*y2)/(vi_mag_4) +
-                                                                                                                                                                                                                                                                                                                                                                                              4*sin_alpha_i_2*u0*u2*u2*(-x1 + y1)/(vi_mag_4) -
-                                                                                                                                                                                                                                                                                                                                                                                              sin_alpha_i_2*u0*u2*(-2*x0 + 2*y0)/vi_mag_sqr -
-                                                                                                                                                                                                                                                                                                                                                                                              4*sin_alpha_i_2*u0*(-x1 + y1)/vi_mag_sqr + 2*sin_alpha_i_2*u1*(-
-                                                                                                                                                                                                                                                                                                                                                                                                                                                             2*x0 + 2*y0)/vi_mag_sqr))/(2*a*a))*exp(-(t1*t1)/(2*b*b) + (-(t2*t2)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        - (t3*t3))/(2*a*a));
-
-    t4 = cos_alpha_i_2*(-x2 + y2) +
-            cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
-            cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
-            sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
-                                                                             2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
-            sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-            sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr;
-    t5 = cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
-                                                                2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
-            sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                             2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
-                                                                                                                            2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
-            sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr;
-    t6 = cos_alpha_i_2*(-x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
-            cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
-            sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                             2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
-            sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-            sin_alpha_i_2*u2*u2*(-x1 +	y1)/vi_mag_sqr;
-
-    DpsiDu1 = K*(-(cos_alpha_i_2*(-
-                                  x2 + y2) + cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
-                   cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
-                   sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
-                                                                                    2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
-                   sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-                   sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr)*(cos_alpha_i_2*u0*u1*(-
-                                                                                    2*x1 + 2*y1)/vi_mag_sqr + cos_alpha_i_2*u1*u1*(2*x0 -
-                                                                                                                                   2*y0)/vi_mag_sqr - 2*cos_alpha_i*sin_alpha_i*u0*u0*u1*(-x2 +
-                                                                                                                                                                                          y2)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u1*u2*(-2*x0 +
-                                                                                                                                                                                                                                               2*y0)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u0*u1*(-2*x1 +
-                                                                                                                                                                                                                                                                                                   2*y1)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u1_3*(-x2 +
-                                                                                                                                                                                                                                                                                                                                                      y2)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u1*u1*u2*(-2*x1 +
-                                                                                                                                                                                                                                                                                                                                                                                                           2*y1)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u1*u1*(2*x0 -
-                                                                                                                                                                                                                                                                                                                                                                                                                                                               2*y0)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u1*u2*u2*(-x2 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      y2)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u1*(-x2 + y2)/vi_mag +
-                                                               2*cos_alpha_i*sin_alpha_i*(2*x0 - 2*y0)/vi_mag +
-                                                               4*sin_alpha_i_2*u0*u0*u1*(-x2 + y2)/(vi_mag_4) -
-                                                               4*sin_alpha_i_2*u0*u1*u2*(-2*x0 + 2*y0)/(vi_mag_4) -
-                                                               sin_alpha_i_2*u0*u1*(-2*x1 + 2*y1)/vi_mag_sqr +
-                                                               4*sin_alpha_i_2*u1_3*(-x2 + y2)/(vi_mag_4) -
-                                                               4*sin_alpha_i_2*u1*u1*u2*(-2*x1 + 2*y1)/(vi_mag_4) -
-                                                               sin_alpha_i_2*u1*u1*(2*x0 - 2*y0)/vi_mag_sqr -
-                                                               4*sin_alpha_i_2*u1*u2*u2*(-x2 + y2)/(vi_mag_4) -
-                                                               4*sin_alpha_i_2*u1*(-x2 + y2)/vi_mag_sqr + 2*sin_alpha_i_2*u2*(-
-                                                                                                                              2*x1 + 2*y1)/vi_mag_sqr)/(2*b*b) + (-(cos_alpha_i_2*(-x0 + y0) +
-                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u1*(-2*x2 + 2*y2)/vi_mag -
-                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
-                                                                                                                                                                    sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                                                                     2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
-                                                                                                                                                                                                                                                                                    2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
-                                                                                                                                                                    sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr)*(cos_alpha_i_2*u1*u1*(-
-                                                                                                                                                                                                                                     2*x2 + 2*y2)/vi_mag_sqr - cos_alpha_i_2*u1*u2*(-2*x1 +
-                                                                                                                                                                                                                                                                                    2*y1)/vi_mag_sqr + 2*cos_alpha_i*sin_alpha_i*u0*u0*u1*(-x0 +
-                                                                                                                                                                                                                                                                                                                                           y0)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u1*u1*(-2*x1 +
-                                                                                                                                                                                                                                                                                                                                                                                                2*y1)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u1*u2*(-2*x2 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                       2*y2)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u1_3*(-x0 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          y0)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u1*u1*(-2*x2 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            2*y2)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u1*u2*u2*(-x0 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   y0)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u1*u2*(-2*x1 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     2*y1)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u1*(-x0 + y0)/vi_mag +
-                                                                                                                                                                                                                2*cos_alpha_i*sin_alpha_i*(-2*x2 + 2*y2)/vi_mag -
-                                                                                                                                                                                                                4*sin_alpha_i_2*u0*u0*u1*(-x0 + y0)/(vi_mag_4) -
-                                                                                                                                                                                                                4*sin_alpha_i_2*u0*u1*u1*(-2*x1 + 2*y1)/(vi_mag_4) -
-                                                                                                                                                                                                                4*sin_alpha_i_2*u0*u1*u2*(-2*x2 + 2*y2)/(vi_mag_4) +
-                                                                                                                                                                                                                2*sin_alpha_i_2*u0*(-2*x1 + 2*y1)/vi_mag_sqr +
-                                                                                                                                                                                                                4*sin_alpha_i_2*u1_3*(-x0 + y0)/(vi_mag_4) - sin_alpha_i_2*u1*u1*(-
-                                                                                                                                                                                                                                                                                  2*x2 + 2*y2)/vi_mag_sqr + 4*sin_alpha_i_2*u1*u2*u2*(-x0 +
-                                                                                                                                                                                                                                                                                                                                      y0)/(vi_mag_4) + sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr -
-                                                                                                                                                                                                                4*sin_alpha_i_2*u1*(-x0 + y0)/vi_mag_sqr) - (cos_alpha_i_2*(-x1 +
-                                                                                                                                                                                                                                                                            y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
-                                                                                                                                                                                                                                                             cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
-                                                                                                                                                                                                                                                             sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                                                                                                                                                              2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
-                                                                                                                                                                                                                                                             sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-                                                                                                                                                                                                                                                             sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr)*(-cos_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                                                                                                                                                               2*x2 + 2*y2)/vi_mag_sqr + cos_alpha_i_2*u1*u2*(-2*x0 +
-                                                                                                                                                                                                                                                                                                                                                                              2*y0)/vi_mag_sqr - 2*cos_alpha_i*sin_alpha_i*u0*u0*u1*(-x1 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                     y1)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u1*u1*(-2*x0 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          2*y0)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u1*(-2*x2 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              2*y2)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u1_3*(-x1 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 y1)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u1*u1*u2*(-2*x2 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      2*y2)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u1*u2*u2*(-x1 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             y1)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u1*u2*(-2*x0 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               2*y0)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u1*(-x1 + y1)/vi_mag +
-                                                                                                                                                                                                                                                                                                         4*sin_alpha_i_2*u0*u0*u1*(-x1 + y1)/(vi_mag_4) -
-                                                                                                                                                                                                                                                                                                         4*sin_alpha_i_2*u0*u1*u1*(-2*x0 + 2*y0)/(vi_mag_4) +
-                                                                                                                                                                                                                                                                                                         sin_alpha_i_2*u0*u1*(-2*x2 + 2*y2)/vi_mag_sqr +
-                                                                                                                                                                                                                                                                                                         2*sin_alpha_i_2*u0*(-2*x0 + 2*y0)/vi_mag_sqr -
-                                                                                                                                                                                                                                                                                                         4*sin_alpha_i_2*u1_3*(-x1 + y1)/(vi_mag_4) -
-                                                                                                                                                                                                                                                                                                         4*sin_alpha_i_2*u1*u1*u2*(-2*x2 + 2*y2)/(vi_mag_4) +
-                                                                                                                                                                                                                                                                                                         4*sin_alpha_i_2*u1*u2*u2*(-x1 + y1)/(vi_mag_4) -
-                                                                                                                                                                                                                                                                                                         sin_alpha_i_2*u1*u2*(-2*x0 + 2*y0)/vi_mag_sqr +
-                                                                                                                                                                                                                                                                                                         4*sin_alpha_i_2*u1*(-x1 + y1)/vi_mag_sqr + 2*sin_alpha_i_2*u2*(-
-                                                                                                                                                                                                                                                                                                                                                                        2*x2 + 2*y2)/vi_mag_sqr))/(2*a*a))*exp(-(t4*t4)/(2*b*b) + (-
-                                                                                                                                                                                                                                                                                                                                                                                                                                   (t5*t5) - (t6*t6))/(2*a*a));
-    
-    t7 = cos_alpha_i_2*(-x2 + y2) +
-            cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
-            cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
-            sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
-                                                                             2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
-            sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-            sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr;
-    t8 = cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
-                                                                2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
-            sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                             2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
-                                                                                                                            2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
-            sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr;
-    t9 = cos_alpha_i_2*(-x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
-            cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
-            sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                             2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
-            sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-            sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr;
-
-    DpsiDu2 = K*(-(cos_alpha_i_2*(-
-                                  x2 + y2) + cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
-                   cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
-                   sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
-                                                                                    2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
-                   sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-                   sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr)*(cos_alpha_i_2*u0*u2*(-
-                                                                                    2*x1 + 2*y1)/vi_mag_sqr + cos_alpha_i_2*u1*u2*(2*x0 -
-                                                                                                                                   2*y0)/vi_mag_sqr - 2*cos_alpha_i*sin_alpha_i*u0*u0*u2*(-x2 +
-                                                                                                                                                                                          y2)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u2*u2*(-2*x0 +
-                                                                                                                                                                                                                                               2*y0)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u0*u2*(-2*x1 +
-                                                                                                                                                                                                                                                                                                   2*y1)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u1*u1*u2*(-x2 +
-                                                                                                                                                                                                                                                                                                                                                          y2)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u1*u2*u2*(-2*x1 +
-                                                                                                                                                                                                                                                                                                                                                                                                               2*y1)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u1*u2*(2*x0 -
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                   2*y0)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u2_3*(-x2 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      y2)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u2*(-x2 + y2)/vi_mag +
-                                                               4*sin_alpha_i_2*u0*u0*u2*(-x2 + y2)/(vi_mag_4) -
-                                                               4*sin_alpha_i_2*u0*u2*u2*(-2*x0 + 2*y0)/(vi_mag_4) -
-                                                               sin_alpha_i_2*u0*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-                                                               2*sin_alpha_i_2*u0*(-2*x0 + 2*y0)/vi_mag_sqr +
-                                                               4*sin_alpha_i_2*u1*u1*u2*(-x2 + y2)/(vi_mag_4) -
-                                                               4*sin_alpha_i_2*u1*u2*u2*(-2*x1 + 2*y1)/(vi_mag_4) -
-                                                               sin_alpha_i_2*u1*u2*(2*x0 - 2*y0)/vi_mag_sqr + 2*sin_alpha_i_2*u1*(-
-                                                                                                                                  2*x1 + 2*y1)/vi_mag_sqr - 4*sin_alpha_i_2*u2_3*(-x2 + y2)/(vi_mag_4) +
-                                                               4*sin_alpha_i_2*u2*(-x2 + y2)/vi_mag_sqr)/(2*b*b) + (-
-                                                                                                                    (cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
-                                                                                                                                                                            2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
-                                                                                                                     sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                      2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
-                                                                                                                                                                                                                                     2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
-                                                                                                                     sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr)*(cos_alpha_i_2*u1*u2*(-
-                                                                                                                                                                                      2*x2 + 2*y2)/vi_mag_sqr - cos_alpha_i_2*u2*u2*(-2*x1 +
-                                                                                                                                                                                                                                     2*y1)/vi_mag_sqr + 2*cos_alpha_i*sin_alpha_i*u0*u0*u2*(-x0 +
-                                                                                                                                                                                                                                                                                            y0)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u1*u2*(-2*x1 +
-                                                                                                                                                                                                                                                                                                                                                 2*y1)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u2*u2*(-2*x2 +
-                                                                                                                                                                                                                                                                                                                                                                                                        2*y2)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u1*u1*u2*(-x0 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                               y0)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u1*u2*(-2*x2 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 2*y2)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u2_3*(-x0 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    y0)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u2*u2*(-2*x1 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      2*y1)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u2*(-x0 + y0)/vi_mag -
-                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*(-2*x1 + 2*y1)/vi_mag -
-                                                                                                                                                                 4*sin_alpha_i_2*u0*u0*u2*(-x0 + y0)/(vi_mag_4) -
-                                                                                                                                                                 4*sin_alpha_i_2*u0*u1*u2*(-2*x1 + 2*y1)/(vi_mag_4) -
-                                                                                                                                                                 4*sin_alpha_i_2*u0*u2*u2*(-2*x2 + 2*y2)/(vi_mag_4) +
-                                                                                                                                                                 2*sin_alpha_i_2*u0*(-2*x2 + 2*y2)/vi_mag_sqr +
-                                                                                                                                                                 4*sin_alpha_i_2*u1*u1*u2*(-x0 + y0)/(vi_mag_4) -
-                                                                                                                                                                 sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr +
-                                                                                                                                                                 4*sin_alpha_i_2*u2_3*(-x0 + y0)/(vi_mag_4) + sin_alpha_i_2*u2*u2*(-
-                                                                                                                                                                                                                                   2*x1 + 2*y1)/vi_mag_sqr - 4*sin_alpha_i_2*u2*(-x0 + y0)/vi_mag_sqr) -
-                                                                                                                    (cos_alpha_i_2*(-x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 +
-                                                                                                                                                                            2*y2)/vi_mag + cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
-                                                                                                                     sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                      2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
-                                                                                                                     sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-                                                                                                                     sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr)*(-cos_alpha_i_2*u0*u2*(-
-                                                                                                                                                                                       2*x2 + 2*y2)/vi_mag_sqr + cos_alpha_i_2*u2*u2*(-2*x0 +
-                                                                                                                                                                                                                                      2*y0)/vi_mag_sqr - 2*cos_alpha_i*sin_alpha_i*u0*u0*u2*(-x1 +
-                                                                                                                                                                                                                                                                                             y1)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u1*u2*(-2*x0 +
-                                                                                                                                                                                                                                                                                                                                                  2*y0)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u0*u2*(-2*x2 +
-                                                                                                                                                                                                                                                                                                                                                                                                      2*y2)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u1*u1*u2*(-x1 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                             y1)/(vi_mag_3) + 2*cos_alpha_i*sin_alpha_i*u1*u2*u2*(-2*x2 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  2*y2)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u2_3*(-x1 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     y1)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u2*u2*(-2*x0 +
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       2*y0)/(vi_mag_3) - 2*cos_alpha_i*sin_alpha_i*u2*(-x1 + y1)/vi_mag +
-                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*(-2*x0 + 2*y0)/vi_mag +
-                                                                                                                                                                 4*sin_alpha_i_2*u0*u0*u2*(-x1 + y1)/(vi_mag_4) -
-                                                                                                                                                                 4*sin_alpha_i_2*u0*u1*u2*(-2*x0 + 2*y0)/(vi_mag_4) +
-                                                                                                                                                                 sin_alpha_i_2*u0*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-                                                                                                                                                                 4*sin_alpha_i_2*u1*u1*u2*(-x1 + y1)/(vi_mag_4) -
-                                                                                                                                                                 4*sin_alpha_i_2*u1*u2*u2*(-2*x2 + 2*y2)/(vi_mag_4) +
-                                                                                                                                                                 2*sin_alpha_i_2*u1*(-2*x2 + 2*y2)/vi_mag_sqr +
-                                                                                                                                                                 4*sin_alpha_i_2*u2_3*(-x1 + y1)/(vi_mag_4) - sin_alpha_i_2*u2*u2*(-
-                                                                                                                                                                                                                                   2*x0 + 2*y0)/vi_mag_sqr - 4*sin_alpha_i_2*u2*(-x1 +
-                                                                                                                                                                                                                                                                                 y1)/vi_mag_sqr))/(2*a*a))*exp(-(t7*t7)/(2*b*b) + (-
-                                                                                                                                                                                                                                                                                                                                   (t8*t8) - (t9*t9))/(2*a*a));
-
-    Vector3D DpsiDvi( DpsiDu0, DpsiDu1, DpsiDu2 );
-    return DpsiDvi;
-}
-
-/*
-*Derivative psi xi
- */
-Vector3D OPSBody::DpsiDxi(Vector3D vi, Vector3D xi, Vector3D xj){
-    double K, a, b, psi0;
-    double u0, u1, u2, x0, x1, x2, y0, y1, y2;
-    double vi_mag_sqr, vi_mag, sin_alpha_i, cos_alpha_i;
-    double sin_alpha_i_2, cos_alpha_i_2;
-    double DpsiDx0, DpsiDx1, DpsiDx2;
-    double t1, t2, t3, t4, t5, t6, t7, t8, t9;
-
-    K = _prop.K; a = _prop.a; b = _prop.b;
-    u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
-    x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
-    y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
-
-    vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
-    vi_mag = sqrt(vi_mag_sqr);
-    sin_alpha_i = sin( 0.5*vi_mag );
-    cos_alpha_i = cos( 0.5*vi_mag );
-    sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
-    cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
-
-    t1 = cos_alpha_i_2*(-x2 + y2) + cos_alpha_i*sin_alpha_i*u0*(-2*x1 +
-                                                                2*y1)/vi_mag + cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
-            sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
-                                                                             2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
-            sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-            sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr;
-    t2 = cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
-                                                                2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
-            sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                             2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
-                                                                                                                            2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
-            sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr;
-    t3 = cos_alpha_i_2*(-
-                        x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
-            cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
-            sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                             2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
-            sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-            sin_alpha_i_2*u2*u2*(-x1 +
-                                 y1)/vi_mag_sqr;
-    
-    DpsiDx0 = K*(-
-                 (4*cos_alpha_i*sin_alpha_i*u1/vi_mag -
-                  4*sin_alpha_i_2*u0*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x2 + y2) +
-                                                     cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
-                                                     cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
-                                                     sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
-                                                                                                                      2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
-                                                     sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-                                                     sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr)/(2*b*b) + (-(-
-                                                                                                             4*cos_alpha_i*sin_alpha_i*u2/vi_mag -
-                                                                                                             4*sin_alpha_i_2*u0*u1/vi_mag_sqr)*(cos_alpha_i_2*(-x1 + y1) -
-                                                                                                                                                cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
-                                                                                                                                                cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
-                                                                                                                                                sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                                                 2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
-                                                                                                                                                sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-                                                                                                                                                sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr) - (-2*cos_alpha_i_2 -
-                                                                                                                                                                                              2*sin_alpha_i_2*u0*u0/vi_mag_sqr + 2*sin_alpha_i_2*u1*u1/vi_mag_sqr +
-                                                                                                                                                                                              2*sin_alpha_i_2*u2*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x0 + y0) +
-                                                                                                                                                                                                                                 cos_alpha_i*sin_alpha_i*u1*(-2*x2 + 2*y2)/vi_mag -
-                                                                                                                                                                                                                                 cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
-                                                                                                                                                                                                                                 sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                                                                                                                                  2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
-                                                                                                                                                                                                                                                                                                                                                 2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
-                                                                                                                                                                                                                                 sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr))/(2*a*a))*exp(-
-                                                                                                                                                                                                                                                                                          (t1*t1)/(2*b*b) + (-(t2*t2) - (t3*t3))/(2*a*a));
-    
-    t4 = cos_alpha_i_2*(-x2 + y2) + cos_alpha_i*sin_alpha_i*u0*(-2*x1 +
-                                                                2*y1)/vi_mag + cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
-            sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
-                                                                             2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
-            sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-            sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr;
-    t5 = cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
-                                                                2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
-            sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                             2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
-                                                                                                                            2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
-            sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr;
-    t6 = cos_alpha_i_2*(-
-                        x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
-            cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
-            sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                             2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
-            sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-            sin_alpha_i_2*u2*u2*(-x1 +
-                                 y1)/vi_mag_sqr;
-
-    DpsiDx1 = K*(-(-
-                   4*cos_alpha_i*sin_alpha_i*u0/vi_mag -
-                   4*sin_alpha_i_2*u1*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x2 + y2) +
-                                                      cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
-                                                      cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
-                                                      sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
-                                                                                                                       2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
-                                                      sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-                                                      sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr)/(2*b*b) + (-
-                                                                                                            (4*cos_alpha_i*sin_alpha_i*u2/vi_mag -
-                                                                                                             4*sin_alpha_i_2*u0*u1/vi_mag_sqr)*(cos_alpha_i_2*(-x0 + y0) +
-                                                                                                                                                cos_alpha_i*sin_alpha_i*u1*(-2*x2 + 2*y2)/vi_mag -
-                                                                                                                                                cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
-                                                                                                                                                sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                                                 2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
-                                                                                                                                                                                                                                                                2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
-                                                                                                                                                sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr) - (-2*cos_alpha_i_2 +
-                                                                                                                                                                                              2*sin_alpha_i_2*u0*u0/vi_mag_sqr - 2*sin_alpha_i_2*u1*u1/vi_mag_sqr +
-                                                                                                                                                                                              2*sin_alpha_i_2*u2*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x1 + y1) -
-                                                                                                                                                                                                                                 cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
-                                                                                                                                                                                                                                 cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
-                                                                                                                                                                                                                                 sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                                                                                                                                  2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
-                                                                                                                                                                                                                                 sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-                                                                                                                                                                                                                                 sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr))/(2*a*a))*exp(-
-                                                                                                                                                                                                                                                                                          (t4*t4)/(2*b*b) + (-(t5*t5) - (t6*t6))/(2*a*a));
-    
-    t7 = cos_alpha_i_2*(-x2 + y2) + cos_alpha_i*sin_alpha_i*u0*(-2*x1 +
-                                                                2*y1)/vi_mag + cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
-            sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
-                                                                             2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
-            sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-            sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr;
-    t8 = cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
-                                                                2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
-            sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                             2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
-                                                                                                                            2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
-            sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr;
-    t9 = cos_alpha_i_2*(-x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
-            cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
-            sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                             2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
-            sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-            sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr;
-
-    DpsiDx2 = K*(-(-2*cos_alpha_i_2 +
-                   2*sin_alpha_i_2*u0*u0/vi_mag_sqr + 2*sin_alpha_i_2*u1*u1/vi_mag_sqr -
-                   2*sin_alpha_i_2*u2*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x2 + y2) +
-                                                      cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
-                                                      cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
-                                                      sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
-                                                                                                                       2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
-                                                      sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-                                                      sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr)/(2*b*b) + (-
-                                                                                                            (4*cos_alpha_i*sin_alpha_i*u0/vi_mag -
-                                                                                                             4*sin_alpha_i_2*u1*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x1 + y1) -
-                                                                                                                                                cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
-                                                                                                                                                cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
-                                                                                                                                                sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                                                 2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
-                                                                                                                                                sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-                                                                                                                                                sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr) - (-
-                                                                                                                                                                                              4*cos_alpha_i*sin_alpha_i*u1/vi_mag -
-                                                                                                                                                                                              4*sin_alpha_i_2*u0*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x0 + y0) +
-                                                                                                                                                                                                                                 cos_alpha_i*sin_alpha_i*u1*(-2*x2 + 2*y2)/vi_mag -
-                                                                                                                                                                                                                                 cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
-                                                                                                                                                                                                                                 sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                                                                                                                                  2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
-                                                                                                                                                                                                                                                                                                                                                 2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
-                                                                                                                                                                                                                                 sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr))/(2*a*a))*exp(-
-                                                                                                                                                                                                                                                                                          (t7*t7)/(2*b*b) + (-(t8*t8) - (t9*t9))/(2*a*a));
-
-    Vector3D DpsiDxi( DpsiDx0, DpsiDx1, DpsiDx2 );
-    return DpsiDxi;
-}
-
-/*
-*Derivative of psi wrt xj
- */
-Vector3D OPSBody::DpsiDxj(Vector3D vi, Vector3D xi, Vector3D xj){
-    double K, a, b, psi0;
-    double u0, u1, u2, x0, x1, x2, y0, y1, y2;
-    double vi_mag_sqr, vi_mag, sin_alpha_i, cos_alpha_i;
-    double sin_alpha_i_2, cos_alpha_i_2;
-    double DpsiDy0, DpsiDy1, DpsiDy2;
-    double t1, t2, t3, t4, t5, t6, t7, t8, t9;
-
-    K = _prop.K; a = _prop.a; b = _prop.b;
-    u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
-    x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
-    y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
-
-    vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
-    vi_mag = sqrt(vi_mag_sqr);
-    sin_alpha_i = sin( 0.5*vi_mag );
-    cos_alpha_i = cos( 0.5*vi_mag );
-    sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
-    cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
-
-    t1 = cos_alpha_i_2*(-x2 + y2) + cos_alpha_i*sin_alpha_i*u0*(-2*x1 +
-                                                                2*y1)/vi_mag + cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
-            sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
-                                                                             2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
-            sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-            sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr;
-    t2 = cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
-                                                                2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
-            sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                             2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
-                                                                                                                            2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
-            sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr;
-    t3 = cos_alpha_i_2*(-x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
-            cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
-            sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                             2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
-            sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-            sin_alpha_i_2*u2*u2*(-x1 +	y1)/vi_mag_sqr;
-    DpsiDy0 = K*(-(-
-                   4*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                   4*sin_alpha_i_2*u0*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x2 + y2) +
-                                                      cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
-                                                      cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
-                                                      sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
-                                                                                                                       2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
-                                                      sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-                                                      sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr)/(2*b*b) + (-
-                                                                                                            (4*cos_alpha_i*sin_alpha_i*u2/vi_mag +
-                                                                                                             4*sin_alpha_i_2*u0*u1/vi_mag_sqr)*(cos_alpha_i_2*(-x1 + y1) -
-                                                                                                                                                cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
-                                                                                                                                                cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
-                                                                                                                                                sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                                                 2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
-                                                                                                                                                sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-                                                                                                                                                sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr) - (2*cos_alpha_i_2 +
-                                                                                                                                                                                              2*sin_alpha_i_2*u0*u0/vi_mag_sqr - 2*sin_alpha_i_2*u1*u1/vi_mag_sqr -
-                                                                                                                                                                                              2*sin_alpha_i_2*u2*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x0 + y0) +
-                                                                                                                                                                                                                                 cos_alpha_i*sin_alpha_i*u1*(-2*x2 + 2*y2)/vi_mag -
-                                                                                                                                                                                                                                 cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
-                                                                                                                                                                                                                                 sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                                                                                                                                  2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
-                                                                                                                                                                                                                                                                                                                                                 2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
-                                                                                                                                                                                                                                 sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr))/(2*a*a))*exp(-
-                                                                                                                                                                                                                                                                                          (t1*t1)/(2*b*b) + (-(t2*t2) - (t3*t3))/(2*a*a));
-    
-    t4 = cos_alpha_i_2*(-x2 + y2) + cos_alpha_i*sin_alpha_i*u0*(-2*x1 +
-                                                                2*y1)/vi_mag + cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
-            sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
-                                                                             2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
-            sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-            sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr;
-    t5 = cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
-                                                                2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
-            sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                             2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
-                                                                                                                            2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
-            sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr;
-    t6 = cos_alpha_i_2*(-x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
-            cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
-            sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                             2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
-            sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-            sin_alpha_i_2*u2*u2*(-x1 +	y1)/vi_mag_sqr;
-    DpsiDy1 = K*(-
-                 (4*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                  4*sin_alpha_i_2*u1*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x2 + y2) +
-                                                     cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
-                                                     cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
-                                                     sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
-                                                                                                                      2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
-                                                     sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-                                                     sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr)/(2*b*b) + (-(-
-                                                                                                             4*cos_alpha_i*sin_alpha_i*u2/vi_mag +
-                                                                                                             4*sin_alpha_i_2*u0*u1/vi_mag_sqr)*(cos_alpha_i_2*(-x0 + y0) +
-                                                                                                                                                cos_alpha_i*sin_alpha_i*u1*(-2*x2 + 2*y2)/vi_mag -
-                                                                                                                                                cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
-                                                                                                                                                sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                                                 2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
-                                                                                                                                                                                                                                                                2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
-                                                                                                                                                sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr) - (2*cos_alpha_i_2 -
-                                                                                                                                                                                              2*sin_alpha_i_2*u0*u0/vi_mag_sqr + 2*sin_alpha_i_2*u1*u1/vi_mag_sqr -
-                                                                                                                                                                                              2*sin_alpha_i_2*u2*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x1 + y1) -
-                                                                                                                                                                                                                                 cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
-                                                                                                                                                                                                                                 cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
-                                                                                                                                                                                                                                 sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                                                                                                                                  2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
-                                                                                                                                                                                                                                 sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-                                                                                                                                                                                                                                 sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr))/(2*a*a))*exp(-
-                                                                                                                                                                                                                                                                                          (t4*t4)/(2*b*b) + (-(t5*t5) - (t6*t6))/(2*a*a));
-    
-    t7 = cos_alpha_i_2*(-x2 + y2) + cos_alpha_i*sin_alpha_i*u0*(-2*x1 +
-                                                                2*y1)/vi_mag + cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
-            sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
-                                                                             2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
-            sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-            sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr;
-    t8 = cos_alpha_i_2*(-x0 + y0) + cos_alpha_i*sin_alpha_i*u1*(-2*x2 +
-                                                                2*y2)/vi_mag - cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
-            sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                             2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
-                                                                                                                            2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
-            sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr;
-    t9 = cos_alpha_i_2*(-
-                        x1 + y1) - cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
-            cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
-            sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                             2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
-            sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-            sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr;
-    DpsiDy2 = K*(-(2*cos_alpha_i_2 -
-                   2*sin_alpha_i_2*u0*u0/vi_mag_sqr - 2*sin_alpha_i_2*u1*u1/vi_mag_sqr +
-                   2*sin_alpha_i_2*u2*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x2 + y2) +
-                                                      cos_alpha_i*sin_alpha_i*u0*(-2*x1 + 2*y1)/vi_mag +
-                                                      cos_alpha_i*sin_alpha_i*u1*(2*x0 - 2*y0)/vi_mag -
-                                                      sin_alpha_i_2*u0*u0*(-x2 + y2)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-
-                                                                                                                       2*x0 + 2*y0)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x2 + y2)/vi_mag_sqr +
-                                                      sin_alpha_i_2*u1*u2*(-2*x1 + 2*y1)/vi_mag_sqr +
-                                                      sin_alpha_i_2*u2*u2*(-x2 + y2)/vi_mag_sqr)/(2*b*b) + (-(-
-                                                                                                              4*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                                                                                                              4*sin_alpha_i_2*u1*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x1 + y1) -
-                                                                                                                                                 cos_alpha_i*sin_alpha_i*u0*(-2*x2 + 2*y2)/vi_mag +
-                                                                                                                                                 cos_alpha_i*sin_alpha_i*u2*(-2*x0 + 2*y0)/vi_mag -
-                                                                                                                                                 sin_alpha_i_2*u0*u0*(-x1 + y1)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                                                  2*x0 + 2*y0)/vi_mag_sqr + sin_alpha_i_2*u1*u1*(-x1 + y1)/vi_mag_sqr +
-                                                                                                                                                 sin_alpha_i_2*u1*u2*(-2*x2 + 2*y2)/vi_mag_sqr -
-                                                                                                                                                 sin_alpha_i_2*u2*u2*(-x1 + y1)/vi_mag_sqr) -
-                                                                                                            (4*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                                                                                                             4*sin_alpha_i_2*u0*u2/vi_mag_sqr)*(cos_alpha_i_2*(-x0 + y0) +
-                                                                                                                                                cos_alpha_i*sin_alpha_i*u1*(-2*x2 + 2*y2)/vi_mag -
-                                                                                                                                                cos_alpha_i*sin_alpha_i*u2*(-2*x1 + 2*y1)/vi_mag +
-                                                                                                                                                sin_alpha_i_2*u0*u0*(-x0 + y0)/vi_mag_sqr + sin_alpha_i_2*u0*u1*(-
-                                                                                                                                                                                                                 2*x1 + 2*y1)/vi_mag_sqr + sin_alpha_i_2*u0*u2*(-2*x2 +
-                                                                                                                                                                                                                                                                2*y2)/vi_mag_sqr - sin_alpha_i_2*u1*u1*(-x0 + y0)/vi_mag_sqr -
-                                                                                                                                                sin_alpha_i_2*u2*u2*(-x0 + y0)/vi_mag_sqr))/(2*a*a))*exp(-
-                                                                                                                                                                                                         (t7*t7)/(2*b*b) + (-(t8*t8) - (t9*t9))/(2*a*a));
-
-    Vector3D DpsiDxj( DpsiDy0, DpsiDy1, DpsiDy2 );
-    return DpsiDxj;
-}
-
-/*
-*Derivative of phi_p wrt vi
- */
-Vector3D OPSBody::Dphi_pDvi(Vector3D vi, Vector3D xi, Vector3D xj){
-    double u0, u1, u2, x0, x1, x2, y0, y1, y2;
-    double vi_mag_sqr, vi_mag, sin_alpha_i, cos_alpha_i;
-    double sin_alpha_i_2, cos_alpha_i_2, phi_p0;
-    double Dphi_pDu0, Dphi_pDu1, Dphi_pDu2;
-    double vi_mag_3, vi_mag_4;
-    double u0_3, u1_3, u2_3;
-    
-    u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
-    x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
-    y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
-
-    u0_3 = u0*u0*u0;
-    u1_3 = u1*u1*u1;
-    u2_3 = u2*u2*u2;
-    
-    vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
-    vi_mag = sqrt(vi_mag_sqr);
-    vi_mag_3 = vi_mag*vi_mag*vi_mag;
-    vi_mag_4 = vi_mag*vi_mag*vi_mag*vi_mag;
-    sin_alpha_i = sin( 0.5*vi_mag );
-    cos_alpha_i = cos( 0.5*vi_mag );
-    sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
-    cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
-
-    Dphi_pDu0 = ((-x0 +
-                  y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                       2*sin_alpha_i_2*u0*u2/vi_mag_sqr) + (-x1 + y1)*(-
-                                                                       2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                                                                       2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 -
-                                                                                                                       sin_alpha_i_2*u0*u0/vi_mag_sqr - sin_alpha_i_2*u1*u1/vi_mag_sqr +
-                                                                                                                       sin_alpha_i_2*u2*u2/vi_mag_sqr))*(2*(-x0 +
-                                                                                                                                                            y0)*(cos_alpha_i_2*u0*u1/vi_mag_sqr +
-                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u0*u0*u2/vi_mag_3 -
-                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u0*u1/vi_mag_3 -
-                                                                                                                                                                 4*sin_alpha_i_2*u0*u0*u2/vi_mag_4 -
-                                                                                                                                                                 sin_alpha_i_2*u0*u1/vi_mag_sqr + 2*sin_alpha_i_2*u2/vi_mag_sqr) +
-                                                                                                                                                         2*(-x1 + y1)*(-cos_alpha_i_2*u0*u0/vi_mag_sqr +
-                                                                                                                                                                       2*cos_alpha_i*sin_alpha_i*u0*u0/vi_mag_3 +
-                                                                                                                                                                       2*cos_alpha_i*sin_alpha_i*u0*u1*u2/vi_mag_3 -
-                                                                                                                                                                       2*cos_alpha_i*sin_alpha_i/vi_mag + sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                                                                       4*sin_alpha_i_2*u0*u1*u2/vi_mag_4) + 2*(-x2 + y2)*(-
-                                                                                                                                                                                                                          cos_alpha_i*sin_alpha_i*u0_3/vi_mag_3 -
-                                                                                                                                                                                                                          cos_alpha_i*sin_alpha_i*u0*u1*u1/vi_mag_3 +
-                                                                                                                                                                                                                          cos_alpha_i*sin_alpha_i*u0*u2*u2/vi_mag_3 -
-                                                                                                                                                                                                                          cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                                                                                                                                                                                                                          2*sin_alpha_i_2*u0_3/vi_mag_4 +
-                                                                                                                                                                                                                          2*sin_alpha_i_2*u0*u1*u1/vi_mag_4 -
-                                                                                                                                                                                                                          2*sin_alpha_i_2*u0*u2*u2/vi_mag_4 -
-                                                                                                                                                                                                                          2*sin_alpha_i_2*u0/vi_mag_sqr));
-
-    Dphi_pDu1 = ((-x0 +
-                  y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                       2*sin_alpha_i_2*u0*u2/vi_mag_sqr) + (-x1 + y1)*(-
-                                                                       2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                                                                       2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 -
-                                                                                                                       sin_alpha_i_2*u0*u0/vi_mag_sqr - sin_alpha_i_2*u1*u1/vi_mag_sqr +
-                                                                                                                       sin_alpha_i_2*u2*u2/vi_mag_sqr))*(2*(-x0 +
-                                                                                                                                                            y0)*(cos_alpha_i_2*u1*u1/vi_mag_sqr +
-                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u0*u1*u2/vi_mag_3 -
-                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u1*u1/vi_mag_3 +
-                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i/vi_mag -
-                                                                                                                                                                 4*sin_alpha_i_2*u0*u1*u2/vi_mag_4 -
-                                                                                                                                                                 sin_alpha_i_2*u1*u1/vi_mag_sqr) + 2*(-x1 + y1)*(-
-                                                                                                                                                                                                                 cos_alpha_i_2*u0*u1/vi_mag_sqr +
-                                                                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u0*u1/vi_mag_3 +
-                                                                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u1*u1*u2/vi_mag_3 +
-                                                                                                                                                                                                                 sin_alpha_i_2*u0*u1/vi_mag_sqr -
-                                                                                                                                                                                                                 4*sin_alpha_i_2*u1*u1*u2/vi_mag_4 + 2*sin_alpha_i_2*u2/vi_mag_sqr) + 2*(-x2 + y2)*(-
-                                                                                                                                                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u0*u0*u1/vi_mag_3 -
-                                                                                                                                                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u1_3/vi_mag_3 +
-                                                                                                                                                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u1*u2*u2/vi_mag_3 -
-                                                                                                                                                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_i_2*u0*u0*u1/vi_mag_4 +
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_i_2*u1_3/vi_mag_4 -
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_i_2*u1*u2*u2/vi_mag_4 -
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_i_2*u1/vi_mag_sqr));
-
-    Dphi_pDu2 = ((-x0 +
-                  y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                       2*sin_alpha_i_2*u0*u2/vi_mag_sqr) + (-x1 + y1)*(-
-                                                                       2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                                                                       2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 -
-                                                                                                                       sin_alpha_i_2*u0*u0/vi_mag_sqr - sin_alpha_i_2*u1*u1/vi_mag_sqr +
-                                                                                                                       sin_alpha_i_2*u2*u2/vi_mag_sqr))*(2*(-x0 +
-                                                                                                                                                            y0)*(cos_alpha_i_2*u1*u2/vi_mag_sqr +
-                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u0*u2*u2/vi_mag_3 -
-                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u1*u2/vi_mag_3 -
-                                                                                                                                                                 4*sin_alpha_i_2*u0*u2*u2/vi_mag_4 + 2*sin_alpha_i_2*u0/vi_mag_sqr -
-                                                                                                                                                                 sin_alpha_i_2*u1*u2/vi_mag_sqr) + 2*(-x1 + y1)*(-
-                                                                                                                                                                                                                 cos_alpha_i_2*u0*u2/vi_mag_sqr +
-                                                                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u0*u2/vi_mag_3 +
-                                                                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u1*u2*u2/vi_mag_3 +
-                                                                                                                                                                                                                 sin_alpha_i_2*u0*u2/vi_mag_sqr -
-                                                                                                                                                                                                                 4*sin_alpha_i_2*u1*u2*u2/vi_mag_4 + 2*sin_alpha_i_2*u1/vi_mag_sqr) + 2*(-x2 + y2)*(-
-                                                                                                                                                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u0*u0*u2/vi_mag_3 -
-                                                                                                                                                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u1*u1*u2/vi_mag_3 +
-                                                                                                                                                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u2_3/vi_mag_3 -
-                                                                                                                                                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u2/vi_mag +
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_i_2*u0*u0*u2/vi_mag_4 +
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_i_2*u1*u1*u2/vi_mag_4 -
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_i_2*u2_3/vi_mag_4 + 2*sin_alpha_i_2*u2/vi_mag_sqr));
-
-    Vector3D Dphi_pDvi(Dphi_pDu0, Dphi_pDu1, Dphi_pDu2);
-    return Dphi_pDvi;
-}
-
-/*
-*Derivative of phi_p wrt xi
- */
 Vector3D OPSBody::Dphi_pDxi(Vector3D vi, Vector3D xi, Vector3D xj){
-    double u0, u1, u2, x0, x1, x2, y0, y1, y2;
-    double vi_mag_sqr, vi_mag, sin_alpha_i, cos_alpha_i;
-    double sin_alpha_i_2, cos_alpha_i_2, phi_p0;
-    double Dphi_pDx0, Dphi_pDx1, Dphi_pDx2;
+    double r, p_dot_rij;
+    Vector3D p(0.0), rij(0.0), ans(0.0);
 
-    u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
-    x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
-    y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+    p = OPSNode::convertRotVecToNormal(vi);
+    rij = xj - xi;
+    r = tvmet::norm2(rij);
+    p_dot_rij = tvmet::dot(p,rij);
+    ans = (2*p_dot_rij)/(r*r*r*r)*( p_dot_rij*rij - r*r*p );
 
-    vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
-    vi_mag = sqrt(vi_mag_sqr);
-    sin_alpha_i = sin( 0.5*vi_mag );
-    cos_alpha_i = cos( 0.5*vi_mag );
-    sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
-    cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
-
-    Dphi_pDx0 = (-
-                 4*cos_alpha_i*sin_alpha_i*u1/vi_mag -
-                 4*sin_alpha_i_2*u0*u2/vi_mag_sqr)*((-x0 +
-                                                     y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                                                          2*sin_alpha_i_2*u0*u2/vi_mag_sqr) + (-x1 + y1)*(-
-                                                                                                          2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                                                                                                          2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 -
-                                                                                                                                                          sin_alpha_i_2*u0*u0/vi_mag_sqr - sin_alpha_i_2*u1*u1/vi_mag_sqr +
-                                                                                                                                                          sin_alpha_i_2*u2*u2/vi_mag_sqr));
-
-    Dphi_pDx1 = (4*cos_alpha_i
-                 *sin_alpha_i*u0/vi_mag - 4*sin_alpha_i_2*u1*u2/vi_mag_sqr)*((-x0 +
-                                                                              y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                                                                                   2*sin_alpha_i_2*u0*u2/vi_mag_sqr) + (-x1 + y1)*(-
-                                                                                                                                   2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                                                                                                                                   2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 -
-                                                                                                                                                                                   sin_alpha_i_2*u0*u0/vi_mag_sqr - sin_alpha_i_2*u1*u1/vi_mag_sqr +
-                                                                                                                                                                                   sin_alpha_i_2*u2*u2/vi_mag_sqr));
-
-    Dphi_pDx2 = ((-x0 +
-                  y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                       2*sin_alpha_i_2*u0*u2/vi_mag_sqr) + (-x1 + y1)*(-
-                                                                       2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                                                                       2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 -
-                                                                                                                       sin_alpha_i_2*u0*u0/vi_mag_sqr - sin_alpha_i_2*u1*u1/vi_mag_sqr +
-                                                                                                                       sin_alpha_i_2*u2*u2/vi_mag_sqr))*(-2*cos_alpha_i_2 +
-                                                                                                                                                         2*sin_alpha_i_2*u0*u0/vi_mag_sqr + 2*sin_alpha_i_2*u1*u1/vi_mag_sqr -
-                                                                                                                                                         2*sin_alpha_i_2*u2*u2/vi_mag_sqr);
-
-    Vector3D Dphi_pDxi(Dphi_pDx0, Dphi_pDx1, Dphi_pDx2);
-    return Dphi_pDxi;
+    return ans;
 }
-
-/*
-*Derivative of phi_p wrt xj
  */
-Vector3D OPSBody::Dphi_pDxj(Vector3D vi, Vector3D xi, Vector3D xj){
-    double u0, u1, u2, x0, x1, x2, y0, y1, y2;
-    double vi_mag_sqr, vi_mag, sin_alpha_i, cos_alpha_i;
-    double sin_alpha_i_2, cos_alpha_i_2, phi_p0;
-    double Dphi_pDy0, Dphi_pDy1, Dphi_pDy2;
-
-    u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
-    x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
-    y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
-
-    vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
-    vi_mag = sqrt(vi_mag_sqr);
-    sin_alpha_i = sin( 0.5*vi_mag );
-    cos_alpha_i = cos( 0.5*vi_mag );
-    sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
-    cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
-
-    Dphi_pDy0 = (4*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                 4*sin_alpha_i_2*u0*u2/vi_mag_sqr)*((-x0 +
-                                                     y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                                                          2*sin_alpha_i_2*u0*u2/vi_mag_sqr) + (-x1 + y1)*(-
-                                                                                                          2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                                                                                                          2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 -
-                                                                                                                                                          sin_alpha_i_2*u0*u0/vi_mag_sqr - sin_alpha_i_2*u1*u1/vi_mag_sqr +
-                                                                                                                                                          sin_alpha_i_2*u2*u2/vi_mag_sqr));
-
-    Dphi_pDy1 = (-
-                 4*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                 4*sin_alpha_i_2*u1*u2/vi_mag_sqr)*((-x0 +
-                                                     y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                                                          2*sin_alpha_i_2*u0*u2/vi_mag_sqr) + (-x1 + y1)*(-
-                                                                                                          2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                                                                                                          2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 -
-                                                                                                                                                          sin_alpha_i_2*u0*u0/vi_mag_sqr - sin_alpha_i_2*u1*u1/vi_mag_sqr +
-                                                                                                                                                          sin_alpha_i_2*u2*u2/vi_mag_sqr));
-
-    Dphi_pDy2 = ((-x0 +
-                  y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                       2*sin_alpha_i_2*u0*u2/vi_mag_sqr) + (-x1 + y1)*(-
-                                                                       2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                                                                       2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 -
-                                                                                                                       sin_alpha_i_2*u0*u0/vi_mag_sqr - sin_alpha_i_2*u1*u1/vi_mag_sqr +
-                                                                                                                       sin_alpha_i_2*u2*u2/vi_mag_sqr))*(2*cos_alpha_i_2 -
-                                                                                                                                                         2*sin_alpha_i_2*u0*u0/vi_mag_sqr - 2*sin_alpha_i_2*u1*u1/vi_mag_sqr +
-                                                                                                                                                         2*sin_alpha_i_2*u2*u2/vi_mag_sqr);
-
-    Vector3D Dphi_pDxj(Dphi_pDy0, Dphi_pDy1, Dphi_pDy2);
-    return Dphi_pDxj;
-}
-
 /*
-*Derivative of phi_n wrt vi
+ * Derivative of phi_p wrt xj
+
+Vector3D OPSBody::Dphi_pDxj(Vector3D vi, Vector3D xi, Vector3D xj){
+    Vector3D ans(0.0);
+    ans = -Dphi_pDxi(vi,xi,xj);
+    return ans;
+}
+ */
+/*
+ * Derivative of phi_p wrt vi
+Vector3D OPSBody::Dphi_pDvi(Vector3D vi, Vector3D xi, Vector3D xj){
+    double r, p_dot_rij;
+    Vector3D p(0.0), rij(0.0), ans(0.0);
+    Matrix3X3 M(0.0);
+
+    p = OPSNode::convertRotVecToNormal(vi);
+    rij = xj - xi;
+    r = tvmet::norm2(rij);
+    p_dot_rij = tvmet::dot(p,rij);
+    M = diffNormalRotVec(vi);
+    ans = (2*p_dot_rij)/(r*r)*( M*rij );
+
+    return ans;
+}
+ */
+/*
+ * Derivative of phi_n wrt vi
  */
 Vector3D OPSBody::Dphi_nDvi(Vector3D vi, Vector3D vj){
-    double u0, u1, u2, v0, v1, v2;
-    double vi_mag_sqr, vi_mag, vj_mag_sqr, vj_mag;
-    double sin_alpha_i, cos_alpha_i, sin_alpha_j, cos_alpha_j;
-    double sin_alpha_i_2, cos_alpha_i_2, sin_alpha_j_2, cos_alpha_j_2, phi_n0;
-    double Dphi_nDu0, Dphi_nDu1, Dphi_nDu2;
-    double vi_mag_3, vi_mag_4;
-    double u0_3, u1_3, u2_3;
+    Vector3D p(0.0), q(0.0), m(0.0), ans(0.0);
+    Matrix3X3 M(0.0);
 
-    u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
-    v0 = vj[0]; v1 = vj[1]; v2 = vj[2];
-    
-    u0_3 = u0*u0*u0;
-    u1_3 = u1*u1*u1;
-    u2_3 = u2*u2*u2;
-    
-    vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
-    vj_mag_sqr = v0*v0 + v1*v1 + v2*v2;
-    vi_mag = sqrt(vi_mag_sqr);
-    vj_mag = sqrt(vj_mag_sqr);
-    vi_mag_3 = vi_mag*vi_mag*vi_mag;
-    vi_mag_4 = vi_mag*vi_mag*vi_mag*vi_mag;
-    sin_alpha_i = sin( 0.5*vi_mag );
-    cos_alpha_i = cos( 0.5*vi_mag );
-    sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
-    cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
-    sin_alpha_j = sin( 0.5*vj_mag );
-    cos_alpha_j = cos( 0.5*vj_mag );
-    sin_alpha_j_2 = sin_alpha_j*sin_alpha_j;
-    cos_alpha_j_2 = cos_alpha_j*cos_alpha_j;
+    p = OPSNode::convertRotVecToNormal(vi);
+    q = OPSNode::convertRotVecToNormal(vj);
+    m = p - q;
+    M = diffNormalRotVec(vi);
+    ans = 2*M*m;
 
-    Dphi_nDu0 = (-
-                 2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                 2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                 2*sin_alpha_i_2*u1*u2/vi_mag_sqr -
-                 2*sin_alpha_j_2*v1*v2/vj_mag_sqr)*(-
-                                                    2*cos_alpha_i_2*u0*u0/vi_mag_sqr + 4*
-                                                    cos_alpha_i*sin_alpha_i*u0*u0/vi_mag_3 +
-                                                    4*cos_alpha_i*sin_alpha_i*u0*u1*u2/vi_mag_3 -
-                                                    4*cos_alpha_i*sin_alpha_i/vi_mag + 2*sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                    8*sin_alpha_i_2*u0*u1*u2/vi_mag_4) +
-            (2*cos_alpha_i*sin_alpha_i*u1/vi_mag -
-             2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-             2*sin_alpha_i_2*u0*u2/vi_mag_sqr -
-             2*sin_alpha_j_2*v0*v2/vj_mag_sqr)*(2*cos_alpha_i_2*u0*u1/vi_mag_sqr +
-                                                4*cos_alpha_i*sin_alpha_i*u0*u0*u2/vi_mag_3 -
-                                                4*cos_alpha_i*sin_alpha_i*u0*u1/vi_mag_3 -
-                                                8*sin_alpha_i_2*u0*u0*u2/vi_mag_4 -
-                                                2*sin_alpha_i_2*u0*u1/vi_mag_sqr + 4*sin_alpha_i_2*u2/vi_mag_sqr) +
-            (cos_alpha_i_2 - cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
-             sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr +
-             sin_alpha_j_2*v0*v0/vj_mag_sqr + sin_alpha_j_2*v1*v1/vj_mag_sqr -
-             sin_alpha_j_2*v2*v2/vj_mag_sqr)*(-
-                                              2*cos_alpha_i*sin_alpha_i*u0_3/vi_mag_3 -
-                                              2*cos_alpha_i*sin_alpha_i*u0*u1*u1/vi_mag_3 +
-                                              2*cos_alpha_i*sin_alpha_i*u0*u2*u2/vi_mag_3 -
-                                              2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                                              4*sin_alpha_i_2*u0_3/vi_mag_4 +
-                                              4*sin_alpha_i_2*u0*u1*u1/vi_mag_4 -
-                                              4*sin_alpha_i_2*u0*u2*u2/vi_mag_4 -
-                                              4*sin_alpha_i_2*u0/vi_mag_sqr);
-
-    Dphi_nDu1 = (-
-                 2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                 2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                 2*sin_alpha_i_2*u1*u2/vi_mag_sqr -
-                 2*sin_alpha_j_2*v1*v2/vj_mag_sqr)*(-
-                                                    2*cos_alpha_i_2*u0*u1/vi_mag_sqr + 4*
-                                                    cos_alpha_i*sin_alpha_i*u0*u1/vi_mag_3 +
-                                                    4*cos_alpha_i*sin_alpha_i*u1*u1*u2/vi_mag_3 +
-                                                    2*sin_alpha_i_2*u0*u1/vi_mag_sqr -
-                                                    8*sin_alpha_i_2*u1*u1*u2/vi_mag_4 +
-                                                    4*sin_alpha_i_2*u2/vi_mag_sqr) + (2*
-                                                                                      cos_alpha_i*sin_alpha_i*u1/vi_mag -
-                                                                                      2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-                                                                                      2*sin_alpha_i_2*u0*u2/vi_mag_sqr -
-                                                                                      2*sin_alpha_j_2*v0*v2/vj_mag_sqr)*(2*cos_alpha_i_2*u1*u1/vi_mag_sqr +
-                                                                                                                         4*cos_alpha_i*sin_alpha_i*u0*u1*u2/vi_mag_3 -
-                                                                                                                         4*cos_alpha_i*sin_alpha_i*u1*u1/vi_mag_3 +
-                                                                                                                         4*cos_alpha_i*sin_alpha_i/vi_mag -
-                                                                                                                         8*sin_alpha_i_2*u0*u1*u2/vi_mag_4 -
-                                                                                                                         2*sin_alpha_i_2*u1*u1/vi_mag_sqr) + (cos_alpha_i_2 -
-                                                                                                                                                              cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                                                              sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr +
-                                                                                                                                                              sin_alpha_j_2*v0*v0/vj_mag_sqr + sin_alpha_j_2*v1*v1/vj_mag_sqr -
-                                                                                                                                                              sin_alpha_j_2*v2*v2/vj_mag_sqr)*(-
-                                                                                                                                                                                               2*cos_alpha_i*sin_alpha_i*u0*u0*u1/vi_mag_3 -
-                                                                                                                                                                                               2*cos_alpha_i*sin_alpha_i*u1_3/vi_mag_3 +
-                                                                                                                                                                                               2*cos_alpha_i*sin_alpha_i*u1*u2*u2/vi_mag_3 -
-                                                                                                                                                                                               2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                                                                                                                                                                                               4*sin_alpha_i_2*u0*u0*u1/vi_mag_4 +
-                                                                                                                                                                                               4*sin_alpha_i_2*u1_3/vi_mag_4 -
-                                                                                                                                                                                               4*sin_alpha_i_2*u1*u2*u2/vi_mag_4 -
-                                                                                                                                                                                               4*sin_alpha_i_2*u1/vi_mag_sqr);
-
-    Dphi_nDu2 = (-
-                 2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                 2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                 2*sin_alpha_i_2*u1*u2/vi_mag_sqr -
-                 2*sin_alpha_j_2*v1*v2/vj_mag_sqr)*(-
-                                                    2*cos_alpha_i_2*u0*u2/vi_mag_sqr + 4*
-                                                    cos_alpha_i*sin_alpha_i*u0*u2/vi_mag_3 +
-                                                    4*cos_alpha_i*sin_alpha_i*u1*u2*u2/vi_mag_3 +
-                                                    2*sin_alpha_i_2*u0*u2/vi_mag_sqr -
-                                                    8*sin_alpha_i_2*u1*u2*u2/vi_mag_4 +
-                                                    4*sin_alpha_i_2*u1/vi_mag_sqr) + (2*
-                                                                                      cos_alpha_i*sin_alpha_i*u1/vi_mag -
-                                                                                      2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-                                                                                      2*sin_alpha_i_2*u0*u2/vi_mag_sqr -
-                                                                                      2*sin_alpha_j_2*v0*v2/vj_mag_sqr)*(2*cos_alpha_i_2*u1*u2/vi_mag_sqr +
-                                                                                                                         4*cos_alpha_i*sin_alpha_i*u0*u2*u2/vi_mag_3 -
-                                                                                                                         4*cos_alpha_i*sin_alpha_i*u1*u2/vi_mag_3 -
-                                                                                                                         8*sin_alpha_i_2*u0*u2*u2/vi_mag_4 + 4*sin_alpha_i_2*u0/vi_mag_sqr -
-                                                                                                                         2*sin_alpha_i_2*u1*u2/vi_mag_sqr) + (cos_alpha_i_2 -
-                                                                                                                                                              cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                                                              sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr +
-                                                                                                                                                              sin_alpha_j_2*v0*v0/vj_mag_sqr + sin_alpha_j_2*v1*v1/vj_mag_sqr -
-                                                                                                                                                              sin_alpha_j_2*v2*v2/vj_mag_sqr)*(-
-                                                                                                                                                                                               2*cos_alpha_i*sin_alpha_i*u0*u0*u2/vi_mag_3 -
-                                                                                                                                                                                               2*cos_alpha_i*sin_alpha_i*u1*u1*u2/vi_mag_3 +
-                                                                                                                                                                                               2*cos_alpha_i*sin_alpha_i*u2_3/vi_mag_3 -
-                                                                                                                                                                                               2*cos_alpha_i*sin_alpha_i*u2/vi_mag +
-                                                                                                                                                                                               4*sin_alpha_i_2*u0*u0*u2/vi_mag_4 +
-                                                                                                                                                                                               4*sin_alpha_i_2*u1*u1*u2/vi_mag_4 -
-                                                                                                                                                                                               4*sin_alpha_i_2*u2_3/vi_mag_4 + 4*sin_alpha_i_2*u2/vi_mag_sqr);
-
-    Vector3D Dphi_nDvi( Dphi_nDu0, Dphi_nDu1, Dphi_nDu2 );
-    return Dphi_nDvi;
+    return ans;
 }
 
 /*
-*Derivative of phi_n wrt vj
+ * Derivative of phi_n wrt vj
  */
 Vector3D OPSBody::Dphi_nDvj(Vector3D vi, Vector3D vj){
-    double u0, u1, u2, v0, v1, v2;
-    double vi_mag_sqr, vi_mag, vj_mag_sqr, vj_mag;
-    double sin_alpha_i, cos_alpha_i, sin_alpha_j, cos_alpha_j;
-    double sin_alpha_i_2, cos_alpha_i_2, sin_alpha_j_2, cos_alpha_j_2, phi_n0;
-    double Dphi_nDv0, Dphi_nDv1, Dphi_nDv2;
-    double vj_mag_3, vj_mag_4;
-    double v0_3, v1_3, v2_3;
+    Vector3D p(0.0), q(0.0), m(0.0), ans(0.0);
+    Matrix3X3 N(0.0);
 
-    u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
-    v0 = vj[0]; v1 = vj[1]; v2 = vj[2];
+    p = OPSNode::convertRotVecToNormal(vi);
+    q = OPSNode::convertRotVecToNormal(vj);
+    m = p - q;
+    N = diffNormalRotVec(vj);
+    ans = -2*N*m;
 
-    v0_3 = v0*v0*v0;
-    v1_3 = v1*v1*v1;
-    v2_3 = v2*v2*v2;
-    
-    vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
-    vj_mag_sqr = v0*v0 + v1*v1 + v2*v2;
-    vi_mag = sqrt(vi_mag_sqr);
-    vj_mag = sqrt(vj_mag_sqr);
-    vj_mag_3 = vj_mag*vj_mag*vj_mag;
-    vj_mag_4 = vj_mag*vj_mag*vj_mag*vj_mag;
-    sin_alpha_i = sin( 0.5*vi_mag );
-    cos_alpha_i = cos( 0.5*vi_mag );
-    sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
-    cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
-    sin_alpha_j = sin( 0.5*vj_mag );
-    cos_alpha_j = cos( 0.5*vj_mag );
-    sin_alpha_j_2 = sin_alpha_j*sin_alpha_j;
-    cos_alpha_j_2 = cos_alpha_j*cos_alpha_j;
-
-    Dphi_nDv0 = (-
-                 2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                 2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                 2*sin_alpha_i_2*u1*u2/vi_mag_sqr -
-                 2*sin_alpha_j_2*v1*v2/vj_mag_sqr)*(2*cos_alpha_j_2*v0*v0/vj_mag_sqr -
-                                                    4*cos_alpha_j*sin_alpha_j*v0*v0/vj_mag_3 -
-                                                    4*cos_alpha_j*sin_alpha_j*v0*v1*v2/vj_mag_3 +
-                                                    4*cos_alpha_j*sin_alpha_j/vj_mag - 2*sin_alpha_j_2*v0*v0/vj_mag_sqr +
-                                                    8*sin_alpha_j_2*v0*v1*v2/vj_mag_4) +
-            (2*cos_alpha_i*sin_alpha_i*u1/vi_mag -
-             2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-             2*sin_alpha_i_2*u0*u2/vi_mag_sqr -
-             2*sin_alpha_j_2*v0*v2/vj_mag_sqr)*(-
-                                                2*cos_alpha_j_2*v0*v1/vj_mag_sqr - 4*
-                                                cos_alpha_j*sin_alpha_j*v0*v0*v2/vj_mag_3 +
-                                                4*cos_alpha_j*sin_alpha_j*v0*v1/vj_mag_3 +
-                                                8*sin_alpha_j_2*v0*v0*v2/vj_mag_4 +
-                                                2*sin_alpha_j_2*v0*v1/vj_mag_sqr - 4*sin_alpha_j_2*v2/vj_mag_sqr) +
-            (cos_alpha_i_2 - cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
-             sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr +
-             sin_alpha_j_2*v0*v0/vj_mag_sqr + sin_alpha_j_2*v1*v1/vj_mag_sqr -
-             sin_alpha_j_2*v2*v2/vj_mag_sqr)*(2*cos_alpha_j*sin_alpha_j*v0_3/
-                                              vj_mag_3 + 2*cos_alpha_j*sin_alpha_j*v0*v1*v1/vj_mag_3 -
-                                              2*cos_alpha_j*sin_alpha_j*v0*v2*v2/vj_mag_3 +
-                                              2*cos_alpha_j*sin_alpha_j*v0/vj_mag -
-                                              4*sin_alpha_j_2*v0_3/vj_mag_4 -
-                                              4*sin_alpha_j_2*v0*v1*v1/vj_mag_4 +
-                                              4*sin_alpha_j_2*v0*v2*v2/vj_mag_4 +
-                                              4*sin_alpha_j_2*v0/vj_mag_sqr);
-
-    Dphi_nDv1 = (-
-                 2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                 2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                 2*sin_alpha_i_2*u1*u2/vi_mag_sqr -
-                 2*sin_alpha_j_2*v1*v2/vj_mag_sqr)*(2*cos_alpha_j_2*v0*v1/vj_mag_sqr -
-                                                    4*cos_alpha_j*sin_alpha_j*v0*v1/vj_mag_3 -
-                                                    4*cos_alpha_j*sin_alpha_j*v1*v1*v2/vj_mag_3 -
-                                                    2*sin_alpha_j_2*v0*v1/vj_mag_sqr +
-                                                    8*sin_alpha_j_2*v1*v1*v2/vj_mag_4 -
-                                                    4*sin_alpha_j_2*v2/vj_mag_sqr) + (2*
-                                                                                      cos_alpha_i*sin_alpha_i*u1/vi_mag -
-                                                                                      2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-                                                                                      2*sin_alpha_i_2*u0*u2/vi_mag_sqr -
-                                                                                      2*sin_alpha_j_2*v0*v2/vj_mag_sqr)*(-
-                                                                                                                         2*cos_alpha_j_2*v1*v1/vj_mag_sqr - 4*
-                                                                                                                         cos_alpha_j*sin_alpha_j*v0*v1*v2/vj_mag_3 +
-                                                                                                                         4*cos_alpha_j*sin_alpha_j*v1*v1/vj_mag_3 -
-                                                                                                                         4*cos_alpha_j*sin_alpha_j/vj_mag +
-                                                                                                                         8*sin_alpha_j_2*v0*v1*v2/vj_mag_4 +
-                                                                                                                         2*sin_alpha_j_2*v1*v1/vj_mag_sqr) + (cos_alpha_i_2 -
-                                                                                                                                                              cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                                                              sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr +
-                                                                                                                                                              sin_alpha_j_2*v0*v0/vj_mag_sqr + sin_alpha_j_2*v1*v1/vj_mag_sqr -
-                                                                                                                                                              sin_alpha_j_2*v2*v2/vj_mag_sqr)*(2*cos_alpha_j*sin_alpha_j*v0*v0*
-                                                                                                                                                                                               v1/vj_mag_3 + 2*cos_alpha_j*sin_alpha_j*v1_3/vj_mag_3 -
-                                                                                                                                                                                               2*cos_alpha_j*sin_alpha_j*v1*v2*v2/vj_mag_3 +
-                                                                                                                                                                                               2*cos_alpha_j*sin_alpha_j*v1/vj_mag -
-                                                                                                                                                                                               4*sin_alpha_j_2*v0*v0*v1/vj_mag_4 -
-                                                                                                                                                                                               4*sin_alpha_j_2*v1_3/vj_mag_4 +
-                                                                                                                                                                                               4*sin_alpha_j_2*v1*v2*v2/vj_mag_4 +
-                                                                                                                                                                                               4*sin_alpha_j_2*v1/vj_mag_sqr);
-
-    Dphi_nDv2 = (-
-                 2*cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                 2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                 2*sin_alpha_i_2*u1*u2/vi_mag_sqr -
-                 2*sin_alpha_j_2*v1*v2/vj_mag_sqr)*(2*cos_alpha_j_2*v0*v2/vj_mag_sqr -
-                                                    4*cos_alpha_j*sin_alpha_j*v0*v2/vj_mag_3 -
-                                                    4*cos_alpha_j*sin_alpha_j*v1*v2*v2/vj_mag_3 -
-                                                    2*sin_alpha_j_2*v0*v2/vj_mag_sqr +
-                                                    8*sin_alpha_j_2*v1*v2*v2/vj_mag_4 -
-                                                    4*sin_alpha_j_2*v1/vj_mag_sqr) + (2*
-                                                                                      cos_alpha_i*sin_alpha_i*u1/vi_mag -
-                                                                                      2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-                                                                                      2*sin_alpha_i_2*u0*u2/vi_mag_sqr -
-                                                                                      2*sin_alpha_j_2*v0*v2/vj_mag_sqr)*(-
-                                                                                                                         2*cos_alpha_j_2*v1*v2/vj_mag_sqr - 4*
-                                                                                                                         cos_alpha_j*sin_alpha_j*v0*v2*v2/vj_mag_3 +
-                                                                                                                         4*cos_alpha_j*sin_alpha_j*v1*v2/vj_mag_3 +
-                                                                                                                         8*sin_alpha_j_2*v0*v2*v2/vj_mag_4 - 4*sin_alpha_j_2*v0/vj_mag_sqr +
-                                                                                                                         2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (cos_alpha_i_2 -
-                                                                                                                                                              cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                                                              sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr +
-                                                                                                                                                              sin_alpha_j_2*v0*v0/vj_mag_sqr + sin_alpha_j_2*v1*v1/vj_mag_sqr -
-                                                                                                                                                              sin_alpha_j_2*v2*v2/vj_mag_sqr)*(2*cos_alpha_j*sin_alpha_j*v0*v0*
-                                                                                                                                                                                               v2/vj_mag_3 + 2*cos_alpha_j*sin_alpha_j*v1*v1*v2/vj_mag_3 -
-                                                                                                                                                                                               2*cos_alpha_j*sin_alpha_j*v2_3/vj_mag_3 +
-                                                                                                                                                                                               2*cos_alpha_j*sin_alpha_j*v2/vj_mag -
-                                                                                                                                                                                               4*sin_alpha_j_2*v0*v0*v2/vj_mag_4 -
-                                                                                                                                                                                               4*sin_alpha_j_2*v1*v1*v2/vj_mag_4 +
-                                                                                                                                                                                               4*sin_alpha_j_2*v2_3/vj_mag_4 - 4*sin_alpha_j_2*v2/vj_mag_sqr);
-
-    Vector3D Dphi_nDvj( Dphi_nDv0, Dphi_nDv1, Dphi_nDv2 );
-    return Dphi_nDvj;
+    return ans;
 }
 
 /*
-*Derivative of phi_c wrt vi
- */
-Vector3D OPSBody::Dphi_cDvi(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj){
-    double u0, u1, u2, v0, v1, v2, x0, x1, x2, y0, y1, y2;
-    double vi_mag_sqr, vi_mag, vj_mag_sqr, vj_mag;
-    double sin_alpha_i, cos_alpha_i, sin_alpha_j, cos_alpha_j;
-    double sin_alpha_i_2, cos_alpha_i_2, sin_alpha_j_2, cos_alpha_j_2, phi_c0;
-    double Dphi_cDu0, Dphi_cDu1, Dphi_cDu2;
-    double vi_mag_3, vi_mag_4;
-    double u0_3, u1_3, u2_3;
-
-    u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
-    v0 = vj[0]; v1 = vj[1]; v2 = vj[2];
-    x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
-    y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
-
-    u0_3 = u0*u0*u0;
-    u1_3 = u1*u1*u1;
-    u2_3 = u2*u2*u2;
-    
-    vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
-    vj_mag_sqr = v0*v0 + v1*v1 + v2*v2;
-    vi_mag = sqrt(vi_mag_sqr);
-    vj_mag = sqrt(vj_mag_sqr);
-    vi_mag_3 = vi_mag*vi_mag*vi_mag;
-    vi_mag_4 = vi_mag*vi_mag*vi_mag*vi_mag;
-    sin_alpha_i = sin( 0.5*vi_mag );
-    cos_alpha_i = cos( 0.5*vi_mag );
-    sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
-    cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
-    sin_alpha_j = sin( 0.5*vj_mag );
-    cos_alpha_j = cos( 0.5*vj_mag );
-    sin_alpha_j_2 = sin_alpha_j*sin_alpha_j;
-    cos_alpha_j_2 = cos_alpha_j*cos_alpha_j;
-
-    Dphi_cDu0 = ((-x0 +
-                  y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                       2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-                       2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
-                       2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
-                                                                       2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
-                                                                       2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                                                                       2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
-                                                                       2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
-                                                                                                                       cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                       sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
-                                                                                                                       sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
-                                                                                                                       sin_alpha_j_2*v2*v2/vj_mag_sqr))*(2*(-x0 +
-                                                                                                                                                            y0)*(cos_alpha_i_2*u0*u1/vi_mag_sqr +
-                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u0*u0*u2/vi_mag_3 -
-                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u0*u1/vi_mag_3 -
-                                                                                                                                                                 4*sin_alpha_i_2*u0*u0*u2/vi_mag_4 -
-                                                                                                                                                                 sin_alpha_i_2*u0*u1/vi_mag_sqr + 2*sin_alpha_i_2*u2/vi_mag_sqr) +
-                                                                                                                                                         2*(-x1 + y1)*(-cos_alpha_i_2*u0*u0/vi_mag_sqr +
-                                                                                                                                                                       2*cos_alpha_i*sin_alpha_i*u0*u0/vi_mag_3 +
-                                                                                                                                                                       2*cos_alpha_i*sin_alpha_i*u0*u1*u2/vi_mag_3 -
-                                                                                                                                                                       2*cos_alpha_i*sin_alpha_i/vi_mag + sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                                                                       4*sin_alpha_i_2*u0*u1*u2/vi_mag_4) + 2*(-x2 + y2)*(-
-                                                                                                                                                                                                                          cos_alpha_i*sin_alpha_i*u0_3/vi_mag_3 -
-                                                                                                                                                                                                                          cos_alpha_i*sin_alpha_i*u0*u1*u1/vi_mag_3 +
-                                                                                                                                                                                                                          cos_alpha_i*sin_alpha_i*u0*u2*u2/vi_mag_3 -
-                                                                                                                                                                                                                          cos_alpha_i*sin_alpha_i*u0/vi_mag +
-                                                                                                                                                                                                                          2*sin_alpha_i_2*u0_3/vi_mag_4 +
-                                                                                                                                                                                                                          2*sin_alpha_i_2*u0*u1*u1/vi_mag_4 -
-                                                                                                                                                                                                                          2*sin_alpha_i_2*u0*u2*u2/vi_mag_4 -
-                                                                                                                                                                                                                          2*sin_alpha_i_2*u0/vi_mag_sqr));
-
-    Dphi_cDu1 = ((-x0 +
-                  y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                       2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-                       2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
-                       2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
-                                                                       2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
-                                                                       2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                                                                       2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
-                                                                       2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
-                                                                                                                       cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                       sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
-                                                                                                                       sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
-                                                                                                                       sin_alpha_j_2*v2*v2/vj_mag_sqr))*(2*(-x0 +
-                                                                                                                                                            y0)*(cos_alpha_i_2*u1*u1/vi_mag_sqr +
-                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u0*u1*u2/vi_mag_3 -
-                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u1*u1/vi_mag_3 +
-                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i/vi_mag -
-                                                                                                                                                                 4*sin_alpha_i_2*u0*u1*u2/vi_mag_4 -
-                                                                                                                                                                 sin_alpha_i_2*u1*u1/vi_mag_sqr) + 2*(-x1 + y1)*(-
-                                                                                                                                                                                                                 cos_alpha_i_2*u0*u1/vi_mag_sqr +
-                                                                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u0*u1/vi_mag_3 +
-                                                                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u1*u1*u2/vi_mag_3 +
-                                                                                                                                                                                                                 sin_alpha_i_2*u0*u1/vi_mag_sqr -
-                                                                                                                                                                                                                 4*sin_alpha_i_2*u1*u1*u2/vi_mag_4 + 2*sin_alpha_i_2*u2/vi_mag_sqr) + 2*(-x2 + y2)*(-
-                                                                                                                                                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u0*u0*u1/vi_mag_3 -
-                                                                                                                                                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u1_3/vi_mag_3 +
-                                                                                                                                                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u1*u2*u2/vi_mag_3 -
-                                                                                                                                                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_i_2*u0*u0*u1/vi_mag_4 +
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_i_2*u1_3/vi_mag_4 -
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_i_2*u1*u2*u2/vi_mag_4 -
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_i_2*u1/vi_mag_sqr));
-
-    Dphi_cDu2 = ((-x0 +
-                  y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                       2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-                       2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
-                       2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
-                                                                       2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
-                                                                       2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                                                                       2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
-                                                                       2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
-                                                                                                                       cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                       sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
-                                                                                                                       sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
-                                                                                                                       sin_alpha_j_2*v2*v2/vj_mag_sqr))*(2*(-x0 +
-                                                                                                                                                            y0)*(cos_alpha_i_2*u1*u2/vi_mag_sqr +
-                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u0*u2*u2/vi_mag_3 -
-                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u1*u2/vi_mag_3 -
-                                                                                                                                                                 4*sin_alpha_i_2*u0*u2*u2/vi_mag_4 + 2*sin_alpha_i_2*u0/vi_mag_sqr -
-                                                                                                                                                                 sin_alpha_i_2*u1*u2/vi_mag_sqr) + 2*(-x1 + y1)*(-
-                                                                                                                                                                                                                 cos_alpha_i_2*u0*u2/vi_mag_sqr +
-                                                                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u0*u2/vi_mag_3 +
-                                                                                                                                                                                                                 2*cos_alpha_i*sin_alpha_i*u1*u2*u2/vi_mag_3 +
-                                                                                                                                                                                                                 sin_alpha_i_2*u0*u2/vi_mag_sqr -
-                                                                                                                                                                                                                 4*sin_alpha_i_2*u1*u2*u2/vi_mag_4 + 2*sin_alpha_i_2*u1/vi_mag_sqr) + 2*(-x2 + y2)*(-
-                                                                                                                                                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u0*u0*u2/vi_mag_3 -
-                                                                                                                                                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u1*u1*u2/vi_mag_3 +
-                                                                                                                                                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u2_3/vi_mag_3 -
-                                                                                                                                                                                                                                                                                                    cos_alpha_i*sin_alpha_i*u2/vi_mag +
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_i_2*u0*u0*u2/vi_mag_4 +
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_i_2*u1*u1*u2/vi_mag_4 -
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_i_2*u2_3/vi_mag_4 + 2*sin_alpha_i_2*u2/vi_mag_sqr));
-
-    Vector3D Dphi_cDvi( Dphi_cDu0, Dphi_cDu1, Dphi_cDu2 );
-    return Dphi_cDvi;
-}
-
-/*
-*Derivative of phi_c wrt vj
- */
-Vector3D OPSBody::Dphi_cDvj(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj){
-    double u0, u1, u2, v0, v1, v2, x0, x1, x2, y0, y1, y2;
-    double vi_mag_sqr, vi_mag, vj_mag_sqr, vj_mag;
-    double sin_alpha_i, cos_alpha_i, sin_alpha_j, cos_alpha_j;
-    double sin_alpha_i_2, cos_alpha_i_2, sin_alpha_j_2, cos_alpha_j_2, phi_c0;
-    double Dphi_cDv0, Dphi_cDv1, Dphi_cDv2;
-    double vj_mag_3, vj_mag_4;
-    double v0_3, v1_3, v2_3;
-
-    u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
-    v0 = vj[0]; v1 = vj[1]; v2 = vj[2];
-    x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
-    y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
-
-    v0_3 = v0*v0*v0;
-    v1_3 = v1*v1*v1;
-    v2_3 = v2*v2*v2;
-    
-    vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
-    vj_mag_sqr = v0*v0 + v1*v1 + v2*v2;
-    vi_mag = sqrt(vi_mag_sqr);
-    vj_mag = sqrt(vj_mag_sqr);
-    vj_mag_3 = vj_mag*vj_mag*vj_mag;
-    vj_mag_4 = vj_mag*vj_mag*vj_mag*vj_mag;
-    sin_alpha_i = sin( 0.5*vi_mag );
-    cos_alpha_i = cos( 0.5*vi_mag );
-    sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
-    cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
-    sin_alpha_j = sin( 0.5*vj_mag );
-    cos_alpha_j = cos( 0.5*vj_mag );
-    sin_alpha_j_2 = sin_alpha_j*sin_alpha_j;
-    cos_alpha_j_2 = cos_alpha_j*cos_alpha_j;
-
-    Dphi_cDv0 = ((-x0 +
-                  y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                       2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-                       2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
-                       2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
-                                                                       2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
-                                                                       2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                                                                       2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
-                                                                       2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
-                                                                                                                       cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                       sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
-                                                                                                                       sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
-                                                                                                                       sin_alpha_j_2*v2*v2/vj_mag_sqr))*(2*(-x0 +
-                                                                                                                                                            y0)*(cos_alpha_j_2*v0*v1/vj_mag_sqr +
-                                                                                                                                                                 2*cos_alpha_j*sin_alpha_j*v0*v0*v2/vj_mag_3 -
-                                                                                                                                                                 2*cos_alpha_j*sin_alpha_j*v0*v1/vj_mag_3 -
-                                                                                                                                                                 4*sin_alpha_j_2*v0*v0*v2/vj_mag_4 -
-                                                                                                                                                                 sin_alpha_j_2*v0*v1/vj_mag_sqr + 2*sin_alpha_j_2*v2/vj_mag_sqr) +
-                                                                                                                                                         2*(-x1 + y1)*(-cos_alpha_j_2*v0*v0/vj_mag_sqr +
-                                                                                                                                                                       2*cos_alpha_j*sin_alpha_j*v0*v0/vj_mag_3 +
-                                                                                                                                                                       2*cos_alpha_j*sin_alpha_j*v0*v1*v2/vj_mag_3 -
-                                                                                                                                                                       2*cos_alpha_j*sin_alpha_j/vj_mag + sin_alpha_j_2*v0*v0/vj_mag_sqr -
-                                                                                                                                                                       4*sin_alpha_j_2*v0*v1*v2/vj_mag_4) + 2*(-x2 + y2)*(-
-                                                                                                                                                                                                                          cos_alpha_j*sin_alpha_j*v0_3/vj_mag_3 -
-                                                                                                                                                                                                                          cos_alpha_j*sin_alpha_j*v0*v1*v1/vj_mag_3 +
-                                                                                                                                                                                                                          cos_alpha_j*sin_alpha_j*v0*v2*v2/vj_mag_3 -
-                                                                                                                                                                                                                          cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                                                                                                                                                                                                                          2*sin_alpha_j_2*v0_3/vj_mag_4 +
-                                                                                                                                                                                                                          2*sin_alpha_j_2*v0*v1*v1/vj_mag_4 -
-                                                                                                                                                                                                                          2*sin_alpha_j_2*v0*v2*v2/vj_mag_4 -
-                                                                                                                                                                                                                          2*sin_alpha_j_2*v0/vj_mag_sqr));
-
-    Dphi_cDv1 = ((-x0 +
-                  y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                       2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-                       2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
-                       2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
-                                                                       2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
-                                                                       2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                                                                       2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
-                                                                       2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
-                                                                                                                       cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                       sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
-                                                                                                                       sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
-                                                                                                                       sin_alpha_j_2*v2*v2/vj_mag_sqr))*(2*(-x0 +
-                                                                                                                                                            y0)*(cos_alpha_j_2*v1*v1/vj_mag_sqr +
-                                                                                                                                                                 2*cos_alpha_j*sin_alpha_j*v0*v1*v2/vj_mag_3 -
-                                                                                                                                                                 2*cos_alpha_j*sin_alpha_j*v1*v1/vj_mag_3 +
-                                                                                                                                                                 2*cos_alpha_j*sin_alpha_j/vj_mag -
-                                                                                                                                                                 4*sin_alpha_j_2*v0*v1*v2/vj_mag_4 -
-                                                                                                                                                                 sin_alpha_j_2*v1*v1/vj_mag_sqr) + 2*(-x1 + y1)*(-
-                                                                                                                                                                                                                 cos_alpha_j_2*v0*v1/vj_mag_sqr +
-                                                                                                                                                                                                                 2*cos_alpha_j*sin_alpha_j*v0*v1/vj_mag_3 +
-                                                                                                                                                                                                                 2*cos_alpha_j*sin_alpha_j*v1*v1*v2/vj_mag_3 +
-                                                                                                                                                                                                                 sin_alpha_j_2*v0*v1/vj_mag_sqr -
-                                                                                                                                                                                                                 4*sin_alpha_j_2*v1*v1*v2/vj_mag_4 + 2*sin_alpha_j_2*v2/vj_mag_sqr) + 2*(-x2 + y2)*(-
-                                                                                                                                                                                                                                                                                                    cos_alpha_j*sin_alpha_j*v0*v0*v1/vj_mag_3 -
-                                                                                                                                                                                                                                                                                                    cos_alpha_j*sin_alpha_j*v1_3/vj_mag_3 +
-                                                                                                                                                                                                                                                                                                    cos_alpha_j*sin_alpha_j*v1*v2*v2/vj_mag_3 -
-                                                                                                                                                                                                                                                                                                    cos_alpha_j*sin_alpha_j*v1/vj_mag +
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_j_2*v0*v0*v1/vj_mag_4 +
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_j_2*v1_3/vj_mag_4 -
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_j_2*v1*v2*v2/vj_mag_4 -
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_j_2*v1/vj_mag_sqr));
-
-    Dphi_cDv2 = ((-x0 +
-                  y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                       2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-                       2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
-                       2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
-                                                                       2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
-                                                                       2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                                                                       2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
-                                                                       2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
-                                                                                                                       cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                       sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
-                                                                                                                       sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
-                                                                                                                       sin_alpha_j_2*v2*v2/vj_mag_sqr))*(2*(-x0 +
-                                                                                                                                                            y0)*(cos_alpha_j_2*v1*v2/vj_mag_sqr +
-                                                                                                                                                                 2*cos_alpha_j*sin_alpha_j*v0*v2*v2/vj_mag_3 -
-                                                                                                                                                                 2*cos_alpha_j*sin_alpha_j*v1*v2/vj_mag_3 -
-                                                                                                                                                                 4*sin_alpha_j_2*v0*v2*v2/vj_mag_4 + 2*sin_alpha_j_2*v0/vj_mag_sqr -
-                                                                                                                                                                 sin_alpha_j_2*v1*v2/vj_mag_sqr) + 2*(-x1 + y1)*(-
-                                                                                                                                                                                                                 cos_alpha_j_2*v0*v2/vj_mag_sqr +
-                                                                                                                                                                                                                 2*cos_alpha_j*sin_alpha_j*v0*v2/vj_mag_3 +
-                                                                                                                                                                                                                 2*cos_alpha_j*sin_alpha_j*v1*v2*v2/vj_mag_3 +
-                                                                                                                                                                                                                 sin_alpha_j_2*v0*v2/vj_mag_sqr -
-                                                                                                                                                                                                                 4*sin_alpha_j_2*v1*v2*v2/vj_mag_4 + 2*sin_alpha_j_2*v1/vj_mag_sqr) + 2*(-x2 + y2)*(-
-                                                                                                                                                                                                                                                                                                    cos_alpha_j*sin_alpha_j*v0*v0*v2/vj_mag_3 -
-                                                                                                                                                                                                                                                                                                    cos_alpha_j*sin_alpha_j*v1*v1*v2/vj_mag_3 +
-                                                                                                                                                                                                                                                                                                    cos_alpha_j*sin_alpha_j*v2_3/vj_mag_3 -
-                                                                                                                                                                                                                                                                                                    cos_alpha_j*sin_alpha_j*v2/vj_mag +
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_j_2*v0*v0*v2/vj_mag_4 +
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_j_2*v1*v1*v2/vj_mag_4 -
-                                                                                                                                                                                                                                                                                                    2*sin_alpha_j_2*v2_3/vj_mag_4 + 2*sin_alpha_j_2*v2/vj_mag_sqr));
-
-    Vector3D Dphi_cDvj( Dphi_cDv0, Dphi_cDv1, Dphi_cDv2 );
-    return Dphi_cDvj;
-}
-
-/*
-*Derivative of phi_c wrt xi
+ * Derivative of phi_c wrt xi
  */
 Vector3D OPSBody::Dphi_cDxi(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj){
-    double u0, u1, u2, v0, v1, v2, x0, x1, x2, y0, y1, y2;
-    double vi_mag_sqr, vi_mag, vj_mag_sqr, vj_mag;
-    double sin_alpha_i, cos_alpha_i, sin_alpha_j, cos_alpha_j;
-    double sin_alpha_i_2, cos_alpha_i_2, sin_alpha_j_2, cos_alpha_j_2, phi_c0;
-    double Dphi_cDx0, Dphi_cDx1, Dphi_cDx2;
+    double r, n_dot_rij;
+    Vector3D p(0.0), q(0.0), n(0.0), rij(0.0), ans(0.0);
 
-    u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
-    v0 = vj[0]; v1 = vj[1]; v2 = vj[2];
-    x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
-    y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
+    p = OPSNode::convertRotVecToNormal(vi);
+    q = OPSNode::convertRotVecToNormal(vj);
+    n = p + q;
+    rij = xj - xi;
+    r = tvmet::norm2(rij);
+    n_dot_rij = tvmet::dot(n,rij);
+    ans = (2*n_dot_rij)/(r*r*r*r)*( n_dot_rij*rij - r*r*n );
 
-    vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
-    vj_mag_sqr = v0*v0 + v1*v1 + v2*v2;
-    vi_mag = sqrt(vi_mag_sqr);
-    vj_mag = sqrt(vj_mag_sqr);
-    sin_alpha_i = sin( 0.5*vi_mag );
-    cos_alpha_i = cos( 0.5*vi_mag );
-    sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
-    cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
-    sin_alpha_j = sin( 0.5*vj_mag );
-    cos_alpha_j = cos( 0.5*vj_mag );
-    sin_alpha_j_2 = sin_alpha_j*sin_alpha_j;
-    cos_alpha_j_2 = cos_alpha_j*cos_alpha_j;
-
-    Dphi_cDx0 = ((-x0 +
-                  y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                       2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-                       2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
-                       2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
-                                                                       2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
-                                                                       2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                                                                       2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
-                                                                       2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
-                                                                                                                       cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                       sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
-                                                                                                                       sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
-                                                                                                                       sin_alpha_j_2*v2*v2/vj_mag_sqr))*(-
-                                                                                                                                                         4*cos_alpha_i*sin_alpha_i*u1/vi_mag -
-                                                                                                                                                         4*cos_alpha_j*sin_alpha_j*v1/vj_mag -
-                                                                                                                                                         4*sin_alpha_i_2*u0*u2/vi_mag_sqr -
-                                                                                                                                                         4*sin_alpha_j_2*v0*v2/vj_mag_sqr);
-
-    Dphi_cDx1 = ((-x0 +
-                  y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                       2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-                       2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
-                       2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
-                                                                       2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
-                                                                       2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                                                                       2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
-                                                                       2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
-                                                                                                                       cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                       sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
-                                                                                                                       sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
-                                                                                                                       sin_alpha_j_2*v2*v2/vj_mag_sqr))*(4*cos_alpha_i*sin_alpha_i*
-                                                                                                                                                         u0/vi_mag + 4*cos_alpha_j*sin_alpha_j*v0/vj_mag -
-                                                                                                                                                         4*sin_alpha_i_2*u1*u2/vi_mag_sqr -
-                                                                                                                                                         4*sin_alpha_j_2*v1*v2/vj_mag_sqr);
-
-    Dphi_cDx2 = ((-x0 +
-                  y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                       2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-                       2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
-                       2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
-                                                                       2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
-                                                                       2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                                                                       2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
-                                                                       2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
-                                                                                                                       cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                       sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
-                                                                                                                       sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
-                                                                                                                       sin_alpha_j_2*v2*v2/vj_mag_sqr))*(-2*cos_alpha_i_2 -
-                                                                                                                                                         2*cos_alpha_j_2 + 2*sin_alpha_i_2*u0*u0/vi_mag_sqr +
-                                                                                                                                                         2*sin_alpha_i_2*u1*u1/vi_mag_sqr - 2*sin_alpha_i_2*u2*u2/vi_mag_sqr +
-                                                                                                                                                         2*sin_alpha_j_2*v0*v0/vj_mag_sqr + 2*sin_alpha_j_2*v1*v1/vj_mag_sqr -
-                                                                                                                                                         2*sin_alpha_j_2*v2*v2/vj_mag_sqr);
-
-    Vector3D Dphi_cDxi( Dphi_cDx0, Dphi_cDx1, Dphi_cDx2 );
-    return Dphi_cDxi;
+    return ans;
 }
 
 /*
-*Derivative of phi_c wrt xj
+ * Derivative of phi_c wrt xj
  */
 Vector3D OPSBody::Dphi_cDxj(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj){
-    double u0, u1, u2, v0, v1, v2, x0, x1, x2, y0, y1, y2;
-    double vi_mag_sqr, vi_mag, vj_mag_sqr, vj_mag;
-    double sin_alpha_i, cos_alpha_i, sin_alpha_j, cos_alpha_j;
-    double sin_alpha_i_2, cos_alpha_i_2, sin_alpha_j_2, cos_alpha_j_2, phi_c0;
-    double Dphi_cDy0, Dphi_cDy1, Dphi_cDy2;
-
-    u0 = vi[0]; u1 = vi[1]; u2 = vi[2];
-    v0 = vj[0]; v1 = vj[1]; v2 = vj[2];
-    x0 = xi[0]; x1 = xi[1]; x2 = xi[2];
-    y0 = xj[0]; y1 = xj[1]; y2 = xj[2];
-
-    vi_mag_sqr = u0*u0 + u1*u1 + u2*u2;
-    vj_mag_sqr = v0*v0 + v1*v1 + v2*v2;
-    vi_mag = sqrt(vi_mag_sqr);
-    vj_mag = sqrt(vj_mag_sqr);
-    sin_alpha_i = sin( 0.5*vi_mag );
-    cos_alpha_i = cos( 0.5*vi_mag );
-    sin_alpha_i_2 = sin_alpha_i*sin_alpha_i;
-    cos_alpha_i_2 = cos_alpha_i*cos_alpha_i;
-    sin_alpha_j = sin( 0.5*vj_mag );
-    cos_alpha_j = cos( 0.5*vj_mag );
-    sin_alpha_j_2 = sin_alpha_j*sin_alpha_j;
-    cos_alpha_j_2 = cos_alpha_j*cos_alpha_j;
-
-    Dphi_cDy0 = ((-x0 +
-                  y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                       2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-                       2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
-                       2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
-                                                                       2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
-                                                                       2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                                                                       2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
-                                                                       2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
-                                                                                                                       cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                       sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
-                                                                                                                       sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
-                                                                                                                       sin_alpha_j_2*v2*v2/vj_mag_sqr))*(4*cos_alpha_i*sin_alpha_i*
-                                                                                                                                                         u1/vi_mag + 4*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-                                                                                                                                                         4*sin_alpha_i_2*u0*u2/vi_mag_sqr +
-                                                                                                                                                         4*sin_alpha_j_2*v0*v2/vj_mag_sqr);
-
-    Dphi_cDy1 = ((-x0 +
-                  y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                       2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-                       2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
-                       2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
-                                                                       2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
-                                                                       2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                                                                       2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
-                                                                       2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
-                                                                                                                       cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                       sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
-                                                                                                                       sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
-                                                                                                                       sin_alpha_j_2*v2*v2/vj_mag_sqr))*(-
-                                                                                                                                                         4*cos_alpha_i*sin_alpha_i*u0/vi_mag -
-                                                                                                                                                         4*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                                                                                                                                                         4*sin_alpha_i_2*u1*u2/vi_mag_sqr +
-                                                                                                                                                         4*sin_alpha_j_2*v1*v2/vj_mag_sqr);
-
-    Dphi_cDy2 = ((-x0 +
-                  y0)*(2*cos_alpha_i*sin_alpha_i*u1/vi_mag +
-                       2*cos_alpha_j*sin_alpha_j*v1/vj_mag +
-                       2*sin_alpha_i_2*u0*u2/vi_mag_sqr +
-                       2*sin_alpha_j_2*v0*v2/vj_mag_sqr) + (-x1 + y1)*(-
-                                                                       2*cos_alpha_i*sin_alpha_i*u0/vi_mag -
-                                                                       2*cos_alpha_j*sin_alpha_j*v0/vj_mag +
-                                                                       2*sin_alpha_i_2*u1*u2/vi_mag_sqr +
-                                                                       2*sin_alpha_j_2*v1*v2/vj_mag_sqr) + (-x2 + y2)*(cos_alpha_i_2 +
-                                                                                                                       cos_alpha_j_2 - sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                       sin_alpha_i_2*u1*u1/vi_mag_sqr + sin_alpha_i_2*u2*u2/vi_mag_sqr -
-                                                                                                                       sin_alpha_j_2*v0*v0/vj_mag_sqr - sin_alpha_j_2*v1*v1/vj_mag_sqr +
-                                                                                                                       sin_alpha_j_2*v2*v2/vj_mag_sqr))*(2*cos_alpha_i_2 +
-                                                                                                                                                         2*cos_alpha_j_2 - 2*sin_alpha_i_2*u0*u0/vi_mag_sqr -
-                                                                                                                                                         2*sin_alpha_i_2*u1*u1/vi_mag_sqr + 2*sin_alpha_i_2*u2*u2/vi_mag_sqr -
-                                                                                                                                                         2*sin_alpha_j_2*v0*v0/vj_mag_sqr - 2*sin_alpha_j_2*v1*v1/vj_mag_sqr +
-                                                                                                                                                         2*sin_alpha_j_2*v2*v2/vj_mag_sqr);
-
-    Vector3D Dphi_cDxi( Dphi_cDy0, Dphi_cDy1, Dphi_cDy2 );
-    return Dphi_cDxi;
+    Vector3D ans(0.0);
+    ans = -Dphi_cDxi(vi,vj,xi,xj);
+    return ans;
 }
 
+/*
+ * Derivative of phi_c wrt vi
+ */
+Vector3D OPSBody::Dphi_cDvi(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj){
+    double r, n_dot_rij;
+    Vector3D p(0.0), q(0.0), n(0.0), rij(0.0), ans(0.0);
+    Matrix3X3 M(0.0);
 
+    p = OPSNode::convertRotVecToNormal(vi);
+    q = OPSNode::convertRotVecToNormal(vj);
+    n = p + q;
+    rij = xj - xi;
+    r = tvmet::norm2(rij);
+    n_dot_rij = tvmet::dot(n,rij);
+    M = diffNormalRotVec(vi);
+    ans = (2*n_dot_rij)/(r*r)*( M*rij );
+
+    return ans;
 }
 
+/*
+ * Derivative of phi_c wrt vj
+ */
+Vector3D OPSBody::Dphi_cDvj(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj){
+    double r, n_dot_rij;
+    Vector3D p(0.0), q(0.0), n(0.0), rij(0.0), ans(0.0);
+    Matrix3X3 N(0.0);
+
+    p = OPSNode::convertRotVecToNormal(vi);
+    q = OPSNode::convertRotVecToNormal(vj);
+    n = p + q;
+    rij = xj - xi;
+    r = tvmet::norm2(rij);
+    n_dot_rij = tvmet::dot(n,rij);
+    N = diffNormalRotVec(vj);
+    ans = (2*n_dot_rij)/(r*r)*( N*rij );
+
+    return ans;
+}
+
+}

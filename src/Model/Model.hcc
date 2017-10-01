@@ -161,4 +161,4 @@ namespace voom
 
   } // end Model::computeAndAssemble()
   
-}; // namespace voom
+} // namespace voom

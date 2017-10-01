@@ -1,10 +1,3 @@
-/*
- * OPSBody.h
- *
- *  Created on: Aug 5, 2017
- *      Author: amit
- */
-
 #ifndef _OPSBODY_H_
 #define _OPSBODY_H_
 
@@ -19,6 +12,7 @@
 #include <ctime>
 #include <regex>
 
+#include <tvmet/Matrix.h>
 #include "Body.h"
 #include "voom.h"
 #include "Node.h"
@@ -36,6 +30,7 @@
 #include <vtkDelaunay3D.h>
 #include <vtkDataSetSurfaceFilter.h>
 #include <vtkLoopSubdivisionFilter.h>
+#include <vtkMassProperties.h>
 
 #if VTK_MAJOR_VERSION < 6
 #define SetInputData SetInput
@@ -46,162 +41,212 @@ using namespace std;
 namespace voom {
 /*!
  OPSBody is a concrete class derived from Body, implementing
- a oriented-particle system.
+ a oriented-particle system with no co-circularity or co-normality terms.
  Reference:
- 	 Szeliski, Richard and Tonnesen, D. (1992). Surface Modeling with
- 	 Oriented Particle Systems.	Siggraph ’92, 26(2), 160.
- 	 https://doi.org/10.1017/CBO9781107415324.004
+         Szeliski, Richard and Tonnesen, D. (1992). Surface Modeling with
+         Oriented Particle Systems.	Siggraph ’92, 26(2), 160.
+         https://doi.org/10.1017/CBO9781107415324.004
  */
 
 struct OPSParams{
-	//Default values
-	OPSParams():alphaM(1.0), alphaP(1.0), alphaN(1.0), alphaC(1.0),
-			epsilon(1.0), r_e(1.0), s(6.9314718056),//Fracture strain = 10%
-			K(1.0), a(1.0), b(1.0){}
+        //Default values
+        OPSParams():D_e(1.0), r_e(1.0), a(6.9314718056),//Fracture strain = 10%
+                    b(1.0), alpha(1.0), beta(1.0), gamma(1.0){}
 
-	//Copy from another instance
-	OPSParams(const OPSParams &p){
-		alphaM = 1.0; alphaP = p.alphaP; alphaN = p.alphaN;
-		alphaC = p.alphaC;	epsilon = p.epsilon; r_e = p.r_e;
-		s = p.s; K = p.K; a = p.a; b = p.b;
-	}
-	// Initialize from a vector of doubles
-	OPSParams( double aM, double aP, double aN, double aC, double E, double r,
-			double sv, double Kv, double av, double bv):alphaM(aM),alphaP(aP),
-					alphaN(aN),alphaC(aC),epsilon(E),r_e(r),s(sv),K(Kv),a(av),
-					b(bv){}
-	// Weights for the potentials involved in total energy
-	double alphaM, alphaP, alphaN, alphaC;
-	/* Morse potential parameters:
-	 * epsilon = equilibrium energy, r_e = equilibrium separation
-	 * s = Morse potential width-controlling parameter
-	 */
-	double epsilon, r_e, s;
-	// Kernel parameters
-	double K, a, b;
+        //Copy from another instance
+        OPSParams(const OPSParams &p){
+                D_e = p.D_e; r_e = p.r_e;
+                a = p.a; b = p.b;
+                alpha = p.alpha; beta = p.beta; gamma = p.gamma;
+        }
+        // Initialize from a vector of doubles
+        OPSParams( double E, double r, double av, double bv,
+                   double p, double q, double s): D_e(E), r_e(r), a(av), b(bv),
+            alpha(p), beta(q), gamma(s){}
+        /* Morse potential parameters:
+         * epsilon = equilibrium energy, r_e = equilibrium separation
+         * a = Morse potential width-controlling parameter
+         * b = standard deviation of the Gaussian kernel in phi_N and phi_C
+         */
+        double D_e, r_e, a, b;
+        double alpha, beta, gamma;
 };
 
 class OPSBody: public Body {
 public:
 
-	typedef vector<OPSNode*>::const_iterator opsNodeIterator;
-	typedef tvmet::Vector<double,6> Vector6D;
+        typedef vector<OPSNode*>::const_iterator opsNodeIterator;
+        typedef tvmet::Vector<double,6> Vector6D;
+        typedef tvmet::Matrix<double,3,3> Matrix3X3;
 
-	enum Property {aM, aP, aN, aC, E, r, sv, Kv, av, bv};
+        enum Property {E, r, av, bv, A, B, G};
 
-	OPSBody(){}
+        OPSBody(){}
 
-	//! Construct body from
-	OPSBody(const vector<OPSNode*> & nodes, OPSParams &p, double r);
+        //! Construct body from
+        OPSBody(const vector<OPSNode*> & nodes, OPSParams &p, double r);
 
-	//! Destructor
-	~OPSBody() {}
+        //! Destructor
+        ~OPSBody() {}
 
-	//!Construct vtkPolyData from nodes
-	void updatePolyDataAndKdTree();
+        //!Construct vtkPolyData from nodes
+        void updatePolyDataAndKdTree();
 
-	//! Do mechanics on Body
-	void compute(bool f0, bool f1, bool f2);
+        //! Do mechanics on Body
+        void compute(bool f0, bool f1, bool f2);
 
-	void updateNeighbors();
+        void updateNeighbors();
 
-	double getAverageEdgeLength();
+        double getAverageEdgeLength();
 
-    double getAverageRadius(){return _radius;}
+        double getAverageRadius();
 
-    void calcAverageRadius();
+        double getVolume(){ return _volume;}
 
-	double getAsphericity();
+        void calcVolumeAndDerivative();
 
-	double getLoopAsphericity();
+        double calcVolume();
 
-	//! Return the energy of the body
-	double energy() const { return _energy;}
+        double calcAvgVolume(){
+            //Calculate (4/3)*M_PI*Ravg^3
+            double R = getAverageRadius();
+            double avgVol = 4.1887902047863905*R*R*R;
+            return avgVol;
+        }
 
-	//!Return the current OPS properties
-	OPSParams getProperties(){return _prop;}
+        double getAvgNumNeighbors(){
+            double num = 0.0;
+            for(int i=0; i < _numNodes; i++){
+                num += _neighbors[i]->GetNumberOfIds();
+            }
+            num /= _numNodes;
+            return num;
+        }
 
-	//!Update the current OPS properties
-	void updateProperties(OPSParams p){_prop = p;}
+        std::vector<Vector3D> calcVolumeDerivative();
 
-	//!Return the current search radius
-	double getSearchRadius(){return _searchR;}
+        std::vector<Vector3D> calcAvgVolDerivative();
 
-	//!Update the search radius
-	void updateSearchRadius( double r ){ _searchR = r;}
+        double getAsphericity();
 
-	//!Get the polydata associated with the OPS
-	vtkSmartPointer<vtkPolyData> getPolyData(){ return _polyData;}
+        double getLoopAsphericity();
 
-	//!Get the K-d tree associated with the OPS
-	vtkSmartPointer<vtkKdTree> getKdTree(){ return _kdTree;}
+        //! Return the energy of the body
+        double energy() const { return _energy;}
 
-	//! General printing of a Paraview file
-	void printParaview(const string name) const;
+        //!Return the current OPS properties
+        OPSParams getProperties(){return _prop;}
 
-	//! Printing of a Paraview file after applying Kabsch algorithm
-	void printParaview(const string name, Eigen::Matrix3Xd) const;
+        //!Update the current OPS properties
+        void updateProperties(OPSParams p){_prop = p;}
 
-	void pushBack(Element* e) { _elements.push_back(e);}
+        //!Return the current search radius
+        double getSearchRadius(){return _searchR;}
 
-	//! Return the mean squared displacement
-    double msd();
+        //!Update the search radius
+        void updateSearchRadius( double r ){ _searchR = r;}
 
-	//!Get nearest neighbor for rmsd calculation
-	std::vector<int> getInitialNearestNeighbor(){
-		return _initialNearestNeighbor;
-	}
+        //!Get the polydata associated with the OPS
+        vtkSmartPointer<vtkPolyData> getPolyData(){ return _polyData;}
 
-	void updateProperty(Property p, double val);
+        //! General printing of a Paraview file
+        void printParaview(const string name) const;
 
-	double getMorseEnergy(){return _morseEn;}
-	double getPlanarityEnergy(){return _planarEn;}
-	double getNormalityEnergy(){return _normalEn;}
-	double getCircularityEnergy(){return _circularEn;}
+        //! Printing of a Paraview file after applying Kabsch algorithm
+        void printParaview(const string name, Eigen::Matrix3Xd) const;
 
-	//!OPS kernel and potential functions
-	double morse(Vector3D xi, Vector3D xj);
-	double psi(Vector3D vi, Vector3D xi, Vector3D xj);
-	double phi_p(Vector3D vi, Vector3D xi, Vector3D xj);
-	double phi_n(Vector3D vi, Vector3D vj);
-	double phi_c(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj);
+        void pushBack(Element* e) { _elements.push_back(e);}
 
-	//!OPS kernel and potential derivatives
-	Vector3D DmorseDxi(Vector3D xi, Vector3D xj);
-	Vector3D DmorseDxj(Vector3D xi, Vector3D xj);
+        //! Return the mean squared displacement
+        double msd();
 
-	Vector3D DpsiDvi(Vector3D vi, Vector3D xi, Vector3D xj);
-	Vector3D DpsiDxi(Vector3D vi, Vector3D xi, Vector3D xj);
-	Vector3D DpsiDxj(Vector3D vi, Vector3D xi, Vector3D xj);
+        //!Get nearest neighbor for rmsd calculation
+        std::vector<int> getInitialNearestNeighbor(){
+                return _initialNearestNeighbor;
+        }
 
-	Vector3D Dphi_pDvi(Vector3D vi, Vector3D xi, Vector3D xj);
-	Vector3D Dphi_pDxi(Vector3D vi, Vector3D xi, Vector3D xj);
-	Vector3D Dphi_pDxj(Vector3D vi, Vector3D xi, Vector3D xj);
+        void setVolumeConstraint(MultiplierNode *n, double vol){
+            _PV = n;
+            _volConstraintOn = true;
+            _volConstraint = vol;
+        }
 
-	Vector3D Dphi_nDvi(Vector3D vi, Vector3D vj);
-	Vector3D Dphi_nDvj(Vector3D vi, Vector3D vj);
+        void updateVolumeConstraint(double vol){
+            _volConstraint = vol;
+        }
 
-	Vector3D Dphi_cDvi(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj);
-	Vector3D Dphi_cDvj(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj);
-	Vector3D Dphi_cDxi(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj);
-	Vector3D Dphi_cDxj(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj);
+        void updateProperty(Property p, double val);
+
+        double getMorseEnergy(){return _morseEn;}
+
+        double getNormalityEnergy(){return _normalEn;}
+
+        double getCircularityEnergy(){return _circEn;}
+
+        double getViscoEnergy(){return _viscoEn;}
+
+        double getBrownEnergy(){return _brownEn;}
+
+        double getPVEnergy(){return _PVen;}
+
+        static Vector3D rotVecToNormal( Vector3D u);
+
+        static Matrix3X3 diffNormalRotVec( Vector3D vi);
+
+        //!OPS kernel and potential functions
+        double morse(Vector3D xi, Vector3D xj);
+        double psi(Vector3D xi, Vector3D xj);        
+        double phi_n(Vector3D vi, Vector3D vj);
+        double phi_c(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj);
+
+        //!OPS kernel and potential derivatives
+        Vector3D DmorseDxi(Vector3D xi, Vector3D xj);
+        Vector3D DmorseDxj(Vector3D xi, Vector3D xj){
+            Vector3D temp(0.0), ans(0.0) ;
+            temp = DmorseDxi(xi,xj);
+            ans = temp*(-1.0);
+            return ans;
+        }
+
+        Vector3D DpsiDxi(Vector3D xi, Vector3D xj);
+        Vector3D DpsiDxj(Vector3D xi, Vector3D xj){
+            Vector3D temp(0.0), ans(0.0) ;
+            temp = DpsiDxi(xi,xj);
+            ans = temp*(-1.0);
+            return ans;
+        }
+
+        Vector3D Dphi_nDvi(Vector3D vi, Vector3D vj);
+        Vector3D Dphi_nDvj(Vector3D vi, Vector3D vj);
+
+        Vector3D Dphi_cDvi(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj);
+        Vector3D Dphi_cDvj(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj);
+        Vector3D Dphi_cDxi(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj);
+        Vector3D Dphi_cDxj(Vector3D vi, Vector3D vj, Vector3D xi, Vector3D xj);
 
 protected:
-	const vector<OPSNode*> _opsNodes; // Nodes
-    int _numNodes;
-    int _numBadTri;
-    double _radius;
-	double _searchR; // Search radius
-	OPSParams _prop; // Parameters for the OPS
-	double _morseEn;
-	double _planarEn;
-	double _normalEn;
-	double _circularEn;
-	vtkSmartPointer<vtkKdTree> _kdTree;
-	vtkSmartPointer<vtkPolyData> _polyData;
-	vector<vtkSmartPointer<vtkIdList> > _neighbors;
-	std::vector<int> _initialNearestNeighbor; // Needed to find rmsd
-};// OPS body
+        const vector<OPSNode*> _opsNodes; // Nodes
+        int _numNodes;
+        double _searchR; // Search radius
+        double _radius;
+        double _volume;
+        OPSParams _prop; // Parameters for the OPS
+        double _morseEn;        
+        double _normalEn;
+        double _circEn;
+        double _brownEn;
+        double _viscoEn;
+        bool _volConstraintOn;
+        double _volConstraint;
+        double _PVen;
+        MultiplierNode *_PV;
+        std::vector<Vector3D> _volDiff;
+        vtkSmartPointer<vtkKdTree> _kdTree;
+        vtkSmartPointer<vtkPolyData> _polyData;
+        vector<vtkSmartPointer<vtkIdList> > _neighbors;
+        std::vector<int> _initialNearestNeighbor; // Needed to find rmsd
+};//  OPS body
 
 }
 #endif /* _OPSBODY_H_ */
+

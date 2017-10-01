@@ -70,7 +70,7 @@ namespace voom
     typedef ConstraintContainer::const_iterator ConstConstraintIterator;
     
     //! Default Constructor
-    Model() {};
+    Model() {}
 
     Model( const BodyContainer & bodies, const NodeContainer & nodes );
 
@@ -162,8 +162,8 @@ namespace voom
 
   };
 
-}; // namespace voom
+} // namespace voom
 
-#include "Model.icc"
+#include "Model.hcc"
 
 #endif // __Model_h__

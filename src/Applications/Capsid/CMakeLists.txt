@@ -35,7 +35,7 @@ endif(LINK_LAPACK)
 
 set(capsid_targets asphericityMorse annealing brownian asphericityHarm dual asphericityCont 
     indentWparticles harmonic2D Morse2D Morse2DPeriodic reOrient twoMeshAnneal indentContinuum
-    twoMeshIndent testLoopShell OPSAsphericity OPSBrownianAnneal dual2)
+    twoMeshIndent OPSAsphericity OPSBrownianAnneal dual2 testCode)
 
 IF(WIN32 AND BLA_VENDOR MATCHES "Intel[0-9]*_64lp_seq")
 	link_directories("${MKL_ROOT}/lib/intel64")

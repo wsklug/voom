@@ -137,7 +137,7 @@ namespace voom
 					if (std::abs(*i) > 1.0e5) {
 						std::cerr << *i << std::endl
 							<< _x << std::endl;
-						_model->print("End");
+                        _model->print("End.vtk");
 						_model->computeAndAssemble(*this, true, true, false);
 						std::cout << "In debug mode, L142 Lbfgsb.h" << std::endl;
 						exit(0);

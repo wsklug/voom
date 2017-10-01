@@ -11,8 +11,8 @@
 
 namespace voom {
 
-  //! check consistency of derivatives
-  void Body::checkConsistency(bool verbose) {
+//! check consistency of derivatives
+void Body::checkConsistency(bool verbose) {
 
     if(verbose) std::cout << "Body::checkConsistency()" << std::endl;
     blitz::Array<double,1> f_n;
@@ -29,20 +29,20 @@ namespace voom {
     blitz::Range all = blitz::Range::all();
     
     for(int a=0, ia=0; a<_nodes.size(); a++) {
-      for(int i=0; i<_nodes[a]->dof(); i++, ia++) {
-	_nodes[a]->addPoint( i, h );
-	compute(true,false,false);
-	f_n(ia) = energy();
+        for(int i=0; i<_nodes[a]->dof(); i++, ia++) {
+            _nodes[a]->addPoint( i, h );
+            compute(true,false,false);
+            f_n(ia) = energy();
 
-	_nodes[a]->addPoint( i, -2.0*h ); 
-	compute(true,false,false);
-	f_n(ia) -= energy();
-	
-	_nodes[a]->addPoint( i, h ); 
-	
-	_nodes[a]->setForce(i,0.0);
+            _nodes[a]->addPoint( i, -2.0*h );
+            compute(true,false,false);
+            f_n(ia) -= energy();
 
-      }
+            _nodes[a]->addPoint( i, h );
+
+            _nodes[a]->setForce(i,0.0);
+
+        }
     }
     f_n /= 2.0*h;
     
@@ -59,39 +59,39 @@ namespace voom {
     std::ofstream dif("f.difference");
     
     for(int a=0, ia=0; a<_nodes.size(); a++) {
-      for(int i=0; i<_nodes[a]->dof(); i++, ia++) {
-      	double f = _nodes[a]->getForce(i);
-	double fn = f_n(ia);
-	Ferror = std::max(std::abs(f-fn),Ferror);
-	Fnorm += (f)*(f);
-	ana << f << " ";
-	num << fn << " ";
-	dif << f-fn << " ";
-	
-	if (verbose) {
-	  std::cout << f << " " << fn << " " << std::endl;
-	}
-	  
-      }
-      ana << std::endl;
-      num << std::endl;
-      dif << std::endl;
+        for(int i=0; i<_nodes[a]->dof(); i++, ia++) {
+            double f = _nodes[a]->getForce(i);
+            double fn = f_n(ia);
+            Ferror = std::max(std::abs(f-fn),Ferror);
+            Fnorm += (f)*(f);
+            ana << f << " ";
+            num << fn << " ";
+            dif << f-fn << " ";
+
+            if (verbose) {
+                std::cout << f << " " << fn << " " << std::endl;
+            }
+
+        }
+        ana << std::endl;
+        num << std::endl;
+        dif << std::endl;
     }
     Fnorm = sqrt(Fnorm);
     
     std::cout <<std::setw(18)<<"Fnorm =" <<std::setw(12)<<Fnorm
-	      <<std::setw(18)<<"Ferror ="<<std::setw(12)<<Ferror 
-	      <<std::setw(18)<<"tol*Fnorm =" <<std::setw(12)<<tol*Fnorm
-	      <<std::endl;
+             <<std::setw(18)<<"Ferror ="<<std::setw(12)<<Ferror
+            <<std::setw(18)<<"tol*Fnorm =" <<std::setw(12)<<tol*Fnorm
+           <<std::endl;
 
     if( Ferror < tol*Fnorm ) {
-      std::cout << "Body consistency check PASSED!"<<std::endl;
-      return;
+        std::cout << "Body consistency check PASSED!"<<std::endl;
+        return;
     }
     std::cout << "Body consistency check FAILED!"<<std::endl;
     
     return;
     
-  }
+}
 
 }
