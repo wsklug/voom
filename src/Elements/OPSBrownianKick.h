@@ -50,6 +50,8 @@ namespace voom
     //! Destructor
     ~OPSBrownianKick();
     
+    void brownianStep();
+
     //! Do mechanics on element; compute energy, forces, and/or stiffness.
     void compute(bool f0, bool f1, bool f2);
 
@@ -88,6 +90,7 @@ namespace voom
     double _coefficient;
 	double _cutOff;
     std::vector<Vector3D> _randomKick; //3-D Brownian displacement
+    std::vector<Vector3D> _prevX;
 
     int _nodeCount;
 

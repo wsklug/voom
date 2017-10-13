@@ -39,6 +39,11 @@ namespace voom
 		_dis->seed((unsigned int)time(0));
 
 		_cutOff = 1.0;
+
+        _prevX = std::vector<Vector3D>(_nodeCount,Vector3D(0.0));
+        for(int i=0; i< _nodeCount; ++i){
+            _prevX[i] = _nodes[i]->deformedPosition();
+        }
 	}
 
     //! Constructor 2
@@ -185,6 +190,12 @@ namespace voom
 		}
 	}
 
+    void OPSBrownianKick::brownianStep(){
+        for(int i=0; i< _nodeCount; ++i){
+            _prevX[i] = _nodes[i]->deformedPosition();
+        }
+    }
+
     // Do mechanics on element; compute energy, forces, and/or stiffness.
     void OPSBrownianKick::compute(bool f0, bool f1, bool f2) {
         
@@ -193,7 +204,8 @@ namespace voom
             for(int i=0; i < _nodeCount; i++){
                 Vector3D x;
                 x = _nodes[i]->deformedPosition();
-                    _energy += -_coefficient*tvmet::dot(_randomKick[i],x);
+                    _energy += -_coefficient*tvmet::dot(_randomKick[i],
+                                                        x-_prevX[i]);
             }
         }
         if( f1 ) {

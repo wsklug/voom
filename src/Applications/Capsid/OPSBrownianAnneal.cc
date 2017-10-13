@@ -284,7 +284,7 @@ int main(int argc, char* argv[])
         bd->updateProperty( OPSBody::G, gamma );
         bd->updateProperty( OPSBody::av, s);
 
-
+/*
         bool checkConsistency = true;
 		if (checkConsistency) {
 			std::cout << "Checking consistency......" << std::endl;
@@ -293,7 +293,7 @@ int main(int argc, char* argv[])
             model.checkConsistency(true, false);
             //exit(EXIT_SUCCESS);
 		}
-
+*/
 		//***************************  INNER SOLUTION LOOP ***************************//
         std::vector<Vector3D> averagePosition( numNodes, Vector3D(0.0) );
 
@@ -405,6 +405,7 @@ int main(int argc, char* argv[])
 
 			// step forward in "time", relaxing viscous energy & forces
 			vr->step();
+            bk->brownianStep();
         }                   //  INNER SOLUTION LOOP ENDS
 
         // Calculate the average particle positions

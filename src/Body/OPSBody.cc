@@ -247,6 +247,7 @@ void OPSBody::compute(bool f0, bool f1, bool f2) {
             if(_volConstraintOn){
                 //Add the Volume constraint force to the node
                 Vector6D pvF(volDiff[i][0], volDiff[i][1], volDiff[i][2],0,0,0);
+                pvF = _PV->point()*pvF;
                 _opsNodes[i]->updateForce(pvF);
             }
 

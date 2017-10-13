@@ -17,7 +17,7 @@ Eigen::Affine3d Find3DAffineTransform(Eigen::Matrix3Xd in,Eigen::Matrix3Xd out){
 
 	if (in.cols() != out.cols())
 		throw "Find3DAffineTransform(): input data mis-match";
-
+/*
 	// First find the scale, by finding the ratio of sums of some distances,
 	// then bring the datasets to the same scale.
 	double dist_in = 0, dist_out = 0;
@@ -29,7 +29,8 @@ Eigen::Affine3d Find3DAffineTransform(Eigen::Matrix3Xd in,Eigen::Matrix3Xd out){
 		return A;
 	double scale = dist_out / dist_in;
 	out /= scale;
-
+*/
+    double scale = 1.0;
 	// Find the centroids then shift to the origin
 	Eigen::Vector3d in_ctr = Eigen::Vector3d::Zero();
 	Eigen::Vector3d out_ctr = Eigen::Vector3d::Zero();
